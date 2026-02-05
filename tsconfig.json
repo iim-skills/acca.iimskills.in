@@ -1,0 +1,51 @@
+{
+  "compilerOptions": {
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "allowJs": true,
+    "target": "ES2018",
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": [
+        "./src/app/*"
+      ]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    "src/app/blog/[...slug]/page.tsx",
+    "src/app/blog/[...slug]/page.tsx",
+    ".next/types/app/blogs/page.tsx",
+    "src/app/api/consent",
+    "scripts/generate-course-manifest.cjs",
+    ".next/dev/types/**/*.ts",
+    "scripts/convert-json-to-sql.cjs"
+  ],
+  "exclude": [
+    "node_modules"
+  ],
+  "types": [
+    "node"
+  ],
+  "baseUrl": "."
+}

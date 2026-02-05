@@ -1,0 +1,19 @@
+[
+ 
+  {
+    "id": 2,
+    "slug": "acca-professional",
+    "name": "ACCA Professional",
+    "description": "Complete ACCA professional level",
+    "modules": [
+      "Strategic Business Reporting (SBR)",
+      "Strategic Business Leader (SBL)",
+      "Advanced Financial Management (AFM)",
+      "Advanced Audit and Assurance (AAA)"
+    ]
+  }
+]
+
+
+
+
