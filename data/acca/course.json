@@ -1,19 +1,100 @@
 [
- 
   {
-    "id": 2,
-    "slug": "acca-professional",
-    "name": "ACCA Professional",
-    "description": "Complete ACCA professional level",
+    "courseId": "COURSE_ACCA_SKILLS_001",
+    "slug": "acca-skills-level",
+    "name": "ACCA Skills Level Program",
+    "description": "Complete ACCA skills level program with advanced modules, lesson points, and video content.",
     "modules": [
-      "Strategic Business Reporting (SBR)",
-      "Strategic Business Leader (SBL)",
-      "Advanced Financial Management (AFM)",
-      "Advanced Audit and Assurance (AAA)"
+      {
+        "moduleId": "MOD_CBL_001",
+        "slug": "cbl-global-law-module",
+        "name": "CBL – Corporate & Business Law (Global)",
+        "description": "Global corporate law, company formation, contracts, insolvency, and compliance.",
+        "moduleVideo": "https://youtube.com/watch?v=CORPBL_INTRO",
+        "submodules": [
+          {
+            "submoduleId": "SUB_CBL_001",
+            "title": "CBL Company Formation & Legal Personality",
+            "description": "Company types, incorporation process, and corporate legal identity.",
+            "video": "https://youtube.com/watch?v=CORPBL_01"
+          }
+        ]
+      },
+      {
+        "moduleId": "MOD_SBR_001",
+        "slug": "sbr-financial-reporting-module",
+        "name": "SBR – Strategic Business Reporting",
+        "description": "Advanced IFRS reporting standards and professional judgment in reporting.",
+        "moduleVideo": "https://youtube.com/watch?v=SBR_INTRO",
+        "submodules": [
+          {
+            "submoduleId": "SUB_SBR_001",
+            "title": "SBR IFRS Conceptual Framework",
+            "description": "IFRS framework, recognition, measurement, and presentation principles.",
+            "video": "https://youtube.com/watch?v=SBR_01"
+          }
+        ]
+      },
+      {
+        "moduleId": "MOD_SBL_001",
+        "slug": "sbl-leadership-strategy-module",
+        "name": "SBL – Strategic Business Leadership",
+        "description": "Case-based leadership, governance, risk management, and strategic decisions.",
+        "moduleVideo": "https://youtube.com/watch?v=SBL_INTRO",
+        "submodules": [
+          {
+            "submoduleId": "SUB_SBL_001",
+            "title": "SBL Strategic Analysis & Positioning",
+            "description": "Strategic tools including PESTEL, SWOT, Porter’s Forces, and scenario planning.",
+            "video": "https://youtube.com/watch?v=SBL_01"
+          }
+        ]
+      },
+      {
+        "moduleId": "MOD_AFM_001",
+        "slug": "afm-corporate-finance-module",
+        "name": "AFM – Advanced Financial Management",
+        "description": "Advanced valuation, derivatives, risk management, and finance decisions.",
+        "moduleVideo": "https://youtube.com/watch?v=AFM_INTRO",
+        "submodules": [
+          {
+            "submoduleId": "SUB_AFM_001",
+            "title": "AFM Advanced Valuation Models",
+            "description": "DCF, APV, relative valuation, and assumption analysis.",
+            "video": "https://youtube.com/watch?v=AFM_01"
+          }
+        ]
+      },
+      {
+        "moduleId": "MOD_AAA_001",
+        "slug": "aaa-audit-assurance-module",
+        "name": "AAA – Advanced Audit & Assurance",
+        "description": "Advanced auditing standards, assurance engagements, and audit reporting.",
+        "moduleVideo": "https://youtube.com/watch?v=AAA_INTRO",
+        "submodules": [
+          {
+            "submoduleId": "SUB_AAA_001",
+            "title": "AAA Audit Planning & Risk Assessment",
+            "description": "Audit strategy, materiality determination, and significant risk identification.",
+            "video": "https://youtube.com/watch?v=AAA_01"
+          }
+        ]
+      },
+      {
+        "moduleId": "MOD_APM_001",
+        "slug": "apm-performance-management-module",
+        "name": "APM – Advanced Performance Management",
+        "description": "Strategic performance measurement and decision-making frameworks.",
+        "moduleVideo": "https://youtube.com/watch?v=APM_INTRO",
+        "submodules": [
+          {
+            "submoduleId": "SUB_APM_001",
+            "title": "APM Strategic Performance Frameworks",
+            "description": "KPI design, performance frameworks, and strategy alignment.",
+            "video": "https://youtube.com/watch?v=APM_01"
+          }
+        ]
+      }
     ]
   }
 ]
-
-
-
-

@@ -1,147 +1,80 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import {
-  FaPlusCircle,
-  FaFolderOpen,
-  FaUserEdit,
-  FaChartBar,
-  FaCalendarAlt,
-  FaSignOutAlt,
-  FaMoneyBill,
-  FaTicketAlt,
-  FaCertificate,
-} from "react-icons/fa";
-import { LiaLinkedin } from "react-icons/lia";
-import { User2 } from "lucide-react";
+import React, { useState } from "react";
+import { Mail, Lock, Eye, EyeOff, BookOpen, Loader2, User, GraduationCap } from "lucide-react";
+import AdminLoginForm from "@/components/AdminLoginForm";
+import StudentLoginForm from "@/components/StudentLoginForm";
 
-import DashboardHome from "./admin/components/DashboardHome";
-import AuthorPage from "./admin/users/page";
-import ProfilePage from "./admin/profile/page";
+type LoginType = "admin" | "student";
 
-/* ================= TYPES ================= */
-type UserRole = "admin" | "author";
+export default function App(): React.ReactElement {
+  const [loginType, setLoginType] = useState<LoginType>("admin");
 
-export interface User {
-  id: number;
-  name: string;
-  role: UserRole;
-  email?: string;
-}
-
-/* ================= COMPONENT ================= */
-export default function AdminDashboard() {
-  const [active, setActive] = useState("dashboard");
-  const [user, setUser] = useState<User | null>(null);
-  const [errorTab, setErrorTab] = useState<string | null>(null);
-
-  /* ---------- LOAD USER ---------- */
-  useEffect(() => {
-    const stored = sessionStorage.getItem("user") ?? localStorage.getItem("user");
-
-    if (!stored) {
-      window.location.href = "/admin/login";
-      return;
-    }
-
-    try {
-      const parsed = JSON.parse(stored);
-      const userData = parsed.user ?? parsed;
-
-      setUser({
-        id: Number(userData.id),
-        name: userData.name,
-        role: userData.role,
-        email: userData.email,
-      });
-    } catch {
-      sessionStorage.removeItem("user");
-      localStorage.removeItem("user");
-      window.location.href = "/admin/login";
-    }
-  }, []);
-
-  if (!user) return null;
-
-  /* ---------- ALL TABS ---------- */
-  const allTabs = [
-    { key: "dashboard", name: "Dashboard", icon: <FaChartBar className="mr-2" /> },
-    { key: "profile", name: "My Profile", icon: <User2 className="mr-2" /> },
-  ];
-
-  /* ---------- ROLE ACCESS ---------- */
-  const allowedTabs =
-    user.role === "admin"
-      ? allTabs.map((t) => t.key)
-      : ["dashboard", "profile"]; // AUTHOR
-
-  const handleTabClick = (key: string) => {
-    if (allowedTabs.includes(key)) {
-      setActive(key);
-      setErrorTab(null);
-    } else {
-      setErrorTab(key);
-    }
-  };
-
-  /* ---------- RENDER ---------- */
   return (
-    <div className="flex min-h-screen bg-gray-50">
-      {/* SIDEBAR */}
-      <aside className="w-72 bg-gray-100 p-4 flex flex-col justify-between">
-        <div>
-          <h1 className="text-2xl font-bold mb-4">⚙️ IIM SKILLS</h1>
-          <p className="text-sm text-gray-600 mb-6">
-            Logged in as <strong>{user.name}</strong> ({user.role})
-          </p>
+    <div className="min-h-screen w-full flex items-center justify-center p-4 bg-gradient-to-br from-[#b8c1ec] via-[#dff9fb] to-[#c56cf0]/20 font-sans">
+      <div className="w-full max-w-4xl bg-white rounded-[2rem] overflow-hidden shadow-2xl flex flex-col md:flex-row min-h-[550px]">
+        <div className="w-full md:w-[45%] bg-gradient-to-b from-[#1e3799] to-[#0c2461] p-10 flex flex-col justify-between text-white relative">
+          <div className="relative z-10">
+            <div className="flex items-center gap-2 mb-12">
+              <div className="bg-white/20 p-2 rounded-lg backdrop-blur-md">
+                <BookOpen className="text-white w-6 h-6" />
+              </div>
+              <span className="text-xl font-bold tracking-tight">ACCA IIM SKILLS</span>
+            </div>
 
-          <ul className="space-y-2">
-            {allTabs.map((tab) => (
-              <li key={tab.key}>
-                <button
-                  onClick={() => handleTabClick(tab.key)}
-                  className={`flex items-center w-full px-3 py-2 rounded-lg ${
-                    active === tab.key
-                      ? "bg-blue-600 text-white"
-                      : "hover:bg-blue-50 text-gray-700"
-                  }`}
-                >
-                  {tab.icon}
-                  {tab.name}
-                </button>
+            <div className="space-y-4">
+              <h1 className="text-4xl font-extrabold leading-tight">
+                ACCA Professional  <br />
+                Education
+              </h1>
+              <p className="text-blue-100/70 text-sm leading-relaxed max-w-[250px]">
+                Access your professional finance & accounting journey and manage your learning progress with ease.
+              </p>
+            </div>
+          </div>
 
-                {errorTab === tab.key && (
-                  <p className="text-xs text-red-600 ml-8 mt-1">
-                    🚫 Not allowed
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
+          <div className="relative z-10">
+            <button className="px-6 py-2 rounded-full border border-white/30 text-xs font-semibold hover:bg-white/10 transition-colors">
+              Learn More
+            </button>
+          </div>
+
+          <div className="absolute top-0 right-0 h-full w-full opacity-10 pointer-events-none">
+             <svg viewBox="0 0 400 600" className="h-full w-full" preserveAspectRatio="none">
+                <path d="M0,100 C150,200 250,0 400,150 L400,600 L0,600 Z" fill="white" />
+             </svg>
+          </div>
         </div>
 
-        {/* LOGOUT */}
-        <button
-          onClick={() => {
-            sessionStorage.removeItem("user");
-            localStorage.removeItem("user");
-            window.location.href = "/admin/login";
-          }}
-          className="flex items-center px-3 py-2 text-red-600 hover:bg-red-100 rounded-lg"
-        >
-          <FaSignOutAlt className="mr-2" />
-          Logout
-        </button>
-      </aside>
+        <div className="w-full md:w-[55%] p-8 md:p-12 flex flex-col justify-center bg-white">
+          <div className="mb-8">
+            <div className="flex p-1 bg-slate-100 rounded-xl mb-6">
+              <button
+                onClick={() => setLoginType("admin")}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 text-sm font-bold rounded-lg transition-all ${loginType === "admin" ? "bg-white text-[#1e3799] shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+              >
+                <User size={16} /> Admin
+              </button>
+              <button
+                onClick={() => setLoginType("student")}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 text-sm font-bold rounded-lg transition-all ${loginType === "student" ? "bg-white text-[#1e3799] shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+              >
+                <GraduationCap size={16} /> Student
+              </button>
+            </div>
 
-      {/* MAIN CONTENT */}
-      <main className="flex-1 p-6 overflow-y-auto">
-        {active === "dashboard" && <DashboardHome />}
-        
-        {active === "author" && user.role === "admin" && <AuthorPage />}
-         
-        {active === "profile" && <ProfilePage />}
-      </main>
+            <h2 className="text-2xl font-bold text-slate-800">
+              {loginType === "admin" ? "Admin Login" : "Student Login"}
+            </h2>
+            <p className="text-slate-400 text-sm mt-1">Please enter your credentials to proceed</p>
+          </div>
+
+          {/* Render the selected form component (keeps UI/design unchanged) */}
+          <div className="space-y-5">
+            {loginType === "admin" ? <AdminLoginForm /> : <StudentLoginForm />}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

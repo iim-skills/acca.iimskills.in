@@ -1,34 +1,17 @@
-import { NextResponse } from "next/server";
+// app/api/admin/courses/route.ts
 import fs from "fs";
 import path from "path";
+import { NextResponse } from "next/server";
 
 export async function GET() {
   try {
+    // Adjust path: project root /data/course/course.json
     const filePath = path.join(process.cwd(), "data", "acca", "course.json");
-
-    if (!fs.existsSync(filePath)) {
-      return NextResponse.json(
-        { error: "course.json not found", courses: [] },
-        { status: 404 }
-      );
-    }
-
-    const raw = fs.readFileSync(filePath, "utf8").trim();
-
-    if (!raw) {
-      return NextResponse.json(
-        { error: "course.json is empty", courses: [] },
-        { status: 200 }
-      );
-    }
-
-    const courses = JSON.parse(raw);
-    return NextResponse.json(courses);
-  } catch (err) {
-    console.error("Failed to load courses:", err);
-    return NextResponse.json(
-      { error: "Invalid course.json format" },
-      { status: 500 }
-    );
+    const raw = await fs.promises.readFile(filePath, "utf-8");
+    const data = JSON.parse(raw);
+    return NextResponse.json(data);
+  } catch (err: any) {
+    console.error("Failed to read course JSON:", err?.message ?? err);
+    return NextResponse.json({ error: "Course data not found" }, { status: 404 });
   }
 }
