@@ -3,7 +3,6 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import CourseModules from "../CourseModules";
-import dynamic from "next/dynamic";
 import {
   User,
   Mail,
@@ -24,14 +23,21 @@ type StudentAPIResp = {
   phone?: string;
   courseSlug?: string;
   courseTitle?: string;
-  modules?: string[] | string; // DB may store array, JSON-string or CSV-string
+  modules?: string[] | string;
+  progress: Record<string, number[]>; // DB may store array, JSON-string or CSV-string
+};
+
+type VideoItem = {
+  id?: string;
+  title?: string;
+  url?: string;
 };
 
 type Submodule = {
   submoduleId?: string;
   title?: string;
   description?: string;
-  video?: string;
+  videos?: VideoItem[]; // updated shape
 };
 
 type Module = {
@@ -64,6 +70,9 @@ export default function StudentDashboardLMS(): React.ReactElement {
   const [activeModuleId, setActiveModuleId] = useState<string | null>(null);
   const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
   const [activeSubmoduleTitle, setActiveSubmoduleTitle] = useState<string | null>(null);
+  const [activeVideoIndex, setActiveVideoIndex] = useState<number | null>(null);
+ 
+  
 
   // --- helpers ---
   const parseStudentModules = (s: any): string[] => {
@@ -81,8 +90,17 @@ export default function StudentDashboardLMS(): React.ReactElement {
     return [];
   };
 
-  const toEmbedUrl = (url?: string | null): string | null => {
+  // Convert incoming URL to playable form (local mp4, absolute mp4, or youtube embed)
+  const toPlayableUrl = (url?: string | null): string | null => {
     if (!url) return null;
+
+    // local path (starts with /) — return as-is
+    if (url.startsWith("/")) return url;
+
+    // absolute mp4/webm/ogg
+    if (url.match(/\.(mp4|webm|ogg)(\?.*)?$/i)) return url;
+
+    // attempt youtube parsing
     try {
       const u = new URL(url);
       const host = u.hostname.replace("www.", "");
@@ -95,10 +113,46 @@ export default function StudentDashboardLMS(): React.ReactElement {
         if (id) return `https://www.youtube.com/embed/${id}`;
       }
     } catch {
-      // not a valid URL — maybe direct mp4 or already embed
+      // if URL constructor fails, return the string (may be relative)
+      return url;
     }
+
+    // fallback: return original
     return url;
   };
+
+  function toEmbedUrl(url?: string | null): string | null {
+  if (!url) return null;
+
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace("www.", "");
+
+    // YouTube long URL
+    if (host.includes("youtube.com")) {
+      const v = u.searchParams.get("v");
+      if (v) return `https://www.youtube.com/embed/${v}`;
+    }
+
+    // YouTube short URL
+    if (host.includes("youtu.be")) {
+      const id = u.pathname.slice(1);
+      if (id) return `https://www.youtube.com/embed/${id}`;
+    }
+
+    // Vimeo
+    if (host.includes("vimeo.com")) {
+      const id = u.pathname.split("/").pop();
+      if (id) return `https://player.vimeo.com/video/${id}`;
+    }
+  } catch {
+    // not a valid URL → probably mp4 or local file
+  }
+
+  // mp4 / webm / already-embed → return as-is
+  return url;
+}
+
 
   /* ---------- LOAD STUDENT ---------- */
   useEffect(() => {
@@ -148,7 +202,6 @@ export default function StudentDashboardLMS(): React.ReactElement {
     }
 
     fetchStudent();
-    // we want this to run once on mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -164,49 +217,34 @@ export default function StudentDashboardLMS(): React.ReactElement {
     }
 
     async function fetchCourse() {
-      setLoadingCourse(true);
-      try {
-        // update this path if your JSON is located elsewhere
-        const res = await fetch("/api/student/course");
-        if (!res.ok) throw new Error("Course file not found");
-        const list: CourseFile[] = await res.json();
+  setLoadingCourse(true);
 
-        const found = Array.isArray(list)
-          ? list.find((c) => c.slug === courseSlug)
-          : (list as unknown as CourseFile);
+  try {
+    const res = await fetch("/api/student/course");
+    if (!res.ok) throw new Error("Course API failed");
 
-        if (!found) {
-          setCourse(null);
-          throw new Error("Course not available");
-        }
+    const list = await res.json();
 
-        setCourse(found);
+    console.log("📚 Courses from API:", list);
 
-        // auto-select first active module (if student modules exist)
-        const studentModuleIds = parseStudentModules(studentModulesRaw);
-        if (Array.isArray(found.modules) && studentModuleIds.length) {
-          const firstActive = found.modules.find((m) => {
-            const id = m.moduleId ?? m.slug ?? m.name;
-            return id && studentModuleIds.includes(String(id));
-          });
-          if (firstActive) {
-            const id = firstActive.moduleId ?? firstActive.slug ?? firstActive.name ?? null;
-            setActiveModuleId(id ? String(id) : null);
-
-            const firstVideo =
-              firstActive.moduleVideo ??
-              (firstActive.submodules && firstActive.submodules[0] && firstActive.submodules[0].video) ??
-              null;
-            setActiveVideoUrl(toEmbedUrl(firstVideo ?? null));
-            setActiveSubmoduleTitle(firstActive.submodules?.[0]?.title ?? null);
-          }
-        }
-      } catch (err) {
-        console.error("Failed to load course file", err);
-      } finally {
-        setLoadingCourse(false);
-      }
+    if (!Array.isArray(list) || !list.length) {
+      throw new Error("No courses returned");
     }
+
+    const selected = list[0]; // ✅ FORCE FIRST COURSE
+
+    console.log("🎯 Selected course:", selected);
+    console.log("🧩 Modules:", selected.modules);
+
+    setCourse(selected);
+  } catch (err) {
+    console.error("❌ Failed to load course:", err);
+    setCourse(null);
+  } finally {
+    setLoadingCourse(false);
+  }
+}
+
 
     fetchCourse();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -232,9 +270,6 @@ export default function StudentDashboardLMS(): React.ReactElement {
 
   // now TypeScript knows `student` is non-null below this point
   const studentModuleIds = parseStudentModules(student.modules);
-  const CourseDetailsClient = dynamic(() => import("../CourseDetailsClient"), {
-  ssr: false,
-});
 
   // --- new: total modules count (safe)
   const totalModules = Array.isArray(course?.modules) ? course!.modules!.length : 0;
@@ -250,11 +285,13 @@ export default function StudentDashboardLMS(): React.ReactElement {
 
     setActiveModuleId(id);
 
+    // try moduleVideo first, otherwise first submodule's first video
     const video =
       module.moduleVideo ??
-      (module.submodules && module.submodules.length ? module.submodules[0].video : null);
+      module.submodules?.[0]?.videos?.[0]?.url ??
+      null;
 
-    setActiveVideoUrl(toEmbedUrl(video ?? null));
+    setActiveVideoUrl(toPlayableUrl(video ?? null));
     setActiveSubmoduleTitle(module.submodules?.[0]?.title ?? null);
   };
 
@@ -267,7 +304,11 @@ export default function StudentDashboardLMS(): React.ReactElement {
     if (!isActive) return;
 
     setActiveModuleId(moduleId);
-    setActiveVideoUrl(toEmbedUrl(sub.video ?? null));
+
+    // choose first video from sub.videos
+    const videoUrl = sub.videos?.[0]?.url ?? null;
+
+    setActiveVideoUrl(toPlayableUrl(videoUrl ?? null));
     setActiveSubmoduleTitle(sub.title ?? null);
   };
 
@@ -326,14 +367,21 @@ export default function StudentDashboardLMS(): React.ReactElement {
         <aside className="lg:col-span-2">
           <div className="bg-white rounded-2xl shadow p-4 sticky top-6">
             <h3 className="font-semibold mb-3">All Modules</h3>
-            
-            <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-2">
-               <CourseDetailsClient
-  onPlayVideo={(videoUrl, title) => {
-    setActiveVideoUrl(toEmbedUrl(videoUrl));
+
+            <div className="space-y-3 min-h-[70vh] overflow-y-auto pr-2">
+            <CourseModules
+  course={course}
+  allowedModules={studentModuleIds}
+  progress={student.progress ?? {}}
+  onPlayVideo={(url, title, moduleId, idx) => {
+    setActiveVideoUrl(toEmbedUrl(url));
     setActiveSubmoduleTitle(title ?? null);
+    setActiveModuleId(moduleId ?? null);
+    setActiveVideoIndex(idx ?? null);
   }}
 />
+
+
 
             </div>
           </div>
@@ -342,7 +390,7 @@ export default function StudentDashboardLMS(): React.ReactElement {
         {/* RIGHT: Video player & module detail */}
         <section className="lg:col-span-3">
           <h1 className="text-2xl font-bold mb-4">Course details</h1>
-       
+
           <div className="bg-white rounded-2xl shadow p-4">
             <div className="w-full aspect-video bg-black rounded-xl overflow-hidden mb-4 flex items-center justify-center">
               {activeVideoUrl ? (
@@ -407,20 +455,39 @@ export default function StudentDashboardLMS(): React.ReactElement {
                         const moduleId = moduleIdRaw ? String(moduleIdRaw) : "";
                         const isActive = studentModuleIds.includes(moduleId);
                         return (
-                          <button
-                            key={s.submoduleId ?? s.title}
-                            onClick={() => handleSubmoduleClick(mod, s)}
-                            className={`w-full text-left p-3 rounded-lg border ${isActive ? "hover:bg-indigo-50" : "opacity-60 cursor-not-allowed"}`}
-                            disabled={!isActive}
-                          >
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <div className="font-medium">{s.title}</div>
-                                <div className="text-xs text-slate-400">{s.description}</div>
+                          <div key={s.submoduleId ?? s.title} className={`w-full`}>
+                            <button
+                              onClick={() => handleSubmoduleClick(mod, s)}
+                              className={`w-full text-left p-3 rounded-lg border ${isActive ? "hover:bg-indigo-50" : "opacity-60 cursor-not-allowed"}`}
+                              disabled={!isActive}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <div className="font-medium">{s.title}</div>
+                                  <div className="text-xs text-slate-400">{s.description}</div>
+                                </div>
+                                <div className="ml-4">{isActive ? <Play size={16} /> : <Lock size={16} />}</div>
                               </div>
-                              <div className="ml-4">{isActive ? <Play size={16} /> : <Lock size={16} />}</div>
-                            </div>
-                          </button>
+                            </button>
+
+                            {/* show videos list under each submodule when it is the active submodule and has videos */}
+                            {isActive && s.videos && s.videos.length > 0 && activeSubmoduleTitle === s.title && (
+                              <div className="mt-2 space-y-1 ml-4">
+                                {s.videos.map((v) => (
+                                  <button
+                                    key={v.id ?? v.title}
+                                    onClick={() => {
+                                      setActiveVideoUrl(toPlayableUrl(v.url ?? null));
+                                      setActiveSubmoduleTitle(s.title ?? null);
+                                    }}
+                                    className="text-sm text-indigo-600 hover:underline"
+                                  >
+                                    ▶ {v.title}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         );
                       });
                     })()}

@@ -4,7 +4,6 @@ import db from "../../../../lib/db";
 export async function GET(req: Request) {
   try {
     const email = req.headers.get("x-user-email");
-
     if (!email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -18,7 +17,8 @@ export async function GET(req: Request) {
         phone,
         course_slug,
         course_title,
-        modules
+        modules,
+        progress
       FROM lms_students
       WHERE email = ? OR login_id = ?
       LIMIT 1
@@ -26,19 +26,26 @@ export async function GET(req: Request) {
       [email, email]
     );
 
-    if (!rows || rows.length === 0) {
+    if (!rows?.length) {
       return NextResponse.json({ error: "Student not found" }, { status: 404 });
     }
 
     const student = rows[0];
 
-    // safe parse modules (in case it's null or plain string)
-    let modules = [];
+    let modules: string[] = [];
+    let progress: Record<string, number[]> = {};
+
     try {
-      modules = typeof student.modules === "string" ? JSON.parse(student.modules || "[]") : (student.modules || []);
-    } catch {
-      modules = [];
-    }
+      modules = typeof student.modules === "string"
+        ? JSON.parse(student.modules || "[]")
+        : student.modules || [];
+    } catch {}
+
+    try {
+      progress = typeof student.progress === "string"
+        ? JSON.parse(student.progress || "{}")
+        : student.progress || {};
+    } catch {}
 
     return NextResponse.json({
       id: student.id,
@@ -48,10 +55,11 @@ export async function GET(req: Request) {
       courseSlug: student.course_slug,
       courseTitle: student.course_title,
       modules,
+      progress,
       role: "student",
     });
-  } catch (error) {
-    console.error("Fetch student error:", error);
+  } catch (err) {
+    console.error("Student ME error:", err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

@@ -16,55 +16,69 @@ export default function CourseDetailsClient({
   const [error, setError] = useState<string | null>(null);
 
   const search = useSearchParams();
-  const slug = search?.get("slug") ?? "";
+  const slug = search?.get("slug")?.toLowerCase().trim() ?? "";
 
   useEffect(() => {
     let mounted = true;
 
-    async function load() {
+    async function loadCourse() {
       setLoading(true);
       setError(null);
 
       try {
+        console.log("➡️ Fetching course from API...");
+
         const res = await fetch("/api/student/course");
-        if (!res.ok) throw new Error(`Failed to load courses (${res.status})`);
+        console.log("✅ API response status:", res.status);
 
         const data = await res.json();
+        console.log("📦 RAW API DATA:", data);
 
-        // normalize array
-        const list: any[] = Array.isArray(data) ? data : [data];
+        const list: Course[] = Array.isArray(data) ? data : [];
+        console.log("📚 COURSE LIST (array):", list);
 
-        // pick by slug if provided, otherwise first
-        const found =
-          (slug &&
-            list.find(
+        if (!list.length) {
+          console.error("❌ Course list empty");
+          throw new Error("No courses returned from API");
+        }
+
+        // pick by slug if provided, otherwise first course
+        const selected = slug
+          ? list.find(
               (c) =>
                 String(c.slug ?? "")
-                  .trim()
-                  .toLowerCase() === slug.trim().toLowerCase()
-            )) ||
-          list[0] ||
-          null;
+                  .toLowerCase()
+                  .trim() === slug
+            )
+          : list[0];
 
-        if (mounted) setCourse(found);
+        console.log("🎯 Selected (by slug or first):", selected);
+        console.log("🧩 Selected.modules:", selected?.modules);
+
+        if (!selected) {
+          throw new Error("Requested course not found");
+        }
+
+        if (mounted) setCourse(selected);
       } catch (err: any) {
-        console.error("Course fetch error:", err);
-        if (mounted) setError(err?.message ?? "Failed to fetch");
+        console.error("❌ Course fetch error:", err);
+        if (mounted) setError(err?.message ?? "Failed to load course");
       } finally {
         if (mounted) setLoading(false);
       }
     }
 
-    load();
+    loadCourse();
     return () => {
       mounted = false;
     };
   }, [slug]);
 
+  /* ---------- UI ---------- */
   if (loading) {
     return (
       <div className="p-6 text-sm text-gray-500">
-        Loading course details...
+        Loading course details…
       </div>
     );
   }
@@ -78,11 +92,9 @@ export default function CourseDetailsClient({
   }
 
   return (
-    <div className="p-0">
-      <CourseModules
-        course={course}
-        onPlayVideo={onPlayVideo}
-      />
-    </div>
+    <CourseModules
+      course={course}
+      onPlayVideo={onPlayVideo}
+    />
   );
 }
