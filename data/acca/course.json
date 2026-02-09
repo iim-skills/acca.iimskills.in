@@ -17,6 +17,9 @@
             "description": "Company types, incorporation process, and corporate legal identity.",
             "videos": [
     { "id": "da_mod_1", "title": "Foundations of Excel for Analytics", "url": "/FreeCourseVideo/demo.mp4" },
+    { "id": "da_mod_2", "title": "Master formulas for real-world analytics", "url": "/FreeCourseVideo/demo1.mp4" },
+    { "id": "da_mod_1", "title": "Foundations of Excel for Analytics", "url": "/FreeCourseVideo/demo.mp4" },
+    { "id": "da_mod_2", "title": "Master formulas for real-world analytics", "url": "/FreeCourseVideo/demo1.mp4" },
     { "id": "da_mod_2", "title": "Master formulas for real-world analytics", "url": "/FreeCourseVideo/demo1.mp4" }
             ]
           }

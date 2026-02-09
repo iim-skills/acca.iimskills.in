@@ -49,7 +49,7 @@ type Props = {
    */
   allowedModules?: string[];
   /**
-   * Progress map keyed by moduleId -> array of completed video indexes
+   * Progress map keyed by moduleId -> array of completed video indexes (local to that module)
    * e.g. { "MOD_CBL_001": [0,1], "MOD_SBR_001": [0] }
    */
   progress?: Record<string, number[]>;
@@ -65,35 +65,44 @@ type Props = {
   ) => void;
 };
 
-function isModuleCompleted(
-  moduleId: string,
-  module: Module,
-  progress: Record<string, number[]>
-): boolean {
-  if (!module.submodules?.length) return true;
+/* ===== CONSTANTS ===== */
+const FREE_PREVIEW_COUNT = 5;
+const GUEST_PROGRESS_KEY = (courseId?: string) => `guest_progress_${courseId ?? "unknown_course"}`;
 
-  const totalVideos =
-    module.submodules.reduce(
-      (sum, s) => sum + (s.videos?.length ?? 0),
-      0
-    );
+/* ===== HELPERS ===== */
+function flattenCourseVideos(course: Course) {
+  // returns array of { moduleIndex, subIndex, videoIndex, moduleId, submoduleId, title, url, key }
+  const out: Array<{
+    moduleIndex: number;
+    subIndex: number;
+    videoIndex: number;
+    moduleId?: string;
+    submoduleId?: string;
+    title?: string;
+    url?: string;
+    key: string;
+  }> = [];
 
-  const completed = progress[moduleId]?.length ?? 0;
+  course.modules?.forEach((m, mi) => {
+    m.submodules?.forEach((s, si) => {
+      s.videos?.forEach((v, vi) => {
+        const moduleKeyPart = m.moduleId ?? `module-${mi}`;
+        const key = `${moduleKeyPart}-sub-${si}-vid-${vi}`;
+        out.push({
+          moduleIndex: mi,
+          subIndex: si,
+          videoIndex: vi,
+          moduleId: m.moduleId,
+          submoduleId: s.submoduleId,
+          title: v.title,
+          url: v.url,
+          key,
+        });
+      });
+    });
+  });
 
-  return completed >= totalVideos;
-}
-
-function isPreviousModuleCompleted(
-  course: Course,
-  moduleIndex: number,
-  progress: Record<string, number[]>
-): boolean {
-  if (moduleIndex === 0) return true; // first module always allowed
-
-  const prevModule = course.modules?.[moduleIndex - 1];
-  if (!prevModule?.moduleId) return true;
-
-  return isModuleCompleted(prevModule.moduleId, prevModule, progress);
+  return out;
 }
 
 /* ===== COMPONENT ===== */
@@ -104,8 +113,11 @@ export default function CourseModules({
   onPlayVideo,
 }: Props): React.ReactElement {
   const [openModuleId, setOpenModuleId] = useState<string | null>(null);
-  const [openSubKey, setOpenSubKey] = useState<string | null>(null); // which submodule is expanded to show videos
-  const [activeVideoKey, setActiveVideoKey] = useState<string | null>(null); // which video is selected
+  const [openSubKey, setOpenSubKey] = useState<string | null>(null);
+  const [activeVideoKey, setActiveVideoKey] = useState<string | null>(null);
+
+  // guestProgress stores global video indexes (numbers) the guest has "completed" in localStorage
+  const [guestProgress, setGuestProgress] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     console.log("📘 CourseModules mounted");
@@ -123,10 +135,30 @@ export default function CourseModules({
     } else {
       console.log(`ℹ️ CourseModules: ${course.modules.length} modules available`);
     }
+
+    // load guest progress from localStorage for this course
+    if (course?.courseId) {
+      try {
+        const raw = localStorage.getItem(GUEST_PROGRESS_KEY(course.courseId));
+        if (raw) {
+          const arr = JSON.parse(raw) as number[];
+          setGuestProgress(new Set(arr || []));
+        } else {
+          setGuestProgress(new Set());
+        }
+      } catch (e) {
+        console.warn("Could not load guest progress from localStorage", e);
+        setGuestProgress(new Set());
+      }
+    } else {
+      setGuestProgress(new Set());
+    }
   }, [course]);
 
-  // derive a fast lookup set for allowed modules
   const allowedSet = useMemo(() => new Set(allowedModules || []), [allowedModules]);
+
+  // isPaidUser: show Book button only for paid users
+  const isPaidUser = Boolean(allowedModules && allowedModules.length > 0);
 
   if (!course || !course.modules?.length) {
     console.warn("⚠️ No course or no modules — will render fallback UI", course);
@@ -136,6 +168,146 @@ export default function CourseModules({
       </div>
     );
   }
+
+  // flatten to a single list so we can compute "first 5 videos of the course" easily
+  const flatVideos = useMemo(() => flattenCourseVideos(course), [course]);
+
+  // map: videoKey -> globalIndex
+  const videoKeyToGlobalIndex = useMemo(() => {
+    const map = new Map<string, number>();
+    flatVideos.forEach((v, idx) => map.set(v.key, idx));
+    return map;
+  }, [flatVideos]);
+
+  // Build completedSet from:
+  // - progress prop (moduleId -> video indexes (local to that module))
+  // - guestProgress (already global indices)
+  const completedSet = useMemo(() => {
+    const s = new Set<number>();
+
+    // from progress prop (server / logged-in progress)
+    if (course.modules) {
+      course.modules.forEach((m) => {
+        const moduleId = m.moduleId;
+        const completedForModule = moduleId ? progress?.[moduleId] ?? [] : [];
+        if (moduleId && Array.isArray(completedForModule)) {
+          // get videos in this module in order
+          const moduleVideos = flatVideos.filter((fv) => fv.moduleId === moduleId);
+          moduleVideos.forEach((fv, localIdx) => {
+            if (completedForModule.includes(localIdx)) {
+              const gIdx = videoKeyToGlobalIndex.get(fv.key);
+              if (typeof gIdx === "number") s.add(gIdx);
+            }
+          });
+        }
+      });
+    }
+
+    // guest progress (global indices)
+    guestProgress.forEach((g) => s.add(g));
+
+    return s;
+  }, [progress, flatVideos, videoKeyToGlobalIndex, guestProgress, course.modules]);
+
+  // number of completed videos (unique)
+  const completedCount = completedSet.size;
+
+  // helper: is a given global index part of the free preview
+  const isVideoFreePreview = (globalIndex: number) => globalIndex >= 0 && globalIndex < FREE_PREVIEW_COUNT;
+
+  // helper: are ALL videos before globalIndex completed?
+  const areAllPreviousCompleted = (globalIndex: number) => {
+    if (globalIndex <= 0) return true;
+    for (let i = 0; i < globalIndex; i++) {
+      if (!completedSet.has(i)) return false;
+    }
+    return true;
+  };
+
+  // utility: check if all videos of a module are completed according to completedSet
+  const isModuleCompletedByCompletedSet = (module: Module) => {
+    if (!module.submodules?.length) return true;
+    for (const [si, s] of module.submodules.entries()) {
+      for (let vi = 0; vi < (s.videos?.length ?? 0); vi++) {
+        const flat = flatVideos.find(
+          (fv) => fv.moduleId === module.moduleId && fv.subIndex === si && fv.videoIndex === vi
+        );
+        if (!flat) return false;
+        const gIdx = videoKeyToGlobalIndex.get(flat.key);
+        if (typeof gIdx !== "number" || !completedSet.has(gIdx)) return false;
+      }
+    }
+    return true;
+  };
+
+  // Build unlockedModules set:
+  // - seed with allowedSet (paid modules)
+  // - then iterate modules in order: if previous module is unlocked and previous module is completed, unlock next
+  const unlockedModulesSet = useMemo(() => {
+    const s = new Set<string>();
+    const modules = course.modules ?? [];
+
+    // mark allowed modules first
+    modules.forEach((m) => {
+      if (m.moduleId && allowedSet.has(m.moduleId)) s.add(m.moduleId);
+    });
+
+    // iterate in order and chain unlocks
+    for (let i = 0; i < modules.length; i++) {
+      const m = modules[i];
+      const mid = m.moduleId ?? `module-${i}`;
+
+      if (s.has(mid)) continue;
+      if (i === 0) continue; // do not auto-unlock module 0
+
+      const prev = modules[i - 1];
+      const prevId = prev.moduleId ?? `module-${i - 1}`;
+
+      if (s.has(prevId) && isModuleCompletedByCompletedSet(prev)) {
+        s.add(mid);
+      }
+    }
+
+    return s;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [course.modules, allowedSet, completedSet, flatVideos]);
+
+  // Save guestProgress to localStorage whenever it changes
+  useEffect(() => {
+    try {
+      if (course?.courseId) {
+        const arr = Array.from(guestProgress.values());
+        localStorage.setItem(GUEST_PROGRESS_KEY(course.courseId), JSON.stringify(arr));
+      }
+    } catch (e) {
+      console.warn("Could not save guest progress to localStorage", e);
+    }
+  }, [guestProgress, course?.courseId]);
+
+  // Handler to mark a globalIndex completed for guest users
+  const markGuestCompleted = (gIndex: number) => {
+    setGuestProgress((prev) => {
+      if (prev.has(gIndex)) return prev;
+      const next = new Set(prev);
+      next.add(gIndex);
+      return next;
+    });
+  };
+
+  // Book a meet handler (replace with your modal or navigation)
+  const handleBookMeet = () => {
+    console.log("🗓 Book a meet clicked");
+    window.open("https://your-site.example.com/book-meet", "_blank");
+  };
+
+  // Join full course handler for free users
+  const handleJoinFullCourse = () => {
+    console.log("🛒 Join Full course clicked");
+    window.location.href = "https://your-site.example.com/join-full-course";
+  };
+
+  // New: only show CTAs after first video completed
+  const hasCompletedFirstVideo = completedSet.has(0);
 
   return (
     <div className="w-full max-w-3xl mx-auto space-y-6">
@@ -156,12 +328,14 @@ export default function CourseModules({
       {/* Modules */}
       <div className="space-y-2">
         {course.modules.map((module, moduleIndex) => {
-          const moduleKey = module.moduleId ?? `${moduleIndex}`;
+          const moduleKey = module.moduleId ?? `module-${moduleIndex}`;
           const isOpen = openModuleId === moduleKey;
 
-          // Use moduleId as single source-of-truth for allowedModules
-          const moduleId = module.moduleId ?? "";
-          const isAllowed = Boolean(moduleId && allowedSet.has(moduleId));
+          // module unlocked either because it's in allowedModules OR because it was unlocked via completion chain above
+          const moduleUnlocked = Boolean(
+            (module.moduleId && (unlockedModulesSet.has(module.moduleId) || allowedSet.has(module.moduleId))) ||
+              (!module.moduleId && unlockedModulesSet.has(moduleKey))
+          );
 
           return (
             <div key={moduleKey} className="border border-gray-200 rounded-lg overflow-hidden bg-white">
@@ -178,18 +352,17 @@ export default function CourseModules({
                   <div>
                     <h3 className="text-sm font-semibold text-gray-800">{module.name}</h3>
                     <p className="text-[10px] text-gray-400">{module.submodules?.length || 0} lessons</p>
-                    {!isAllowed && (
+                    {!moduleUnlocked && (
                       <div className="text-xs text-red-500 mt-1">🔒 Locked — contact admin to unlock</div>
                     )}
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {isAllowed ? (
+                  {moduleUnlocked ? (
                     <button
                       type="button"
                       onClick={() => {
-                        // toggle open only if allowed
                         if (isOpen) {
                           console.log(`🔽 Closing module ${moduleKey} (${module.name})`);
                           setOpenModuleId(null);
@@ -218,7 +391,7 @@ export default function CourseModules({
                 </div>
               </div>
 
-              {/* Submodules list (visible when module open and allowed) */}
+              {/* Submodules list (visible when module open and unlocked) */}
               {isOpen && (
                 <div className="border-t border-gray-100 divide-y divide-gray-50">
                   {module.submodules && module.submodules.length > 0 ? (
@@ -233,7 +406,7 @@ export default function CourseModules({
                             <button
                               type="button"
                               onClick={() => {
-                                if (!isAllowed) {
+                                if (!moduleUnlocked) {
                                   console.log(`Attempt to open locked submodule ${subKey} (${sub.title})`);
                                   return;
                                 }
@@ -251,9 +424,7 @@ export default function CourseModules({
                             >
                               <Play size={14} className={`mt-0.5 ${subIsOpen ? "text-indigo-600" : "text-gray-300"}`} />
                               <div className="space-y-0.5">
-                                <h4 className={`text-sm font-medium ${subIsOpen ? "text-indigo-900" : "text-gray-700"}`}>
-                                  {sub.title}
-                                </h4>
+                                <h4 className={`text-sm font-medium ${subIsOpen ? "text-indigo-900" : "text-gray-700"}`}>{sub.title}</h4>
                                 <p className="text-[10px] text-gray-400">{sub.description}</p>
                               </div>
                             </button>
@@ -274,33 +445,39 @@ export default function CourseModules({
                             <div className="mt-3 space-y-2">
                               {sub.videos && sub.videos.length > 0 ? (
                                 sub.videos.map((v, vIdx) => {
-                                  const videoKey = `${subKey}-vid-${vIdx}`;
+                                  // find global flat entry
+                                  const flat = flatVideos.find(
+                                    (fv) => fv.moduleIndex === moduleIndex && fv.subIndex === subIndex && fv.videoIndex === vIdx
+                                  );
+                                  const videoKey = flat?.key ?? `${moduleKey}-sub-${subIndex}-vid-${vIdx}`;
+                                  const globalIndex = videoKeyToGlobalIndex.get(videoKey) ?? -1;
                                   const isVideoActive = activeVideoKey === videoKey;
 
-                                  // sequential-play logic:
-                                  // - video already completed -> allow (replay)
-                                  // - videoIndex === 0 -> allow
-                                  // - otherwise allow only if previous index completed
-                                  const completed = moduleId ? (progress?.[moduleId] ?? []) : [];
-                                  const alreadyCompleted = completed.includes(vIdx);
-                                  const prevCompleted = vIdx === 0 ? true : completed.includes(vIdx - 1);
-                                  const canPlay = alreadyCompleted || prevCompleted;
+                                  // check completion and sequential rules
+                                  const alreadyCompleted = globalIndex >= 0 && completedSet.has(globalIndex);
+                                  const previousAllCompleted = areAllPreviousCompleted(globalIndex);
+                                  const freePreview = isVideoFreePreview(globalIndex);
+
+                                  // canPlay: either replay already completed OR previous videos all completed AND (module unlocked OR free preview)
+                                  const canPlay = alreadyCompleted || (previousAllCompleted && (moduleUnlocked || freePreview));
 
                                   return (
                                     <div
                                       key={videoKey}
                                       className={`flex items-center justify-between gap-3 p-2 rounded-md transition ${
                                         isVideoActive ? "bg-indigo-100/60" : "hover:bg-gray-50"
-                                      } ${!isAllowed ? "opacity-50 pointer-events-none" : ""}`}
+                                      }`}
                                     >
                                       <div className="flex-1 text-left">
-                                        <div className={`text-sm font-medium ${isVideoActive ? "text-indigo-900" : "text-gray-800"}`}>
-                                          {v.title}
-                                        </div>
+                                        <div className={`text-sm font-medium ${isVideoActive ? "text-indigo-900" : "text-gray-800"}`}>{v.title}</div>
                                         {isVideoActive && v.url && <div className="text-xs text-gray-500 mt-1">Playing: {v.title}</div>}
-                                        {!canPlay && isAllowed && (
+                                        {!canPlay && moduleUnlocked && (
                                           <div className="text-xs text-rose-600 mt-1">Complete previous video to unlock this</div>
                                         )}
+                                        {!canPlay && !moduleUnlocked && freePreview && (
+                                          <div className="text-xs text-rose-600 mt-1">Complete previous video to unlock this preview</div>
+                                        )}
+                                        {alreadyCompleted && <div className="text-xs text-green-600 mt-1">Completed</div>}
                                       </div>
 
                                       <div className="flex items-center gap-2">
@@ -308,20 +485,17 @@ export default function CourseModules({
                                           <button
                                             type="button"
                                             onClick={() => {
-                                              if (!isAllowed) {
-                                                console.log("Attempt to play video on locked module:", moduleId);
-                                                return;
-                                              }
                                               if (!canPlay) {
-                                                console.log("Attempt to play video before previous completed:", {
-                                                  moduleId,
+                                                console.log("Attempt to play video before allowed:", {
+                                                  moduleId: module.moduleId,
                                                   videoIndex: vIdx,
+                                                  globalIndex,
                                                 });
                                                 return;
                                               }
 
                                               console.log(`▶ Play clicked: module=${moduleKey} sub=${subKey} video=${videoKey}`, {
-                                                moduleId,
+                                                moduleId: module.moduleId,
                                                 moduleName: module.name,
                                                 submoduleId: sub.submoduleId,
                                                 submoduleTitle: sub.title,
@@ -329,15 +503,25 @@ export default function CourseModules({
                                                 videoTitle: v.title,
                                                 videoUrl: v.url,
                                                 videoIndex: vIdx,
+                                                globalIndex,
+                                                freePreview,
+                                                moduleUnlocked,
+                                                alreadyCompleted,
                                               });
 
                                               setActiveVideoKey(videoKey);
-                                              onPlayVideo(v.url!, v.title, moduleId || undefined, vIdx);
+                                              onPlayVideo(v.url!, v.title, module.moduleId || undefined, vIdx);
+
+                                              // If it's a preview (module locked & within FREE_PREVIEW_COUNT) mark guest completion
+                                              if (!moduleUnlocked && freePreview && globalIndex >= 0) {
+                                                // mark guest completion immediately (or replace with onVideoComplete hook if desired)
+                                                markGuestCompleted(globalIndex);
+                                              }
                                             }}
                                             className={`text-[11px] font-semibold ${
                                               canPlay ? "text-indigo-600 hover:text-indigo-800" : "text-gray-300 cursor-not-allowed"
                                             } uppercase tracking-wider`}
-                                            disabled={!canPlay || !isAllowed}
+                                            disabled={!canPlay}
                                           >
                                             Play
                                           </button>
@@ -345,6 +529,39 @@ export default function CourseModules({
                                           <span className="text-xs text-gray-300">No URL</span>
                                         )}
                                       </div>
+
+                                      {/* Render CTA directly under the 5th video (global index FREE_PREVIEW_COUNT-1)
+                                          Now: CTA only rendered if first video is completed (hasCompletedFirstVideo) */}
+                                      {globalIndex === FREE_PREVIEW_COUNT - 1 && hasCompletedFirstVideo && (
+                                        <div className="w-full mt-3">
+                                          {isPaidUser ? (
+                                            <div className="flex items-center gap-3">
+                                              <button
+                                                onClick={handleBookMeet}
+                                                disabled={completedCount < FREE_PREVIEW_COUNT}
+                                                className={`px-3 py-2 rounded-md text-sm font-semibold ${
+                                                  completedCount >= FREE_PREVIEW_COUNT
+                                                    ? "bg-indigo-600 text-white hover:bg-indigo-700"
+                                                    : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                                                }`}
+                                              >
+                                                Book A meet with mentors
+                                              </button>
+                                              <span className="text-xs text-gray-400">({completedCount}/{FREE_PREVIEW_COUNT} completed)</span>
+                                            </div>
+                                          ) : (
+                                            <div className="flex items-center gap-3">
+                                              <button
+                                                onClick={handleJoinFullCourse}
+                                                className="px-3 py-2 rounded-md text-sm font-semibold bg-amber-500 text-white hover:bg-amber-600"
+                                              >
+                                                Join Full course
+                                              </button>
+                                              <span className="text-xs text-gray-400">Unlock the full course and mentoring</span>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 })

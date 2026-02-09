@@ -314,10 +314,10 @@ export default function StudentDashboardLMS(): React.ReactElement {
 
   /* ---------- UI ---------- */
   return (
-    <div className="min-h-screen bg-slate-50 p-6">
+    <div className="min-h-screen bg-slate-50">
       {/* HERO */}
-      <div className="max-w-6xl mx-auto mb-8 bg-gradient-to-r from-indigo-600 to-indigo-400 text-white rounded-3xl shadow-lg overflow-hidden">
-        <div className="p-8 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+      <div className="max-w-full mx-auto mb-8 bg-gradient-to-r from-indigo-600 to-indigo-400 text-white shadow-lg overflow-hidden">
+        <div className="max-w-7xl  mx-auto p-8 flex flex-col md:flex-row md:items-center md:justify-between gap-6">
           <div className="flex items-center gap-4">
             <div className="bg-white/10 rounded-full p-4">
               <User size={36} />
