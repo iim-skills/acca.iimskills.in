@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import CourseModules from "../CourseModules";
 import {
@@ -70,9 +70,17 @@ export default function StudentDashboardLMS(): React.ReactElement {
   const [activeModuleId, setActiveModuleId] = useState<string | null>(null);
   const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
   const [activeSubmoduleTitle, setActiveSubmoduleTitle] = useState<string | null>(null);
-  const [activeVideoIndex, setActiveVideoIndex] = useState<number | null>(null);
- 
-  
+
+  // global index of the currently playing video (flattened index)
+  const [activeGlobalIndex, setActiveGlobalIndex] = useState<number | null>(null);
+
+  // resume time (seconds) and autoplay flag when starting a video
+  const [resumeAt, setResumeAt] = useState<number>(0);
+  const [autoplayFlag, setAutoplayFlag] = useState<boolean>(false);
+
+  // video element refs & tracking
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const lastSavedRef = useRef<number>(0);
 
   // --- helpers ---
   const parseStudentModules = (s: any): string[] => {
@@ -93,14 +101,8 @@ export default function StudentDashboardLMS(): React.ReactElement {
   // Convert incoming URL to playable form (local mp4, absolute mp4, or youtube embed)
   const toPlayableUrl = (url?: string | null): string | null => {
     if (!url) return null;
-
-    // local path (starts with /) — return as-is
     if (url.startsWith("/")) return url;
-
-    // absolute mp4/webm/ogg
     if (url.match(/\.(mp4|webm|ogg)(\?.*)?$/i)) return url;
-
-    // attempt youtube parsing
     try {
       const u = new URL(url);
       const host = u.hostname.replace("www.", "");
@@ -113,46 +115,33 @@ export default function StudentDashboardLMS(): React.ReactElement {
         if (id) return `https://www.youtube.com/embed/${id}`;
       }
     } catch {
-      // if URL constructor fails, return the string (may be relative)
       return url;
     }
-
-    // fallback: return original
     return url;
   };
 
   function toEmbedUrl(url?: string | null): string | null {
-  if (!url) return null;
-
-  try {
-    const u = new URL(url);
-    const host = u.hostname.replace("www.", "");
-
-    // YouTube long URL
-    if (host.includes("youtube.com")) {
-      const v = u.searchParams.get("v");
-      if (v) return `https://www.youtube.com/embed/${v}`;
+    if (!url) return null;
+    try {
+      const u = new URL(url);
+      const host = u.hostname.replace("www.", "");
+      if (host.includes("youtube.com")) {
+        const v = u.searchParams.get("v");
+        if (v) return `https://www.youtube.com/embed/${v}`;
+      }
+      if (host.includes("youtu.be")) {
+        const id = u.pathname.slice(1);
+        if (id) return `https://www.youtube.com/embed/${id}`;
+      }
+      if (host.includes("vimeo.com")) {
+        const id = u.pathname.split("/").pop();
+        if (id) return `https://player.vimeo.com/video/${id}`;
+      }
+    } catch {
+      // not a valid URL → probably mp4 or local file
     }
-
-    // YouTube short URL
-    if (host.includes("youtu.be")) {
-      const id = u.pathname.slice(1);
-      if (id) return `https://www.youtube.com/embed/${id}`;
-    }
-
-    // Vimeo
-    if (host.includes("vimeo.com")) {
-      const id = u.pathname.split("/").pop();
-      if (id) return `https://player.vimeo.com/video/${id}`;
-    }
-  } catch {
-    // not a valid URL → probably mp4 or local file
+    return url;
   }
-
-  // mp4 / webm / already-embed → return as-is
-  return url;
-}
-
 
   /* ---------- LOAD STUDENT ---------- */
   useEffect(() => {
@@ -172,7 +161,6 @@ export default function StudentDashboardLMS(): React.ReactElement {
       return;
     }
 
-    // allow only student sessions here
     if (parsed.loginType !== "student" && parsed.role !== "student") {
       router.push("/");
       return;
@@ -217,38 +205,211 @@ export default function StudentDashboardLMS(): React.ReactElement {
     }
 
     async function fetchCourse() {
-  setLoadingCourse(true);
+      setLoadingCourse(true);
 
-  try {
-    const res = await fetch("/api/student/course");
-    if (!res.ok) throw new Error("Course API failed");
+      try {
+        const res = await fetch("/api/student/course");
+        if (!res.ok) throw new Error("Course API failed");
 
-    const list = await res.json();
+        const list = await res.json();
+        console.log("📚 Courses from API:", list);
 
-    console.log("📚 Courses from API:", list);
+        if (!Array.isArray(list) || !list.length) {
+          throw new Error("No courses returned");
+        }
 
-    if (!Array.isArray(list) || !list.length) {
-      throw new Error("No courses returned");
+        const selected = list[0]; // FORCE FIRST COURSE for now
+        console.log("🎯 Selected course:", selected);
+        setCourse(selected);
+      } catch (err) {
+        console.error("❌ Failed to load course:", err);
+        setCourse(null);
+      } finally {
+        setLoadingCourse(false);
+      }
     }
-
-    const selected = list[0]; // ✅ FORCE FIRST COURSE
-
-    console.log("🎯 Selected course:", selected);
-    console.log("🧩 Modules:", selected.modules);
-
-    setCourse(selected);
-  } catch (err) {
-    console.error("❌ Failed to load course:", err);
-    setCourse(null);
-  } finally {
-    setLoadingCourse(false);
-  }
-}
-
 
     fetchCourse();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [courseSlug, /* studentModulesRaw intentionally not included to avoid extra fetch loops */]);
+  }, [courseSlug]);
+
+  /* ---------- PLAY / PROGRESS HELPERS ---------- */
+
+  // Flatten course videos to compute globalIndex by url
+  const flattenVideosForIndex = useCallback(() => {
+    const out: Array<{ url?: string; moduleId?: string; submoduleId?: string; title?: string }> = [];
+    if (!course?.modules) return out;
+    for (let mi = 0; mi < course.modules.length; mi++) {
+      const m = course.modules[mi];
+      const submodules = m.submodules ?? [];
+      for (let si = 0; si < submodules.length; si++) {
+        const s = submodules[si];
+        const vids = s.videos ?? [];
+        for (let vi = 0; vi < vids.length; vi++) {
+          out.push({ url: vids[vi].url, moduleId: m.moduleId, submoduleId: s.submoduleId, title: vids[vi].title });
+        }
+      }
+    }
+    return out;
+  }, [course]);
+
+  const findGlobalIndexByUrl = useCallback(
+    (url?: string | null) => {
+      if (!course || !url) return -1;
+      const flat = flattenVideosForIndex();
+      // compare raw strings; allow trailing slashes or query differences by simple normalization
+      const normalize = (u?: string | null) => (u ? u.replace(/\/+$/, "").trim() : "");
+      const target = normalize(url);
+      for (let i = 0; i < flat.length; i++) {
+        if (normalize(flat[i].url) === target) return i;
+      }
+      // fallback: try matching endsWith (sometimes with signed urls)
+      for (let i = 0; i < flat.length; i++) {
+        if (flat[i].url && url && (flat[i].url as string).endsWith(url) || (url as string).endsWith(flat[i].url || "")) {
+          return i;
+        }
+      }
+      return -1;
+    },
+    [course, flattenVideosForIndex]
+  );
+
+  // ensure userKey in localStorage
+  const getUserKey = (): string => {
+    try {
+      let k = localStorage.getItem("course_user_key");
+      if (!k) {
+        k = crypto.randomUUID();
+        localStorage.setItem("course_user_key", k);
+      }
+      return k;
+    } catch {
+      return "guest-" + Date.now();
+    }
+  };
+
+  // Report progress to server (guest flow)
+  const reportProgress = useCallback(
+    async (globalIndex: number, positionSeconds: number, completed?: boolean) => {
+      try {
+        if (!course?.courseId) return;
+        const userKey = getUserKey();
+        console.log("[StudentDashboard] reportProgress ->", { globalIndex, positionSeconds, completed, userKey, courseId: course.courseId });
+        await fetch("/api/course_progress", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userKey,
+            courseId: course.courseId,
+            globalIndex,
+            positionSeconds,
+            completed: Boolean(completed),
+          }),
+        });
+      } catch (err) {
+        console.error("[StudentDashboard] reportProgress error", err);
+      }
+    },
+    [course]
+  );
+
+  // Called by CourseModules when user clicks a video
+  const onPlayVideo = useCallback(
+    (videoUrl: string, title?: string, moduleId?: string, videoIndex?: number, options?: { resumeSeconds?: number; autoplay?: boolean }) => {
+      console.log("[StudentDashboard] onPlayVideo called", { videoUrl, moduleId, videoIndex, options });
+      if (!videoUrl) return;
+
+      // prefer embed URL for iframes (YouTube/Vimeo), otherwise use playable
+      const embed = toEmbedUrl(videoUrl);
+      const playable = toPlayableUrl(videoUrl);
+
+      // compute global index by matching URL in course
+      const gIndex = findGlobalIndexByUrl(videoUrl);
+      setActiveGlobalIndex(gIndex >= 0 ? gIndex : null);
+
+      // set resume/autoplay flags (CourseModules will pass resumeSeconds if available)
+      setResumeAt(options?.resumeSeconds ?? 0);
+      setAutoplayFlag(Boolean(options?.autoplay));
+
+      // set active video URL to embed (iframe) or playable (video tag)
+      // prefer embed for youtube/vimeo, otherwise playable (mp4)
+      if (embed && (embed.includes("youtube.com") || embed.includes("player.vimeo.com"))) {
+        setActiveVideoUrl(embed);
+      } else {
+        setActiveVideoUrl(playable);
+      }
+
+      // store which module is active (moduleId)
+      setActiveModuleId(moduleId ?? null);
+      setActiveSubmoduleTitle(title ?? null);
+    },
+    [findGlobalIndexByUrl]
+  );
+
+  /* ---------- NATIVE VIDEO EVENT HANDLERS ---------- */
+
+  // set resumeAt when video loads and optionally autoplay
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    // set resume when src changes
+    try {
+      // reset lastSaved to avoid immediate double save
+      lastSavedRef.current = 0;
+      if (resumeAt && resumeAt > 1) {
+        // clamp to duration after metadata loads
+        const onLoaded = () => {
+          try {
+            el.currentTime = Math.min(resumeAt, Math.floor(el.duration || resumeAt));
+            if (autoplayFlag) {
+              el.play().catch((e) => console.warn("[StudentDashboard] autoplay blocked", e));
+            }
+          } catch (err) {
+            // ignore
+          }
+        };
+        el.addEventListener("loadedmetadata", onLoaded, { once: true });
+        // clean
+        return () => el.removeEventListener("loadedmetadata", onLoaded);
+      } else {
+        if (autoplayFlag) {
+          el.play().catch((e) => console.warn("[StudentDashboard] autoplay blocked", e));
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [activeVideoUrl, resumeAt, autoplayFlag]);
+
+  // timeupdate -> throttle saves roughly every 5 seconds
+  const handleTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const el = e.currentTarget;
+    const now = Math.floor(el.currentTime || 0);
+    if (activeGlobalIndex === null) return;
+    if (Math.abs(now - lastSavedRef.current) >= 5) {
+      lastSavedRef.current = now;
+      console.log("[StudentDashboard] timeupdate report", { globalIndex: activeGlobalIndex, now });
+      reportProgress(activeGlobalIndex, now, false);
+    }
+  };
+
+  // on ended -> save final progress & dispatch completion event
+  const handleEnded = async () => {
+    if (activeGlobalIndex === null) return;
+    const dur = Math.floor(videoRef.current?.duration || 0);
+    console.log("[StudentDashboard] video ended", { globalIndex: activeGlobalIndex, dur });
+    // final save as completed
+    await reportProgress(activeGlobalIndex, dur, true);
+
+    // dispatch custom event so CourseModules can react (auto-play next)
+    const ev = new CustomEvent("lms_video_completed", { detail: { globalIndex: activeGlobalIndex } });
+    window.dispatchEvent(ev);
+  };
+
+  // For robustness: if user selects a new mp4 while an old one is playing, reset flags
+  useEffect(() => {
+    lastSavedRef.current = 0;
+  }, [activeGlobalIndex]);
 
   /* ---------- RENDER / GUARDS ---------- */
   if (loadingStudent || loadingCourse) {
@@ -259,7 +420,6 @@ export default function StudentDashboardLMS(): React.ReactElement {
     );
   }
 
-  // explicit guard: after loading is finished, if student is still null -> session expired
   if (student === null) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -268,51 +428,9 @@ export default function StudentDashboardLMS(): React.ReactElement {
     );
   }
 
-  // now TypeScript knows `student` is non-null below this point
   const studentModuleIds = parseStudentModules(student.modules);
-
-  // --- new: total modules count (safe)
   const totalModules = Array.isArray(course?.modules) ? course!.modules!.length : 0;
 
-  /* ---------- HANDLERS ---------- */
-  const handleModuleClick = (module: Module) => {
-    const idRaw = module.moduleId ?? module.slug ?? module.name;
-    const id = idRaw ? String(idRaw) : null;
-    if (!id) return;
-
-    const isActive = studentModuleIds.includes(id);
-    if (!isActive) return;
-
-    setActiveModuleId(id);
-
-    // try moduleVideo first, otherwise first submodule's first video
-    const video =
-      module.moduleVideo ??
-      module.submodules?.[0]?.videos?.[0]?.url ??
-      null;
-
-    setActiveVideoUrl(toPlayableUrl(video ?? null));
-    setActiveSubmoduleTitle(module.submodules?.[0]?.title ?? null);
-  };
-
-  const handleSubmoduleClick = (module: Module, sub: Submodule) => {
-    const moduleIdRaw = module.moduleId ?? module.slug ?? module.name;
-    const moduleId = moduleIdRaw ? String(moduleIdRaw) : null;
-    if (!moduleId) return;
-
-    const isActive = studentModuleIds.includes(moduleId);
-    if (!isActive) return;
-
-    setActiveModuleId(moduleId);
-
-    // choose first video from sub.videos
-    const videoUrl = sub.videos?.[0]?.url ?? null;
-
-    setActiveVideoUrl(toPlayableUrl(videoUrl ?? null));
-    setActiveSubmoduleTitle(sub.title ?? null);
-  };
-
-  /* ---------- UI ---------- */
   return (
     <div className="min-h-screen bg-slate-50">
       {/* HERO */}
@@ -369,20 +487,16 @@ export default function StudentDashboardLMS(): React.ReactElement {
             <h3 className="font-semibold mb-3">All Modules</h3>
 
             <div className="space-y-3 min-h-[70vh] overflow-y-auto pr-2">
-            <CourseModules
-  course={course}
-  allowedModules={studentModuleIds}
-  progress={student.progress ?? {}}
-  onPlayVideo={(url, title, moduleId, idx) => {
-    setActiveVideoUrl(toEmbedUrl(url));
-    setActiveSubmoduleTitle(title ?? null);
-    setActiveModuleId(moduleId ?? null);
-    setActiveVideoIndex(idx ?? null);
-  }}
-/>
-
-
-
+              <CourseModules
+                course={course}
+                allowedModules={studentModuleIds}
+                progress={student.progress ?? {}}
+                onPlayVideo={onPlayVideo}
+                onReportPlayerProgress={(globalIndex, positionSeconds, completed) => {
+                  // parent reportProgress used by CourseModules when it wants to save
+                  reportProgress(globalIndex, positionSeconds, completed);
+                }}
+              />
             </div>
           </div>
         </aside>
@@ -394,7 +508,8 @@ export default function StudentDashboardLMS(): React.ReactElement {
           <div className="bg-white rounded-2xl shadow p-4">
             <div className="w-full aspect-video bg-black rounded-xl overflow-hidden mb-4 flex items-center justify-center">
               {activeVideoUrl ? (
-                activeVideoUrl.includes("youtube.com/embed") ? (
+                // embed iframe (youtube/vimeo) or native video
+                activeVideoUrl.includes("youtube.com/embed") || activeVideoUrl.includes("player.vimeo.com") ? (
                   <iframe
                     src={activeVideoUrl}
                     title={activeSubmoduleTitle ?? activeModuleId ?? "Video"}
@@ -403,11 +518,18 @@ export default function StudentDashboardLMS(): React.ReactElement {
                     className="w-full h-full"
                   />
                 ) : activeVideoUrl.match(/\.(mp4|webm|ogg)(\?.*)?$/i) ? (
-                  <video controls className="w-full h-full">
+                  <video
+                    ref={videoRef}
+                    controls
+                    className="w-full h-full"
+                    onTimeUpdate={handleTimeUpdate}
+                    onEnded={handleEnded}
+                  >
                     <source src={activeVideoUrl} />
                     Your browser does not support the video tag.
                   </video>
                 ) : (
+                  // fallback embed (if some other embed URL)
                   <iframe src={activeVideoUrl} title="Video" className="w-full h-full" />
                 )
               ) : (
@@ -453,11 +575,23 @@ export default function StudentDashboardLMS(): React.ReactElement {
                       return mod.submodules.map((s) => {
                         const moduleIdRaw = mod.moduleId ?? mod.slug ?? mod.name;
                         const moduleId = moduleIdRaw ? String(moduleIdRaw) : "";
-                        const isActive = studentModuleIds.includes(moduleId);
+                        const isActive = parseStudentModules(student.modules).includes(moduleId);
                         return (
                           <div key={s.submoduleId ?? s.title} className={`w-full`}>
                             <button
-                              onClick={() => handleSubmoduleClick(mod, s)}
+                              onClick={() => {
+                                // call CourseModules handler via DOM? better to update state and let CourseModules selection be independent
+                                const moduleIdRaw2 = mod.moduleId ?? mod.slug ?? mod.name;
+                                const moduleId2 = moduleIdRaw2 ? String(moduleIdRaw2) : "";
+                                if (!isActive) return;
+                                setActiveModuleId(moduleId2);
+                                const firstVideo = s.videos?.[0]?.url ?? null;
+                                setActiveVideoUrl(toPlayableUrl(firstVideo));
+                                setActiveSubmoduleTitle(s.title ?? null);
+                                // compute global index
+                                const gIdx = findGlobalIndexByUrl(firstVideo);
+                                setActiveGlobalIndex(gIdx >= 0 ? gIdx : null);
+                              }}
                               className={`w-full text-left p-3 rounded-lg border ${isActive ? "hover:bg-indigo-50" : "opacity-60 cursor-not-allowed"}`}
                               disabled={!isActive}
                             >
@@ -479,6 +613,8 @@ export default function StudentDashboardLMS(): React.ReactElement {
                                     onClick={() => {
                                       setActiveVideoUrl(toPlayableUrl(v.url ?? null));
                                       setActiveSubmoduleTitle(s.title ?? null);
+                                      const gIdx = findGlobalIndexByUrl(v.url ?? null);
+                                      setActiveGlobalIndex(gIdx >= 0 ? gIdx : null);
                                     }}
                                     className="text-sm text-indigo-600 hover:underline"
                                   >
@@ -506,7 +642,7 @@ export default function StudentDashboardLMS(): React.ReactElement {
                     {course?.modules?.slice(0, 6).map((m) => {
                       const idRaw = m.moduleId ?? m.slug ?? m.name;
                       const id = idRaw ? String(idRaw) : "";
-                      const isActive = studentModuleIds.includes(id);
+                      const isActive = parseStudentModules(student.modules).includes(id);
                       return (
                         <div key={String(id)} className="flex items-center justify-between text-sm">
                           <div className="truncate">{m.name}</div>
