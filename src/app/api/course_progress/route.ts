@@ -1,4 +1,3 @@
-// src/app/api/course_progress/route.ts
 import { NextResponse } from "next/server";
 import mysql from "mysql2/promise";
 
@@ -12,10 +11,9 @@ const pool = mysql.createPool({
   connectionLimit: 10,
 });
 
-/**
- * GET /api/course_progress?courseId=...&userKey=...    (guest)
- * GET /api/course_progress?courseId=...&studentId=... (logged)
- */
+/* ===================================================
+   GET PROGRESS
+=================================================== */
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -26,106 +24,159 @@ export async function GET(req: Request) {
     if (!courseId) return NextResponse.json([], { status: 200 });
 
     if (userKey) {
-      // guest flow
       const [rows]: any = await pool.query(
-        `SELECT global_index, position_sec, completed
+        `SELECT video_id, position_sec, completed, updated_at
          FROM course_progress
          WHERE course_id = ? AND user_key = ?
-         ORDER BY global_index ASC`,
+         LIMIT 1`,
         [courseId, userKey]
       );
-      return NextResponse.json(
-        rows.map((r: any) => ({
-          globalIndex: r.global_index,
-          positionSeconds: r.position_sec,
-          completed: r.completed === 1,
-        }))
-      );
-    } else if (studentId) {
-      // logged-in flow
+
+      if (!rows.length) return NextResponse.json([]);
+
+      const row = rows[0];
+      const list =
+        row.video_id?.split(",").map((v: string) => v.trim()) ?? [];
+
+      return NextResponse.json({
+        videos: list,
+        positionSeconds: row.position_sec,
+        completed: row.completed === 1,
+        updatedAt: row.updated_at,
+      });
+    }
+
+    if (studentId) {
       const [rows]: any = await pool.query(
-        `SELECT module_id, video_index, position_seconds, completed
+        `SELECT video_id, position_seconds, completed, updated_at
          FROM lms_video_progress
          WHERE course_id = ? AND student_id = ?
-         ORDER BY module_id ASC, video_index ASC`,
+         LIMIT 1`,
         [courseId, studentId]
       );
-      // normalize to global index style is not possible here (we return module/video keys)
-      return NextResponse.json(
-        rows.map((r: any) => ({
-          moduleId: r.module_id,
-          videoIndex: r.video_index,
-          positionSeconds: r.position_seconds,
-          completed: r.completed === 1,
-        }))
-      );
-    } else {
-      // nothing to query
-      return NextResponse.json([], { status: 200 });
+
+      if (!rows.length) return NextResponse.json([]);
+
+      const row = rows[0];
+      const list =
+        row.video_id?.split(",").map((v: string) => v.trim()) ?? [];
+
+      return NextResponse.json({
+        videos: list,
+        positionSeconds: row.position_seconds,
+        completed: row.completed === 1,
+        updatedAt: row.updated_at,
+      });
     }
+
+    return NextResponse.json([]);
   } catch (err) {
     console.error("GET /api/course_progress ERROR:", err);
     return NextResponse.json({ error: "internal" }, { status: 500 });
   }
 }
 
-/**
- * POST /api/course_progress
- * Body either:
- *  - { userKey, courseId, globalIndex, positionSeconds, completed }  // guest
- *  - { studentId, courseId, moduleId, videoIndex, positionSeconds, completed } // logged
- */
+/* ===================================================
+   POST PROGRESS (SINGLE ROW MODE)
+=================================================== */
 export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    // Guest flow
+    /* ============================
+       GUEST USER FLOW
+    ============================ */
     if (body.userKey) {
       const userKey = String(body.userKey || "");
       const courseId = String(body.courseId || "");
-      const globalIndex = Number(body.globalIndex);
+      const videoId = String(body.videoId || "");
       const positionSeconds = Number(body.positionSeconds ?? 0);
       const completed = body.completed ? 1 : 0;
 
-      if (!userKey || !courseId || Number.isNaN(globalIndex)) {
+      if (!userKey || !courseId || !videoId) {
         return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
       }
 
+      /* ---- STEP 1: get existing row ---- */
+      const [rows]: any = await pool.query(
+        `SELECT video_id FROM course_progress
+         WHERE user_key = ? AND course_id = ?
+         LIMIT 1`,
+        [userKey, courseId]
+      );
+
+      let videoList: string[] = [];
+
+      if (rows.length && rows[0].video_id) {
+        videoList = rows[0].video_id.split(",").map((v: string) => v.trim());
+      }
+
+      /* ---- STEP 2: add video if not exists ---- */
+      if (!videoList.includes(videoId)) {
+        videoList.push(videoId);
+      }
+
+      const newVideoString = videoList.join(",");
+
+      /* ---- STEP 3: UPSERT SAME ROW ---- */
       await pool.query(
-        `INSERT INTO course_progress (user_key, course_id, global_index, position_sec, completed)
-         VALUES (?, ?, ?, ?, ?)
+        `INSERT INTO course_progress
+         (user_key, course_id, video_id, position_sec, completed, updated_at)
+         VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
          ON DUPLICATE KEY UPDATE
+           video_id = VALUES(video_id),
            position_sec = VALUES(position_sec),
            completed = VALUES(completed),
            updated_at = CURRENT_TIMESTAMP`,
-        [userKey, courseId, globalIndex, positionSeconds, completed]
+        [userKey, courseId, newVideoString, positionSeconds, completed]
       );
 
       return NextResponse.json({ success: true });
     }
 
-    // Logged-in flow
+    /* ============================
+       LOGGED IN STUDENT FLOW
+    ============================ */
     if (body.studentId) {
       const studentId = Number(body.studentId);
       const courseId = String(body.courseId || "");
-      const moduleId = String(body.moduleId || "");
-      const videoIndex = Number(body.videoIndex);
+      const videoId = String(body.videoId || "");
       const positionSeconds = Number(body.positionSeconds ?? 0);
       const completed = body.completed ? 1 : 0;
 
-      if (!studentId || !courseId || !moduleId || Number.isNaN(videoIndex)) {
+      if (!studentId || !courseId || !videoId) {
         return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
       }
 
+      const [rows]: any = await pool.query(
+        `SELECT video_id FROM lms_video_progress
+         WHERE student_id = ? AND course_id = ?
+         LIMIT 1`,
+        [studentId, courseId]
+      );
+
+      let videoList: string[] = [];
+
+      if (rows.length && rows[0].video_id) {
+        videoList = rows[0].video_id.split(",").map((v: string) => v.trim());
+      }
+
+      if (!videoList.includes(videoId)) {
+        videoList.push(videoId);
+      }
+
+      const newVideoString = videoList.join(",");
+
       await pool.query(
         `INSERT INTO lms_video_progress
-         (student_id, course_id, module_id, video_index, position_seconds, completed)
-         VALUES (?, ?, ?, ?, ?, ?)
+         (student_id, course_id, video_id, position_seconds, completed, updated_at)
+         VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
          ON DUPLICATE KEY UPDATE
+           video_id = VALUES(video_id),
            position_seconds = VALUES(position_seconds),
            completed = VALUES(completed),
            updated_at = CURRENT_TIMESTAMP`,
-        [studentId, courseId, moduleId, videoIndex, positionSeconds, completed]
+        [studentId, courseId, newVideoString, positionSeconds, completed]
       );
 
       return NextResponse.json({ success: true });

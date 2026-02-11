@@ -69,22 +69,24 @@ const GUEST_PROGRESS_KEY = (courseId: string) => `guest_progress_${courseId || "
 
 /* ===========================
    Helper: flatten videos -> global indexing
+   Accepts Course | null to avoid TS null issues
    =========================== */
-function flattenCourseVideos(course: Course) {
+function flattenCourseVideos(course: Course | null) {
   const out: Array<{
-  moduleIndex: number;
-  subIndex: number;
-  videoIndex: number;
-  moduleId?: string;
-  submoduleId?: string;
-  videoId?: string;   // NEW
-  title?: string;
-  url?: string;
-  key: string;
-}
-> = [];
+    moduleIndex: number;
+    subIndex: number;
+    videoIndex: number;
+    moduleId?: string;
+    submoduleId?: string;
+    videoId?: string;
+    title?: string;
+    url?: string;
+    key: string;
+  }> = [];
 
-  course.modules?.forEach((m, mi) => {
+  if (!course?.modules) return out;
+
+  course.modules.forEach((m, mi) => {
     m.submodules?.forEach((s, si) => {
       s.videos?.forEach((v, vi) => {
         const moduleKeyPart = m.moduleId ?? `module-${mi}`;
@@ -97,9 +99,8 @@ function flattenCourseVideos(course: Course) {
           submoduleId: s.submoduleId,
           title: v.title,
           url: v.url,
-videoId: v.id,        // NEW
-key,
-
+          videoId: v.id,
+          key,
         });
       });
     });
@@ -129,6 +130,34 @@ export default function CourseModules({
   const [serverProgress, setServerProgress] = useState<Map<number, ProgressEntry>>(new Map());
   const saveTimersRef = useRef<Record<number, number | null>>({});
 
+  // detect free-login user (client-only)
+  const [isFreeLoggedIn, setIsFreeLoggedIn] = useState<boolean>(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("user");
+      if (raw) {
+        const u = JSON.parse(raw);
+        // we consider loginType 'guest' as free login (from your free login implementation)
+        if (u?.loginType === "guest" || u?.role === "guest" || u?.loginType === "free") {
+          setIsFreeLoggedIn(true);
+          return;
+        }
+      }
+      // fallback: if course_user_key exists and not a paid allowedModules array, treat as free
+      const ck = localStorage.getItem("course_user_key");
+      if (ck && (!allowedModules || allowedModules.length === 0)) {
+        setIsFreeLoggedIn(true);
+        return;
+      }
+      setIsFreeLoggedIn(false);
+    } catch {
+      setIsFreeLoggedIn(false);
+    }
+    // only run on mount and when allowedModules changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allowedModules.join?.(",")]);
+
   // normalize courseId to a guaranteed string
   const courseId = course?.courseId ?? "";
 
@@ -146,7 +175,23 @@ export default function CourseModules({
     }
   };
 
-  // fetch saved progress for guest userKey
+  // Auto-open first module + first submodule for free users
+  useEffect(() => {
+    if (!course?.modules?.length) return;
+    if (!isFreeLoggedIn) return;
+
+    const firstModule = course.modules[0];
+    const firstModuleKey = firstModule.moduleId ?? `module-0`;
+
+    setOpenModuleId(firstModuleKey);
+    if (firstModule.submodules?.length) {
+      setOpenSubKey(`${firstModuleKey}-sub-0`);
+    } else {
+      setOpenSubKey(null);
+    }
+  }, [course, isFreeLoggedIn]);
+
+  // fetch saved progress for guest userKey (GET supports video_id + legacy)
   useEffect(() => {
     if (!courseId) return;
     let mounted = true;
@@ -159,11 +204,40 @@ export default function CourseModules({
           console.warn("[CourseModules] fetch progress returned not ok:", res.status, await res.text());
           return;
         }
-        const data = (await res.json()) as Array<{ globalIndex: number; positionSeconds: number; completed: boolean }>;
+        const data = (await res.json()) as Array<any>;
         console.log("[CourseModules] fetched progress:", data);
         if (!mounted) return;
+
+        // Build a map from videoId -> globalIndex for mapping server responses that return video_id
+        const flat = flattenCourseVideos(course);
+        const videoIdToGlobalIndex = new Map<string, number>();
+        flat.forEach((fv, idx) => {
+          if (fv.videoId) videoIdToGlobalIndex.set(fv.videoId, idx);
+        });
+
         const map = new Map<number, ProgressEntry>();
-        data.forEach((d) => map.set(d.globalIndex, { positionSeconds: d.positionSeconds, completed: d.completed }));
+        data.forEach((d) => {
+          // support both legacy (global_index / globalIndex) and new (video_id / videoId) shapes
+          let gIdx = -1;
+          if (typeof d.globalIndex === "number") {
+            gIdx = d.globalIndex;
+          } else if (typeof d.global_index === "number") {
+            gIdx = d.global_index;
+          } else if (d.videoId || d.video_id) {
+            const vid = d.videoId ?? d.video_id;
+            const maybe = videoIdToGlobalIndex.get(vid);
+            if (typeof maybe === "number") gIdx = maybe;
+            else {
+              // fallback: try to find by matching string id on flat array
+              const findIdx = flat.findIndex((fv) => fv.videoId === vid);
+              if (findIdx >= 0) gIdx = findIdx;
+            }
+          }
+
+          if (gIdx >= 0) {
+            map.set(gIdx, { positionSeconds: Number(d.positionSeconds ?? d.position_seconds ?? 0), completed: Boolean(d.completed) });
+          }
+        });
         setServerProgress(map);
       } catch (err) {
         console.error("[CourseModules] error fetching progress:", err);
@@ -172,7 +246,7 @@ export default function CourseModules({
     return () => {
       mounted = false;
     };
-  }, [courseId]);
+  }, [courseId, course]);
 
   useEffect(() => {
     if (!courseId) {
@@ -220,13 +294,13 @@ export default function CourseModules({
 
   const flatVideos = useMemo(() => flattenCourseVideos(course), [course]);
   const globalIndexMap = useMemo(() => {
-  const map = new Map<string, number>();
-  flatVideos.forEach((v, idx) => {
-    const id = `${v.moduleId}__${v.submoduleId}__${v.videoId}`;
-    map.set(id, idx);
-  });
-  return map;
-}, [flatVideos]);
+    const map = new Map<string, number>();
+    flatVideos.forEach((v, idx) => {
+      const id = `${v.moduleId}__${v.submoduleId}__${v.videoId}`;
+      map.set(id, idx);
+    });
+    return map;
+  }, [flatVideos]);
 
   const videoKeyToGlobalIndex = useMemo(() => {
     const map = new Map<string, number>();
@@ -342,17 +416,30 @@ export default function CourseModules({
     saveTimersRef.current[globalIndex] = window.setTimeout(async () => {
       try {
         const userKey = getUserKey();
-        console.log("[CourseModules] internal save: starting", { globalIndex, positionSeconds, completed, courseId, userKey });
+        // determine videoId for this globalIndex (if available)
+        const fv = flatVideos[globalIndex];
+        const videoId = fv?.videoId;
+
+        const payload: any = {
+          userKey,
+          courseId,
+          positionSeconds: Math.floor(Math.max(0, positionSeconds)),
+          completed,
+        };
+
+        if (videoId) {
+          // prefer new videoId flow
+          payload.videoId = videoId;
+        } else {
+          // fallback to legacy globalIndex
+          payload.globalIndex = globalIndex;
+        }
+
+        console.log("[CourseModules] internal save: starting", { globalIndex, positionSeconds, completed, courseId, userKey, payload });
         const res = await fetch("/api/course_progress", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userKey,
-            courseId,
-            globalIndex,
-            positionSeconds: Math.floor(Math.max(0, positionSeconds)),
-            completed,
-          }),
+          body: JSON.stringify(payload),
         });
 
         if (!res.ok) {
@@ -417,8 +504,16 @@ export default function CourseModules({
     console.log("[CourseModules] saving completed true", { globalIndex, resumeForSave });
     reportProgress(globalIndex, resumeForSave, true);
 
-    const nextIndex = globalIndex + 1;
-    if (nextIndex < flatVideos.length) {
+    // ⭐ find next UNCOMPLETED video instead of next index
+    let nextIndex = -1;
+    for (let i = globalIndex + 1; i < flatVideos.length; i++) {
+      if (!completedSet.has(i)) {
+        nextIndex = i;
+        break;
+      }
+    }
+
+    if (nextIndex !== -1 && nextIndex < flatVideos.length) {
       const nextFlat = flatVideos[nextIndex];
       const nextModuleIdx = nextFlat.moduleIndex;
       const nextModule = course.modules?.[nextModuleIdx];
@@ -455,6 +550,7 @@ export default function CourseModules({
             <Video size={14} /> Video Lessons
           </span>
 
+          {/* If paid user show Book Meet as before */}
           {isPaidUser && (
             <div className="ml-auto">
               <button
@@ -466,6 +562,19 @@ export default function CourseModules({
               </button>
             </div>
           )}
+
+          {/* If user is free-logged in show upgrade button */}
+          {isFreeLoggedIn && !isPaidUser && (
+            <div className="ml-auto">
+              <button
+                onClick={handleJoinFullCourse}
+                type="button"
+                className="px-3 py-2 bg-amber-500 text-white text-sm font-semibold rounded-md hover:bg-amber-600 focus:outline-none"
+              >
+                Upgrade your Access
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -474,10 +583,16 @@ export default function CourseModules({
         {course.modules.map((module, moduleIndex) => {
           const moduleKey = module.moduleId ?? `module-${moduleIndex}`;
           const isOpen = openModuleId === moduleKey;
-          const moduleUnlocked = Boolean(
-            (module.moduleId && (unlockedModulesSet.has(module.moduleId) || allowedSet.has(module.moduleId))) ||
-              (!module.moduleId && unlockedModulesSet.has(moduleKey))
-          );
+
+          // ⭐ Module unlocked logic:
+          // - If free logged in => only first module (index 0) unlocked
+          // - Otherwise use existing allowed modules logic
+          const moduleUnlocked = isFreeLoggedIn
+            ? moduleIndex === 0 // only first module unlocked for free users
+            : Boolean(
+                (module.moduleId && (unlockedModulesSet.has(module.moduleId) || allowedSet.has(module.moduleId))) ||
+                  (!module.moduleId && unlockedModulesSet.has(moduleKey))
+              );
 
           return (
             <div key={moduleKey} className="border border-gray-200 rounded-lg overflow-hidden bg-white">
@@ -587,6 +702,7 @@ export default function CourseModules({
                                   const previousAllCompleted = areAllPreviousCompleted(globalIndex);
                                   const freePreview = isVideoFreePreview(globalIndex);
 
+                                  // allow playing if already completed OR previousAllCompleted AND (moduleUnlocked OR freePreview)
                                   const canPlay = alreadyCompleted || (previousAllCompleted && (moduleUnlocked || freePreview));
 
                                   return (

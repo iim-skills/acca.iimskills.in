@@ -167,27 +167,42 @@ export default function StudentDashboardLMS(): React.ReactElement {
     }
 
     async function fetchStudent() {
-      setLoadingStudent(true);
-      try {
-        const res = await fetch("/api/student/me", {
-          headers: { "x-user-email": parsed.email },
-        });
+  setLoadingStudent(true);
 
-        if (!res.ok) {
-          throw new Error("Failed to fetch student data");
-        }
+  try {
+    const res = await fetch("/api/student/me", {
+      headers: { "x-user-email": parsed.email },
+    });
 
-        const data: StudentAPIResp = await res.json();
-        setStudent(data);
-      } catch (err) {
-        console.error("Failed to load student", err);
-        localStorage.removeItem("user");
-        sessionStorage.removeItem("user");
-        router.push("/");
-      } finally {
-        setLoadingStudent(false);
-      }
+    if (!res.ok) {
+      throw new Error("Failed to fetch student data");
     }
+
+    const data: StudentAPIResp = await res.json();
+
+    // ✅ set student state
+    setStudent(data);
+
+    // ✅ SAVE EMAIL AS user_key (IMPORTANT PART)
+    try {
+      if (data?.email) {
+        const emailKey = String(data.email).trim().toLowerCase();
+        localStorage.setItem("course_user_key", emailKey);
+      }
+    } catch {
+      // ignore storage error
+    }
+
+  } catch (err) {
+    console.error("Failed to load student", err);
+    localStorage.removeItem("user");
+    sessionStorage.removeItem("user");
+    router.push("/");
+  } finally {
+    setLoadingStudent(false);
+  }
+}
+
 
     fetchStudent();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -235,9 +250,9 @@ export default function StudentDashboardLMS(): React.ReactElement {
 
   /* ---------- PLAY / PROGRESS HELPERS ---------- */
 
-  // Flatten course videos to compute globalIndex by url
+  // Flatten course videos to compute globalIndex by url & preserve id
   const flattenVideosForIndex = useCallback(() => {
-    const out: Array<{ url?: string; moduleId?: string; submoduleId?: string; title?: string }> = [];
+    const out: Array<{ id?: string; url?: string; moduleId?: string; submoduleId?: string; title?: string }> = [];
     if (!course?.modules) return out;
     for (let mi = 0; mi < course.modules.length; mi++) {
       const m = course.modules[mi];
@@ -246,7 +261,7 @@ export default function StudentDashboardLMS(): React.ReactElement {
         const s = submodules[si];
         const vids = s.videos ?? [];
         for (let vi = 0; vi < vids.length; vi++) {
-          out.push({ url: vids[vi].url, moduleId: m.moduleId, submoduleId: s.submoduleId, title: vids[vi].title });
+          out.push({ id: vids[vi].id, url: vids[vi].url, moduleId: m.moduleId, submoduleId: s.submoduleId, title: vids[vi].title });
         }
       }
     }
@@ -265,7 +280,9 @@ export default function StudentDashboardLMS(): React.ReactElement {
       }
       // fallback: try matching endsWith (sometimes with signed urls)
       for (let i = 0; i < flat.length; i++) {
-        if (flat[i].url && url && (flat[i].url as string).endsWith(url) || (url as string).endsWith(flat[i].url || "")) {
+        const a = flat[i].url ?? "";
+        const b = url ?? "";
+        if ((a && b && (a.endsWith(b) || b.endsWith(a)))) {
           return i;
         }
       }
@@ -288,29 +305,46 @@ export default function StudentDashboardLMS(): React.ReactElement {
     }
   };
 
-  // Report progress to server (guest flow)
+  // Report progress to server (guest flow) — SENDS videoId when available
   const reportProgress = useCallback(
     async (globalIndex: number, positionSeconds: number, completed?: boolean) => {
       try {
         if (!course?.courseId) return;
         const userKey = getUserKey();
-        console.log("[StudentDashboard] reportProgress ->", { globalIndex, positionSeconds, completed, userKey, courseId: course.courseId });
+
+        // Map globalIndex -> videoId (if available) using the flattened list
+        const flat = flattenVideosForIndex();
+        let videoId: string | undefined;
+        if (typeof globalIndex === "number" && globalIndex >= 0 && globalIndex < flat.length) {
+          videoId = flat[globalIndex].id;
+        }
+
+        const payload: any = {
+          userKey,
+          courseId: course.courseId,
+          positionSeconds,
+          completed: Boolean(completed),
+        };
+
+        if (videoId) {
+          // prefer saving by videoId
+          payload.videoId = videoId;
+        } else {
+          // fallback to legacy globalIndex
+          payload.globalIndex = globalIndex;
+        }
+
+        console.log("[StudentDashboard] reportProgress ->", { globalIndex, positionSeconds, completed, userKey, courseId: course.courseId, payload });
         await fetch("/api/course_progress", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userKey,
-            courseId: course.courseId,
-            globalIndex,
-            positionSeconds,
-            completed: Boolean(completed),
-          }),
+          body: JSON.stringify(payload),
         });
       } catch (err) {
         console.error("[StudentDashboard] reportProgress error", err);
       }
     },
-    [course]
+    [course, flattenVideosForIndex]
   );
 
   // Called by CourseModules when user clicks a video
