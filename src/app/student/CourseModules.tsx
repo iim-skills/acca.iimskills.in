@@ -2,6 +2,8 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+
 import {
   ChevronDown,
   ChevronUp,
@@ -132,6 +134,13 @@ export default function CourseModules({
 
   // detect free-login user (client-only)
   const [isFreeLoggedIn, setIsFreeLoggedIn] = useState<boolean>(false);
+
+  const router = useRouter();
+
+const handleJoinFullCourse = () => {
+  router.push("/enroll"); // 👈 your enroll page route
+};
+
 
   useEffect(() => {
     try {
@@ -474,9 +483,7 @@ export default function CourseModules({
     setMeetModalOpen(true);
   };
 
-  const handleJoinFullCourse = () => {
-    window.location.href = "https://your-site.example.com/join-full-course";
-  };
+   
 
   const hasCompletedFirstVideo = completedSet.has(0);
 
@@ -566,14 +573,15 @@ export default function CourseModules({
           {/* If user is free-logged in show upgrade button */}
           {isFreeLoggedIn && !isPaidUser && (
             <div className="ml-auto">
-              <button
-                onClick={handleJoinFullCourse}
-                type="button"
-                className="px-3 py-2 bg-amber-500 text-white text-sm font-semibold rounded-md hover:bg-amber-600 focus:outline-none"
-              >
-                Upgrade your Access
-              </button>
-            </div>
+  <button
+    onClick={handleJoinFullCourse}
+    type="button"
+    className="px-3 py-2 bg-amber-500 text-white text-sm font-semibold rounded-md hover:bg-amber-600 focus:outline-none"
+  >
+    Upgrade your Access
+  </button>
+</div>
+
           )}
         </div>
       </div>
