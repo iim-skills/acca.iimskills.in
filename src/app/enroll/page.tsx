@@ -142,10 +142,23 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
     }
   };
 
-  /* ---------- Price calculations ---------- */
-  const modulesSubtotal = selectedModules.length * PER_MODULE_PRICE;
-  const gstAmount = Math.round(modulesSubtotal * GST_RATE);
-  const totalFee = modulesSubtotal + gstAmount;
+  /* ---------- Price calculations (with coupon support) ---------- */
+
+  // raw subtotal before coupons
+  const rawModulesSubtotal = selectedModules.length * PER_MODULE_PRICE;
+
+  // coupon-related states
+  const [couponCode, setCouponCode] = useState("");
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [couponError, setCouponError] = useState<string | null>(null);
+  const [appliedCoupon, setAppliedCoupon] = useState<any | null>(null);
+  const [discountAmount, setDiscountAmount] = useState<number>(0);
+  const [couponNote, setCouponNote] = useState<string | null>(null);
+
+  // compute discounted subtotal, gst, total
+  const discountedSubtotal = Math.max(0, rawModulesSubtotal - discountAmount);
+  const gstAmount = Math.round(discountedSubtotal * GST_RATE);
+  const totalFee = discountedSubtotal + gstAmount;
 
   /* ---------- Validation ---------- */
   const isFormValid = () => {
@@ -166,7 +179,165 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
       document.body.appendChild(script);
     });
 
-  /* ---------- Enrollment + Payment flow (unchanged) ---------- */
+  /* ---------- Coupon logic ---------- */
+
+  // When selectedModules change, auto-unapply coupon if it no longer meets requirements
+  useEffect(() => {
+    if (!appliedCoupon) return;
+
+    if (appliedCoupon.applicability === "single") {
+      // if coupon is bound to a specific module but that module is not selected -> unapply
+      if (appliedCoupon.moduleId && !selectedModules.includes(appliedCoupon.moduleId)) {
+        // unapply
+        setCouponError("Applied coupon no longer valid for current module selection and has been removed.");
+        removeCoupon();
+      }
+      // if coupon required single module and user now selected 0 modules -> unapply
+      if (selectedModules.length === 0) {
+        setCouponError("You removed all modules — coupon removed.");
+        removeCoupon();
+      }
+    }
+
+    if (appliedCoupon.applicability === "min_modules") {
+      const minReq = Number(appliedCoupon.minModules || 0);
+      if (selectedModules.length < minReq) {
+        setCouponError(`Coupon requires minimum ${minReq} modules — coupon removed.`);
+        removeCoupon();
+      }
+    }
+
+    // for 'all' coupons, no special checks
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedModules]);
+
+  async function applyCoupon() {
+    setCouponError(null);
+    setCouponLoading(true);
+    setCouponNote(null);
+
+    try {
+      if (!couponCode || !couponCode.trim()) {
+        setCouponError("Enter coupon code");
+        setCouponLoading(false);
+        return;
+      }
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email))) {
+        setCouponError("Provide a valid email before applying coupon");
+        setCouponLoading(false);
+        return;
+      }
+
+      // Build request for validation (recordNow: false)
+      // For single coupons, pass moduleId if available (prefer selected module when single)
+      let moduleIdToSend: string | undefined | null = null;
+      // If user selected at least one module, use first selected module for validation/capture for single coupons
+      if (selectedModules.length > 0) {
+        moduleIdToSend = selectedModules[0];
+      }
+
+      const body: any = {
+        code: couponCode.trim().toUpperCase(),
+        email: String(email).toLowerCase(),
+        selectedModulesCount: selectedModules.length,
+        recordNow: false,
+      };
+
+      // include moduleId if we have it (server expects it for single coupon checks)
+      if (moduleIdToSend) body.moduleId = moduleIdToSend;
+
+      const res = await fetch("/api/admin/coupons/redeem", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        setCouponError(data.error || "Invalid coupon");
+        setCouponLoading(false);
+        return;
+      }
+
+      // server returned coupon metadata in data.coupon
+      const coupon = data.coupon;
+      // Ensure we have modules selected for single coupon if needed
+      if (coupon.applicability === "single") {
+        if (coupon.moduleId) {
+          // coupon bound to a module — require this module be selected
+          if (!selectedModules.includes(coupon.moduleId)) {
+            setCouponError("This coupon is valid only for a specific module. Select that module before applying.");
+            setCouponLoading(false);
+            return;
+          }
+        } else {
+          // coupon allowed for any single module. If user selected multiple modules, we'll apply to first selected module.
+          if (selectedModules.length === 0) {
+            setCouponError("Select at least one module to use this single-module coupon.");
+            setCouponLoading(false);
+            return;
+          }
+          if (selectedModules.length > 1) {
+            setCouponNote("Coupon will be applied to the first selected module.");
+          }
+        }
+      }
+
+      if (coupon.applicability === "min_modules") {
+        const minReq = Number(coupon.minModules || 0);
+        if (selectedModules.length < minReq) {
+          setCouponError(`This coupon requires at least ${minReq} modules selected.`);
+          setCouponLoading(false);
+          return;
+        }
+      }
+
+      // Calculate discount amount client-side
+      let applicableAmount = 0;
+      if (coupon.applicability === "single") {
+        // single coupons apply to one module price
+        applicableAmount = PER_MODULE_PRICE;
+      } else {
+        // 'all' or 'min_modules' apply to full subtotal
+        applicableAmount = rawModulesSubtotal;
+      }
+
+      let calculatedDiscount = 0;
+      if (coupon.type === "percent") {
+        calculatedDiscount = Math.floor((Number(coupon.value) / 100) * applicableAmount);
+      } else {
+        // fixed - coupon.value is rupees, cap to applicableAmount
+        calculatedDiscount = Math.min(Number(coupon.value), applicableAmount);
+      }
+
+      // if discount is 0 or subtotal is 0 -> throw
+      if (calculatedDiscount <= 0) {
+        setCouponError("Coupon results in no discount for current selection.");
+        setCouponLoading(false);
+        return;
+      }
+
+      // Apply
+      setAppliedCoupon(coupon);
+      setDiscountAmount(calculatedDiscount);
+      setCouponError(null);
+    } catch (err) {
+      console.error("Coupon apply error:", err);
+      setCouponError("Failed to validate coupon. Try again.");
+    } finally {
+      setCouponLoading(false);
+    }
+  }
+
+  function removeCoupon() {
+    setAppliedCoupon(null);
+    setDiscountAmount(0);
+    setCouponCode("");
+    // leave couponError/note to show reason if any
+  }
+
+  /* ---------- Enrollment + Payment flow (modified to include coupon) ---------- */
   const handleSubmit = async () => {
     setError("");
 
@@ -198,6 +369,8 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
           courseTitle: availableCourse.name || availableCourse.title || "ACCA Skills Level",
           modules: selectedModules,
           enrolledBy: adminName ?? "Admin",
+          couponCode: appliedCoupon?.code ?? null, // pass coupon info to enrol record
+          couponDiscount: discountAmount || 0,
         }),
       });
 
@@ -226,17 +399,21 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
       }
 
       // 2) Create Razorpay order on server
+      // send final amount after coupon
+      const amountToCharge = Math.max(0, Math.round(totalFee * 100)); // paise - integer
       const orderRes = await fetch("/api/razorpay-order/", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          amount: totalFee * 100, // rupees to paise
+          amount: amountToCharge,
           name,
           email,
           phone,
           course: availableCourse.name,
           modules: selectedModules,
           enrolId: enrolData?.studentId ?? null,
+          couponCode: appliedCoupon?.code ?? null,
+          couponDiscount: discountAmount || 0,
         }),
       });
 
@@ -259,8 +436,30 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
         prefill: { name, email, contact: phone },
         handler: async function (paymentResponse: any) {
           try {
-            // Optionally verify server-side
-            // await fetch("/api/razorpay/verify", { method: "POST", headers: {'Content-Type':'application/json'}, body: JSON.stringify({ ...paymentResponse, enrolId: enrolData.studentId }) });
+            // After payment success — record coupon redemption (if any) server-side
+            if (appliedCoupon?.code) {
+              try {
+                await fetch("/api/admin/coupons/redeem", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    code: appliedCoupon.code,
+                    email: String(email).toLowerCase(),
+                    // For single coupon, record which module was used:
+                    moduleId:
+                      appliedCoupon.applicability === "single"
+                        ? appliedCoupon.moduleId ?? selectedModules[0]
+                        : null,
+                    selectedModulesCount: selectedModules.length,
+                    recordNow: true,
+                  }),
+                });
+              } catch (err) {
+                console.warn("Failed to record coupon redemption immediately:", err);
+                // Not fatal — admin verification can handle it
+              }
+            }
+
             alert("Payment successful! Enrollment completed.");
             onClose();
           } catch (err) {
@@ -332,7 +531,11 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
             {/* Form (step 1) */}
             {step === 1 && (
               <div className="space-y-6 animate-in slide-in-from-left-4">
-                <div className="text-lg font-bold text-indigo-700">1. Basic Details</div>
+                 
+                <div className="space-y-2">
+                  <div className="text-lg font-bold text-indigo-700">1. Basic Details</div>
+                  <div className="text-sm font-medium">Fill in required information so we can set up your learning access.</div>
+                  </div>
 
                 <div className="grid grid-cols-1 gap-4">
                   <div className="relative group">
@@ -350,9 +553,10 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
                     <input
                       placeholder="Academic Email Address"
                       type="email"
+                      disabled // disable if prefilled to ensure consistency with session/email used for coupon validation
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full pl-12 pr-4 py-4 rounded-2xl bg-slate-50 border border-transparent focus:bg-white focus:border-indigo-600 focus:ring-4 focus:ring-indigo-100 transition-all outline-none text-gray-900 font-medium"
+                      className="w-full pl-12 pr-4 py-4 rounded-2xl cursor-not-allowed bg-slate-50 border border-transparent focus:bg-white focus:border-indigo-600 focus:ring-4 focus:ring-indigo-100 transition-all outline-none text-gray-900 font-medium"
                     />
                   </div>
 
@@ -403,8 +607,8 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
               <div className=" space-y-6 animate-in slide-in-from-left-4">
                 <div className="flex items-end justify-between border-b border-gray-600 pb-2 border-dotted">
                   <div className="space-y-2">
-                  <div className="text-sm font-semibold">Select Modules</div>
-                  <div className="text-lg font-bold text-indigo-700">2. Select Modules You Want To Study</div>
+                  <div className="text-lg font-bold text-indigo-700">2. Select Modules</div>
+                  <div className="text-sm font-semibold">Select Modules You Want To Study</div>
                   </div>
                   {/* NEW: Select All / Deselect All button */}
                   <div>
@@ -486,7 +690,7 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
                   {/* <button
                     onClick={handleSubmit}
                     disabled={loading || selectedModules.length === 0 || !agreed}
-                    className={`flex-1 px-6 py-3 rounded-2xl text-white font-bold flex items-center justify-center gap-2 disabled:opacity-50 disabled:pointer-events-none ${
+                    className={`flex-1 px-6 py-3 rounded-2xl text-white font-bold flex items-center justify-center gap-2 disabled:opacity-50 disabled:pointer-events-none $|{
                       loading || selectedModules.length === 0 || !agreed ? "bg-emerald-400" : "bg-emerald-600 hover:bg-emerald-700"
                     }`}
                   >
@@ -498,7 +702,7 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
           </div>
 
           {/* Right: Order summary (narrow) */}
-          <aside className="w-[280px] min-w-[260px]">
+          <aside className="w-[280px] min-w-[350px]">
             <div className="p-5 rounded-xl border border-2 border-indigo-200 p-5 rounded-2xl bg-white sticky top-6">
               <div className="text-sm font-semibold">Order Summary</div>
               <h4 className="text-md font-bold text-indigo-700 mt-2">
@@ -513,7 +717,52 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
 
                 <div className="flex justify-between text-sm mt-2">
                   <span>Subtotal</span>
-                  <span>₹{modulesSubtotal.toLocaleString()}</span>
+                  <span>₹{rawModulesSubtotal.toLocaleString()}</span>
+                </div>
+
+                {/* Coupon input & status */}
+                <div className="mt-3">
+                  {!appliedCoupon ? (
+                    <>
+                      <div className="gap-2">
+                        <input
+                          placeholder="Coupon code"
+                          value={couponCode}
+                          onChange={(e) => setCouponCode(e.target.value)}
+                          className="w-full border px-2 py-1 rounded mb-3"
+                        />
+                        <button
+                          onClick={applyCoupon}
+                          disabled={couponLoading || !couponCode.trim()}
+                          className="px-3 py-1 mb-3 bg-indigo-600 text-white rounded disabled:opacity-60 disabled:pointer-events-none"
+                        >
+                          {couponLoading ? "Checking..." : "Apply Coupon"}
+                        </button>
+                      </div>
+                      {couponError && <div className="text-xs text-red-600 mt-1">{couponError}</div>}
+                      {couponNote && <div className="text-xs text-gray-600 mt-1">{couponNote}</div>}
+                    </>
+                  ) : (
+                    <div className="p-2 rounded bg-green-50 border border-green-100">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-semibold text-sm">Coupon applied: {appliedCoupon.code}</div>
+                          <div className="text-xs text-gray-600">
+                            {appliedCoupon.type === "percent" ? `${appliedCoupon.value}% off` : `₹${Number(appliedCoupon.value)}`}{" "}
+                            • {appliedCoupon.applicability === "single" ? "Single module" : appliedCoupon.applicability === "min_modules" ? `Min ${appliedCoupon.minModules} modules` : "All modules"}
+                          </div>
+                        </div>
+                        <div>
+                          <button onClick={removeCoupon} className="text-sm text-red-600 underline">Remove</button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-between text-sm mt-2">
+                  <span>Discount</span>
+                  <span className="text-red-600">- ₹{discountAmount.toLocaleString()}</span>
                 </div>
 
                 <div className="flex justify-between text-sm mt-1">

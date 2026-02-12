@@ -11,6 +11,7 @@ import { User2 } from "lucide-react";
 import LMSPage from "./StudentLIst";
 import DashboardHome from "./components/DashboardHome";
 import ProfilePage from "./profile/page";
+import CouponPage from "./coupons/page";
 
 /* ================= TYPES ================= */
 export interface User {
@@ -60,6 +61,7 @@ export default function AdminDashboard() {
   /* ---------- TABS ---------- */
   const tabs = [
     { key: "dashboard", name: "Dashboard", icon: <FaChartBar className="mr-2" /> },
+    { key: "coupon", name: "Coupons", icon: <FaChartBar className="mr-2" /> },
     { key: "lms", name: "LMS", icon: <FaFolderOpen className="mr-2" /> },
     { key: "profile", name: "My Profile", icon: <User2 className="mr-2" /> },
   ];
@@ -111,6 +113,7 @@ export default function AdminDashboard() {
       {/* MAIN CONTENT */}
       <main className="flex-1 p-6 overflow-y-auto">
         {active === "dashboard" && <DashboardHome />}
+        {active === "coupon" && <CouponPage />}
         {active === "lms" && <LMSPage />}
         {active === "profile" && <ProfilePage />}
       </main>
