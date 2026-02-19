@@ -1,19 +1,19 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { 
-  X, 
-  ArrowRight, 
-  Loader2, 
-  CheckCircle2, 
-  User, 
-  Mail, 
-  Phone as PhoneIcon, 
-  BookOpen, 
-  Check, 
-  ChevronRight, 
+import {
+  X,
+  ArrowRight,
+  Loader2,
+  CheckCircle2,
+  User,
+  Mail,
+  Phone as PhoneIcon,
+  BookOpen,
+  Check,
+  ChevronRight,
   GraduationCap,
-  Sparkles
+  Sparkles,
 } from "lucide-react";
 
 // react-phone-input-2
@@ -23,6 +23,16 @@ import "react-phone-input-2/lib/style.css";
 type EnrolModalProps = {
   onClose: () => void;
   adminName?: string;
+};
+
+type Batch = {
+  id: string | number;
+  name: string;
+  level?: string;
+  type?: string;
+  startDate: string; // YYYY-MM-DD
+  maxStudents: number;
+  currentStudents: number;
 };
 
 export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
@@ -42,6 +52,11 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
   const [availableCourse, setAvailableCourse] = useState<any | null>(null);
   const [modules, setModules] = useState<any[]>([]);
   const [selectedModules, setSelectedModules] = useState<string[]>([]);
+
+  // Batches
+  const [batches, setBatches] = useState<Batch[]>([]);
+  const [selectedBatchId, setSelectedBatchId] = useState<string | number | "">("");
+  const [batchesFetching, setBatchesFetching] = useState<boolean>(true);
 
   /* -------- LOAD COURSES / MODULES -------- */
   useEffect(() => {
@@ -67,6 +82,44 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
       });
   }, []);
 
+  /* -------- LOAD BATCHES -------- */
+  useEffect(() => {
+    const loadBatches = async () => {
+      setBatchesFetching(true);
+      try {
+        const res = await fetch("/api/admin/batches");
+        if (!res.ok) {
+          throw new Error("Failed to fetch batches");
+        }
+        const data: Batch[] = await res.json();
+
+        // Keep only "available" batches by default (seats left)
+        const available = Array.isArray(data)
+          ? data.filter((b) => Number(b.currentStudents) < Number(b.maxStudents))
+          : [];
+
+        // Sort by startDate ascending
+        available.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+
+        setBatches(available);
+        // if there's at least one batch pre-select first
+        if (available.length > 0) {
+          setSelectedBatchId(available[0].id);
+        } else {
+          setSelectedBatchId("");
+        }
+      } catch (err) {
+        console.error("Error loading batches:", err);
+        setBatches([]);
+        setSelectedBatchId("");
+      } finally {
+        setBatchesFetching(false);
+      }
+    };
+
+    loadBatches();
+  }, []);
+
   const toggleModule = (moduleId: string) => {
     setSelectedModules((prev) =>
       prev.includes(moduleId) ? prev.filter((x) => x !== moduleId) : [...prev, moduleId]
@@ -84,8 +137,16 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
       return;
     }
 
+    if (!selectedBatchId) {
+      setError("Please select a batch to assign the learner to.");
+      return;
+    }
+
     setLoading(true);
     try {
+      // find chosen batch details for sending name/seat info
+      const batch = batches.find((b) => String(b.id) === String(selectedBatchId));
+
       const res = await fetch("/api/lms/enrol", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -97,6 +158,8 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
           courseTitle: availableCourse.name,
           modules: selectedModules,
           enrolledBy: adminName || "Admin",
+          batchId: selectedBatchId,
+          batchName: batch?.name ?? null,
         }),
       });
 
@@ -113,68 +176,62 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
-      <div 
-        className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" 
-        onClick={onClose} 
-      />
-      
+      <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" onClick={onClose} />
+
       {/* Modal Container */}
       <div className="bg-white w-full max-w-lg rounded-[2rem] shadow-2xl relative overflow-hidden transition-all transform animate-in fade-in zoom-in duration-300">
-        
         {/* Header Section */}
         <div className="bg-[#0f172a] p-10 text-white relative overflow-hidden">
           <div className="absolute -top-24 -right-24 w-80 h-80 bg-indigo-600/20 rounded-full blur-[100px]" />
           <div className="absolute top-1/2 -left-20 w-40 h-40 bg-blue-600/10 rounded-full blur-[60px]" />
-          <button 
-            onClick={onClose} 
+          <button
+            onClick={onClose}
             className="absolute top-6 right-6 p-2 rounded-full text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
           >
             <X size={20} />
           </button>
 
-          
-           <div className="flex items-center gap-4 mb-8">
-              <div className="p-3.5 bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-2xl shadow-xl shadow-indigo-500/30 border border-white/10">
-                <GraduationCap size={32} className="text-white" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="flex h-2 w-2 relative">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                  </span>
-                  <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-indigo-300/90">LMS Internal Systems</p>
-                </div>
-                <h2 className="text-3xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
-                  Quick Enrol
-                </h2>
-              </div>
+          <div className="flex items-center gap-4 mb-8">
+            <div className="p-3.5 bg-gradient-to-br from-indigo-500 to-indigo-700 rounded-2xl shadow-xl shadow-indigo-500/30 border border-white/10">
+              <GraduationCap size={32} className="text-white" />
             </div>
-           
-          
-             <div className="space-y-1">
-              <h3 className="text-xl font-bold flex items-center gap-2">
-                {step === 1 ? (
-                  <><User size={20} className="text-indigo-400" /> Learner Profile</>
-                ) : (
-                  <><Sparkles size={20} className="text-indigo-400" />
-                  {/* <div className="text-[10px] uppercase font-bold text-indigo-400 tracking-tighter">Current Course</div> */}
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="flex h-2 w-2 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <p className="text-[11px] font-bold uppercase tracking-[0.25em] text-indigo-300/90">LMS Internal Systems</p>
+              </div>
+              <h2 className="text-3xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
+                Quick Enrol
+              </h2>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <h3 className="text-xl font-bold flex items-center gap-2">
+              {step === 1 ? (
+                <>
+                  <User size={20} className="text-indigo-400" /> Learner Profile
+                </>
+              ) : (
+                <>
+                  <Sparkles size={20} className="text-indigo-400" />
                   <div className="font-bold text-lg">{availableCourse?.name ?? "ACCA Skills Level"}</div>
-                  </>
-                )}
-              </h3>
-              <p className="text-slate-400 text-sm leading-relaxed max-w-[90%]">
-                {step === 1 
-                  ? "Initialize the learning path by creating a student record." 
-                  : "Assign modules for the Student Requirements."}
-              </p>
-            </div>
+                </>
+              )}
+            </h3>
+            <p className="text-slate-400 text-sm leading-relaxed max-w-[90%]">
+              {step === 1 ? "Initialize the learning path by creating a student record." : "Assign modules for the Student Requirements."}
+            </p>
+          </div>
         </div>
 
         {/* Progress Bar */}
         <div className="px-8 flex gap-2 my-6">
-          <div className={`h-1.5 flex-1 rounded-full transition-all duration-500 ${step >= 1 ? 'bg-indigo-600' : 'bg-gray-100'}`} />
-          <div className={`h-1.5 flex-1 rounded-full transition-all duration-500 ${step >= 2 ? 'bg-indigo-600' : 'bg-gray-100'}`} />
+          <div className={`h-1.5 flex-1 rounded-full transition-all duration-500 ${step >= 1 ? "bg-indigo-600" : "bg-gray-100"}`} />
+          <div className={`h-1.5 flex-1 rounded-full transition-all duration-500 ${step >= 2 ? "bg-indigo-600" : "bg-gray-100"}`} />
         </div>
 
         <div className="px-8 pb-8">
@@ -195,7 +252,7 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
                 <div className="relative group">
                   <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-indigo-600 transition-colors" size={18} />
                   <input
-                    placeholder="Academic Email Address"
+                    placeholder="Email Address"
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
@@ -205,7 +262,6 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
 
                 {/* Updated Phone input: react-phone-input-2 with flags & country codes */}
                 <div className="relative group">
-                  {/* removed the previous absolute Phone icon to avoid overlap with flag */}
                   <PhoneIcon className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 opacity-0 pointer-events-none" size={18} />
                   <div className="w-full">
                     <PhoneInput
@@ -213,16 +269,11 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
                       value={phone}
                       onChange={(value: string) => setPhone(value)}
                       enableSearch
-                      // show country code dropdown with flags
-                      // styling props: containerClass, inputClass, buttonClass to integrate with tailwind styles
                       containerClass="p-2 rounded-2xl bg-slate-50 border border-red-100 text-red-600 text-[13px] font-bold flex items-center gap-3 animate-in fade-in slide-in-from-top-2"
                       buttonClass="react-phone-button !border-0"
                       inputClass="!py-2 !text-gray-400 !border-none !bg-transparent focus:!bg-transparent focus:!border-none focus:ring-0"
                       dropdownClass="react-phone-dropdown !border-0"
-                      // optional: make country code editable if you like (default true)
-                      // countryCodeEditable={false}
                       placeholder="Contact Number"
-                      // supply inputProps for accessibility / name
                       inputProps={{
                         name: "phone",
                         required: true,
@@ -235,8 +286,8 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
 
               {error && (
                 <div className="">
-                   <div className="w-1 h-4 bg-gray-600 rounded-full" />
-                   {error}
+                  <div className="w-1 h-4 bg-gray-600 rounded-full" />
+                  {error}
                 </div>
               )}
 
@@ -259,68 +310,113 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
           {/* ---------- STEP 2 ---------- */}
           {step === 2 && (
             <div className="space-y-5 animate-in slide-in-from-right-4 duration-300">
-              {/* <div className="flex items-center justify-between px-1">
-                <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Selected Track</span>
-                <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-md">
-                  {availableCourse?.slug === skillsSlug ? "ACCA Skills" : "LMS Standard"}
-                </span>
-              </div> */}
+              {/* Batch selector */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Assign to Batch</label>
 
-              {/* <div className="p-4 rounded-2xl bg-slate-900 text-white flex items-center justify-between group">
-                <div>
-                  <div className="text-[10px] uppercase font-bold text-indigo-400 tracking-tighter">Current Course</div>
-                  <div className="font-bold text-lg">{availableCourse?.name ?? "ACCA Skills Level"}</div>
-                </div>
-                <BookOpen className="text-indigo-400 opacity-20 group-hover:opacity-100 transition-opacity" size={24} />
-              </div> */}
-
-              <div className="space-y-2 max-h-[260px] overflow-y-auto pr-2 custom-scrollbar">
-                {modules.length ? (
-                  <div className="grid grid-cols-1 gap-3">
-                    {modules.map((m: any) => {
-                      const id = m.moduleId ?? m.id ?? m.slug ?? String(m.name);
-                      const isSelected = selectedModules.includes(id);
-                      return (
-                        <button
-                          key={id}
-                          onClick={() => toggleModule(id)}
-                          className={`flex items-center gap-4 p-2 rounded-2xl border-2 text-left transition-all ${
-                            isSelected 
-                              ? "bg-indigo-50 border-indigo-600 ring-2 ring-indigo-600/10" 
-                              : "bg-white border-gray-100 hover:border-gray-200"
-                          }`}
-                        >
-                          <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
-                            isSelected ? "bg-indigo-600 border-indigo-600 text-white" : "bg-white border-gray-200"
-                          }`}>
-                            {isSelected && <Check size={14} strokeWidth={4} />}
-                          </div>
-                          <div className="flex-1">
-                            <div className={`font-bold text-sm ${isSelected ? "text-indigo-900" : "text-gray-700"}`}>
-                              {m.name}
-                            </div>
-                            {/* <div className={`text-[10px] font-mono mt-0.5 ${isSelected ? "text-indigo-400" : "text-gray-400"}`}>
-                              ID: {id}
-                            </div> */}
-                          </div>
-                        </button>
-                      );
-                    })}
+                {batchesFetching ? (
+                  <div className="px-4 py-4 rounded-2xl bg-slate-50 border border-slate-100 flex items-center gap-3">
+                    <Loader2 className="animate-spin text-indigo-500" />
+                    <div className="text-sm text-slate-500">Loading batches...</div>
+                  </div>
+                ) : batches.length === 0 ? (
+                  <div className="px-4 py-4 rounded-2xl bg-amber-50 border border-amber-100 text-amber-700 text-sm">
+                    No available batches with open seats. Please create a batch first.
                   </div>
                 ) : (
-                  <div className="py-12 text-center">
-                    <div className="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-3">
-                       <BookOpen className="text-gray-300" />
-                    </div>
-                    <p className="text-sm text-gray-400 font-medium italic">Scanning for available modules...</p>
+                  <div className="grid grid-cols-1 gap-2">
+                    <select
+                      value={selectedBatchId}
+                      onChange={(e) => setSelectedBatchId(e.target.value)}
+                      className="w-full px-4 py-3 rounded-2xl bg-slate-50 border border-slate-100 focus:ring-4 focus:ring-indigo-100 outline-none font-medium"
+                    >
+                      {batches.map((b) => {
+                        const seatsLeft = Number(b.maxStudents) - Number(b.currentStudents);
+                        const dateLabel = new Date(b.startDate).toLocaleDateString("en-GB", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                        });
+                        return (
+                          <option key={b.id} value={String(b.id)}>
+                            {b.name} — {dateLabel} ({seatsLeft} seats left)
+                          </option>
+                        );
+                      })}
+                    </select>
+
+                    {/* quick info panel for chosen batch */}
+                    {selectedBatchId && (
+                      <div className="px-4 py-3 rounded-2xl bg-white border border-slate-100">
+                        {(() => {
+                          const chosen = batches.find((x) => String(x.id) === String(selectedBatchId));
+                          if (!chosen) return <div className="text-sm text-slate-500">Select a batch</div>;
+                          const seatsLeft = Number(chosen.maxStudents) - Number(chosen.currentStudents);
+                          return (
+                            <div className="flex items-center justify-between gap-4">
+                              <div>
+                                <div className="font-bold text-slate-800">{chosen.name}</div>
+                                <div className="text-xs text-slate-500">{new Date(chosen.startDate).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-sm font-black text-slate-900">{chosen.currentStudents} / {chosen.maxStudents}</div>
+                                <div className="text-xs text-slate-400">{seatsLeft} seats remaining</div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
 
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Select Modules</label>
+                <div className="space-y-2 max-h-[260px] overflow-y-auto pr-2 custom-scrollbar">
+                  {modules.length ? (
+                    <div className="grid grid-cols-1 gap-3">
+                      {modules.map((m: any) => {
+                        const id = m.moduleId ?? m.id ?? m.slug ?? String(m.name);
+                        const isSelected = selectedModules.includes(id);
+                        return (
+                          <button
+                            key={id}
+                            onClick={() => toggleModule(id)}
+                            type="button"
+                            className={`flex items-center gap-4 p-2 rounded-2xl border-2 text-left transition-all ${
+                              isSelected ? "bg-indigo-50 border-indigo-600 ring-2 ring-indigo-600/10" : "bg-white border-gray-100 hover:border-gray-200"
+                            }`}
+                          >
+                            <div
+                              className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
+                                isSelected ? "bg-indigo-600 border-indigo-600 text-white" : "bg-white border-gray-200"
+                              }`}
+                            >
+                              {isSelected && <Check size={14} strokeWidth={4} />}
+                            </div>
+                            <div className="flex-1">
+                              <div className={`font-bold text-sm ${isSelected ? "text-indigo-900" : "text-gray-700"}`}>{m.name}</div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="py-12 text-center">
+                      <div className="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <BookOpen className="text-gray-300" />
+                      </div>
+                      <p className="text-sm text-gray-400 font-medium italic">Scanning for available modules...</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               {error && (
                 <div className="p-3 rounded-xl bg-red-50 text-red-600 text-xs font-semibold flex items-center gap-2">
-                   <div className="w-1 h-4 bg-red-600 rounded-full" />
-                   {error}
+                  <div className="w-1 h-4 bg-red-600 rounded-full" />
+                  {error}
                 </div>
               )}
 
@@ -366,24 +462,6 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
           background: #cbd5e1;
         }
-
-        /* small overrides for react-phone-input-2 to better match tailwind look */
-        // .react-phone-container .react-tel-input {
-        //   width: 100%;
-        // }
-        // .react-phone-container {
-        //   height: auto;
-        // }
-        // .react-phone-container .flag-dropdown {
-        //   border-radius: 0.75rem 0 0 0.75rem;
-        //   border: none;
-        // }
-        // .react-phone-container .selected-flag {
-        //   padding-left: 0.6rem;
-        // }
-        // .react-phone-button {
-        //   border-radius: 0.75rem;
-        // }
       `}</style>
     </div>
   );
