@@ -21,6 +21,11 @@ export type VideoItem = {
   id?: string;
   title?: string;
   url?: string;
+  // NEW:
+  videoId?: string; // id from videos table OR cloudinary public_id
+  thumb?: string; // thumbnail url
+  duration?: number; // optional duration seconds
+  visible?: boolean; // whether video is visible to this viewer (batch-based)
 };
 
 export type Submodule = {
@@ -46,6 +51,9 @@ export type Course = {
   modules?: Module[];
 };
 
+/* =========================
+   Progress types and helpers
+   ========================= */
 type ProgressEntry = {
   positionSeconds: number;
   completed: boolean;
@@ -69,10 +77,10 @@ type Props = {
 const FREE_PREVIEW_COUNT = 5;
 const GUEST_PROGRESS_KEY = (courseId: string) => `guest_progress_${courseId || "unknown_course"}`;
 
-/* ===========================
+/* =========================
    Helper: flatten videos -> global indexing
    Accepts Course | null to avoid TS null issues
-   =========================== */
+   ========================= */
 function flattenCourseVideos(course: Course | null) {
   const out: Array<{
     moduleIndex: number;
@@ -101,7 +109,7 @@ function flattenCourseVideos(course: Course | null) {
           submoduleId: s.submoduleId,
           title: v.title,
           url: v.url,
-          videoId: v.id,
+          videoId: (v.id ?? v.videoId) as string | undefined,
           key,
         });
       });
@@ -111,9 +119,20 @@ function flattenCourseVideos(course: Course | null) {
   return out;
 }
 
-/* ===========================
+/* =========================
+   Merged info type
+   ========================= */
+type MergedInfo = {
+  url?: string;
+  videoId?: string;
+  thumb?: string;
+  duration?: number;
+  visible?: boolean;
+};
+
+/* =========================
    Component
-   =========================== */
+   ========================= */
 export default function CourseModules({
   course,
   allowedModules = [],
@@ -121,6 +140,7 @@ export default function CourseModules({
   onPlayVideo,
   onReportPlayerProgress,
 }: Props): React.ReactElement {
+  // preserved original state
   const [openModuleId, setOpenModuleId] = useState<string | null>(null);
   const [openSubKey, setOpenSubKey] = useState<string | null>(null);
   const [activeVideoKey, setActiveVideoKey] = useState<string | null>(null);
@@ -135,12 +155,14 @@ export default function CourseModules({
   // detect free-login user (client-only)
   const [isFreeLoggedIn, setIsFreeLoggedIn] = useState<boolean>(false);
 
+  // NEW: viewer batch ids (string ids)
+  const [viewerBatchIds, setViewerBatchIds] = useState<string[]>([]);
+
   const router = useRouter();
 
-const handleJoinFullCourse = () => {
-  router.push("/enroll"); // 👈 your enroll page route
-};
-
+  const handleJoinFullCourse = () => {
+    router.push("/enroll"); // 👈 your enroll page route
+  };
 
   useEffect(() => {
     try {
@@ -200,7 +222,71 @@ const handleJoinFullCourse = () => {
     }
   }, [course, isFreeLoggedIn]);
 
-  // fetch saved progress for guest userKey (GET supports video_id + legacy)
+  /* =========================
+     NEW: Determine viewer's batch ids
+     - Try /api/me (common pattern) to retrieve student batches if logged in
+     - Fallback to localStorage "viewer_batches" CSV (non-intrusive)
+     - If neither exists, viewerBatchIds remains [] and free-preview logic applies
+     ========================= */
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        // 1) try server side /api/me to find authenticated user's batches
+     const email =
+  JSON.parse(localStorage.getItem("user") || "{}")?.email ||
+  localStorage.getItem("course_user_key") ||
+  "";
+
+const meRes = await fetch("/api/student/me", {
+  headers: {
+    "x-user-email": email,
+  },
+});
+
+if (meRes.ok) {
+  const me = await meRes.json();
+
+  // 👇 supports both formats safely
+  const batches =
+    me?.batches ||
+    me?.batch_ids ||
+    me?.batchIds ||
+    [];
+
+  if (mounted && Array.isArray(batches) && batches.length > 0) {
+    setViewerBatchIds(batches.map((b: any) => String(b)));
+    return;
+  }
+}
+      } catch {
+        // ignore, fallback to localStorage
+      }
+
+      // fallback: localStorage CSV - non destructive (admin/testers can set this)
+      try {
+        const raw = localStorage.getItem("viewer_batches") || localStorage.getItem("student_batches");
+        if (raw) {
+          const arr = String(raw).split(",").map((s) => s.trim()).filter(Boolean);
+          if (mounted) setViewerBatchIds(arr);
+          return;
+        }
+      } catch {
+        // ignore
+      }
+
+      // otherwise keep []
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  /* =========================
+     Fetch server progress for guest userKey OR logged-in user
+     This preserves old behavior but extends to map server video progress (video_id preferred)
+     ========================= */
   useEffect(() => {
     if (!courseId) return;
     let mounted = true;
@@ -217,28 +303,26 @@ const handleJoinFullCourse = () => {
         console.log("[CourseModules] fetched progress:", data);
         if (!mounted) return;
 
-        // Build a map from videoId -> globalIndex for mapping server responses that return video_id
+        // Build a map from video_public_id/videoId -> globalIndex to map server responses to indexes
         const flat = flattenCourseVideos(course);
         const videoIdToGlobalIndex = new Map<string, number>();
         flat.forEach((fv, idx) => {
-          if (fv.videoId) videoIdToGlobalIndex.set(fv.videoId, idx);
+          if (fv.videoId) videoIdToGlobalIndex.set(String(fv.videoId), idx);
         });
 
         const map = new Map<number, ProgressEntry>();
         data.forEach((d) => {
-          // support both legacy (global_index / globalIndex) and new (video_id / videoId) shapes
           let gIdx = -1;
           if (typeof d.globalIndex === "number") {
             gIdx = d.globalIndex;
           } else if (typeof d.global_index === "number") {
             gIdx = d.global_index;
-          } else if (d.videoId || d.video_id) {
-            const vid = d.videoId ?? d.video_id;
-            const maybe = videoIdToGlobalIndex.get(vid);
+          } else if (d.videoId || d.video_public_id || d.video_publicid) {
+            const vid = d.videoId ?? d.video_public_id ?? d.video_publicid;
+            const maybe = videoIdToGlobalIndex.get(String(vid));
             if (typeof maybe === "number") gIdx = maybe;
             else {
-              // fallback: try to find by matching string id on flat array
-              const findIdx = flat.findIndex((fv) => fv.videoId === vid);
+              const findIdx = flat.findIndex((fv) => String(fv.videoId) === String(vid));
               if (findIdx >= 0) gIdx = findIdx;
             }
           }
@@ -255,6 +339,7 @@ const handleJoinFullCourse = () => {
     return () => {
       mounted = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [courseId, course]);
 
   useEffect(() => {
@@ -275,13 +360,12 @@ const handleJoinFullCourse = () => {
   useEffect(() => {
     const handler = (e: Event) => {
       try {
-        // typed as CustomEvent
         const ce = e as CustomEvent<{ globalIndex: number }>;
         if (typeof ce.detail?.globalIndex === "number") {
           console.log("[CourseModules] received lms_video_completed event", ce.detail.globalIndex);
           handleVideoCompleted(ce.detail.globalIndex);
         }
-      } catch (err) {
+      } catch {
         // ignore
       }
     };
@@ -301,15 +385,8 @@ const handleJoinFullCourse = () => {
     );
   }
 
+  // flatten videos + maps (same as before)
   const flatVideos = useMemo(() => flattenCourseVideos(course), [course]);
-  const globalIndexMap = useMemo(() => {
-    const map = new Map<string, number>();
-    flatVideos.forEach((v, idx) => {
-      const id = `${v.moduleId}__${v.submoduleId}__${v.videoId}`;
-      map.set(id, idx);
-    });
-    return map;
-  }, [flatVideos]);
 
   const videoKeyToGlobalIndex = useMemo(() => {
     const map = new Map<string, number>();
@@ -411,7 +488,10 @@ const handleJoinFullCourse = () => {
     });
   };
 
-  // Internal save: used when parent doesn't supply onReportPlayerProgress
+  /* =========================
+     Internal save: used when parent doesn't supply onReportPlayerProgress
+     - unchanged but updated to prefer videoId when available
+     ========================= */
   const saveProgressToServerInternal = async (globalIndex: number, positionSeconds: number, completed = false) => {
     if (!courseId) {
       if (completed) markGuestCompleted(globalIndex);
@@ -425,7 +505,6 @@ const handleJoinFullCourse = () => {
     saveTimersRef.current[globalIndex] = window.setTimeout(async () => {
       try {
         const userKey = getUserKey();
-        // determine videoId for this globalIndex (if available)
         const fv = flatVideos[globalIndex];
         const videoId = fv?.videoId;
 
@@ -436,13 +515,8 @@ const handleJoinFullCourse = () => {
           completed,
         };
 
-        if (videoId) {
-          // prefer new videoId flow
-          payload.videoId = videoId;
-        } else {
-          // fallback to legacy globalIndex
-          payload.globalIndex = globalIndex;
-        }
+        if (videoId) payload.videoId = videoId;
+        else payload.globalIndex = globalIndex;
 
         console.log("[CourseModules] internal save: starting", { globalIndex, positionSeconds, completed, courseId, userKey, payload });
         const res = await fetch("/api/course_progress", {
@@ -483,23 +557,137 @@ const handleJoinFullCourse = () => {
     setMeetModalOpen(true);
   };
 
-   
-
   const hasCompletedFirstVideo = completedSet.has(0);
 
-  // Play by global index (uses resume if available)
+  /* =========================
+     NEW: Fetch visible videos for this viewer and merge them into local Map state
+     - Calls /api/videos/visible?courseSlug=...&batchIds=1,2 (server-side)
+     - Merges visible video fields (s3_url -> url, public_id -> videoId, thumb -> thumb, duration)
+     - If server call fails or no match, preserves original course.v.url (backwards-compatible)
+     ========================= */
+  const [mergedMap, setMergedMap] = useState<Map<string, MergedInfo>>(new Map());
+  useEffect(() => {
+    let mounted = true;
+    const ac = new AbortController();
+
+    (async () => {
+      if (!course?.slug) return;
+      try {
+        const batchParam = viewerBatchIds.length ? `&batchIds=${encodeURIComponent(viewerBatchIds.join(","))}` : "";
+        const url = `/api/admin/videos/visible?courseSlug=${encodeURIComponent(course.slug)}${batchParam}`;
+        const res = await fetch(url, { signal: ac.signal });
+        if (!res.ok) {
+          console.info("[CourseModules] visible videos API not available or returned not ok:", res.status);
+          return;
+        }
+        const visible = await res.json(); // expected array
+        if (!mounted || !Array.isArray(visible)) return;
+
+        // Build quick lookup maps
+        const byModule = new Map<string, any[]>();
+        const byPublicId = new Map<string, any>();
+
+        visible.forEach((v: any) => {
+          const mod = String(v.module_id ?? v.module ?? v.module_slug ?? "");
+          if (!byModule.has(mod)) byModule.set(mod, []);
+          byModule.get(mod)!.push(v);
+          if (v.s3_key) byPublicId.set(String(v.s3_key), v);
+          if (v.public_id) byPublicId.set(String(v.public_id), v);
+        });
+
+        // Build merged map using flattenCourseVideos to create keys
+        const flat = flattenCourseVideos(course);
+        const newMap = new Map<string, MergedInfo>();
+
+        flat.forEach((fv) => {
+          let matched: any = null;
+
+          // 1) try by videoId from course data
+          if (fv.videoId && byPublicId.has(String(fv.videoId))) {
+            matched = byPublicId.get(String(fv.videoId));
+          }
+
+          // 2) try to extract public id from fv.url if it's cloudinary url
+          if (!matched && fv.url && String(fv.url).includes("res.cloudinary.com")) {
+            try {
+              const parts = String(fv.url).split("/");
+              const last = parts[parts.length - 1] || "";
+              const publicId = last.split(".")[0];
+              if (publicId && byPublicId.has(publicId)) matched = byPublicId.get(publicId);
+            } catch {}
+          }
+
+          // 3) try by module + title exact match (case-insensitive)
+          if (!matched) {
+            const candidates = byModule.get(String(fv.moduleId ?? "")) || [];
+            if (candidates.length) {
+              matched = candidates.find((c: any) => {
+                if (!c.name || !fv.title) return false;
+                return String(c.name).trim().toLowerCase() === String(fv.title).trim().toLowerCase();
+              });
+            }
+          }
+
+          // 4) fallback by order within module
+          if (!matched) {
+            const candidates = byModule.get(String(fv.moduleId ?? "")) || [];
+            if (candidates.length > fv.videoIndex) matched = candidates[fv.videoIndex];
+          }
+
+          if (matched) {
+            newMap.set(fv.key, {
+              url: matched.s3_url ?? matched.secure_url ?? matched.url,
+              videoId: matched.s3_key ?? matched.public_id ?? matched.id,
+              thumb: matched.thumb ?? matched.thumb_url ?? matched.eager?.[0]?.secure_url ?? matched.thumbnail ?? matched.preview,
+              duration: matched.duration ?? matched.video_duration ?? undefined,
+              visible: true,
+            });
+          }
+        });
+
+        if (mounted) setMergedMap(newMap);
+      } catch (err: any) {
+        if (err?.name === "AbortError") return;
+        console.error("[CourseModules] error fetching visible videos:", err);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+      ac.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [course?.slug, viewerBatchIds.join?.(",")]);
+
+  // helper to read merged data (keeps original props unchanged)
+  const getMergedForKey = (key: string) => {
+    try {
+      return mergedMap.get(key);
+    } catch {
+      return undefined;
+    }
+  };
+
+  // Internal: play by global index (unchanged but uses merged url when available)
   const playGlobalIndex = (globalIndex: number, autoplay = false) => {
     const fv = flatVideos[globalIndex];
-    if (!fv || !fv.url) {
+    if (!fv) {
+      console.warn("[CourseModules] playGlobalIndex: missing fv", { globalIndex });
+      return;
+    }
+    // if we have a merged visible record, prefer that url
+    const merged = getMergedForKey(fv.key);
+    const urlToPlay = merged?.url ?? fv.url;
+    if (!urlToPlay) {
       console.warn("[CourseModules] playGlobalIndex: missing url", { globalIndex, fv });
       return;
     }
     const module = course.modules?.[fv.moduleIndex];
     const moduleIdSafe = module?.moduleId ?? "";
     const resume = getResumeSecondsForGlobalIndex(globalIndex);
-    console.log("[CourseModules] playGlobalIndex -> onPlayVideo", { globalIndex, url: fv.url, resume, autoplay });
+    console.log("[CourseModules] playGlobalIndex -> onPlayVideo", { globalIndex, url: urlToPlay, resume, autoplay });
     setActiveVideoKey(fv.key);
-    onPlayVideo(fv.url!, fv.title, moduleIdSafe, fv.videoIndex, { resumeSeconds: resume, autoplay });
+    onPlayVideo(urlToPlay, fv.title, moduleIdSafe, fv.videoIndex, { resumeSeconds: resume, autoplay });
   };
 
   // called either from our custom event listener or internally
@@ -542,6 +730,13 @@ const handleJoinFullCourse = () => {
     }
   };
 
+  /* =========================
+     RENDER (mostly unchanged, but per-video we:
+      - look up merged info (thumb, url, visible)
+      - display thumbnail
+      - overlay Locked if not visible
+      - compute progress percent using serverProgress or duration if available
+     ========================= */
   return (
     <div className="w-full max-w-3xl mx-auto space-y-6">
       {/* Header */}
@@ -557,7 +752,6 @@ const handleJoinFullCourse = () => {
             <Video size={14} /> Video Lessons
           </span>
 
-          {/* If paid user show Book Meet as before */}
           {isPaidUser && (
             <div className="ml-auto">
               <button
@@ -570,18 +764,16 @@ const handleJoinFullCourse = () => {
             </div>
           )}
 
-          {/* If user is free-logged in show upgrade button */}
           {isFreeLoggedIn && !isPaidUser && (
             <div className="ml-auto">
-  <button
-    onClick={handleJoinFullCourse}
-    type="button"
-    className="px-3 py-2 bg-amber-500 text-white text-sm font-semibold rounded-md hover:bg-amber-600 focus:outline-none"
-  >
-    Upgrade your Access
-  </button>
-</div>
-
+              <button
+                onClick={handleJoinFullCourse}
+                type="button"
+                className="px-3 py-2 bg-amber-500 text-white text-sm font-semibold rounded-md hover:bg-amber-600 focus:outline-none"
+              >
+                Upgrade your Access
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -592,11 +784,8 @@ const handleJoinFullCourse = () => {
           const moduleKey = module.moduleId ?? `module-${moduleIndex}`;
           const isOpen = openModuleId === moduleKey;
 
-          // ⭐ Module unlocked logic:
-          // - If free logged in => only first module (index 0) unlocked
-          // - Otherwise use existing allowed modules logic
           const moduleUnlocked = isFreeLoggedIn
-            ? moduleIndex === 0 // only first module unlocked for free users
+            ? moduleIndex === 0
             : Boolean(
                 (module.moduleId && (unlockedModulesSet.has(module.moduleId) || allowedSet.has(module.moduleId))) ||
                   (!module.moduleId && unlockedModulesSet.has(moduleKey))
@@ -706,49 +895,103 @@ const handleJoinFullCourse = () => {
                                   const globalIndex = videoKeyToGlobalIndex.get(videoKey) ?? -1;
                                   const isVideoActive = activeVideoKey === videoKey;
 
+                                  // NEW: merged record for this key (if available)
+                                  const merged = getMergedForKey(videoKey);
+                                  const mergedUrl = merged?.url;
+                                  const mergedThumb = merged?.thumb;
+                                  const mergedVideoId = merged?.videoId;
+                                  const mergedDuration = merged?.duration;
+
+                                  // existing completed logic still used
                                   const alreadyCompleted = globalIndex >= 0 && completedSet.has(globalIndex);
                                   const previousAllCompleted = areAllPreviousCompleted(globalIndex);
                                   const freePreview = isVideoFreePreview(globalIndex);
 
-                                  // allow playing if already completed OR previousAllCompleted AND (moduleUnlocked OR freePreview)
-                                  const canPlay = alreadyCompleted || (previousAllCompleted && (moduleUnlocked || freePreview));
+                                  // NEW: determine visible flag
+                                  // if merged.visible exists, rely on it; otherwise fallback to previous unlock logic (free-preview or moduleUnlocked)
+                                  const visibleByServer = merged?.visible ?? undefined;
+                                  const visible = typeof visibleByServer === "boolean" ? visibleByServer : (alreadyCompleted || (previousAllCompleted && (moduleUnlocked || freePreview)));
+
+                                  // per-video progress percent (prefer serverProgress + mergedDuration)
+                                  const progEntry = serverProgress.get(globalIndex);
+                                  let progressPercent: number | null = null;
+                                  if (progEntry && mergedDuration && mergedDuration > 2) {
+                                    progressPercent = Math.min(100, Math.round((progEntry.positionSeconds / mergedDuration) * 100));
+                                  } else if (progEntry && mergedDuration == null) {
+                                    // if no duration, show completed or 0
+                                    progressPercent = progEntry.completed ? 100 : Math.min(99, Math.round((progEntry.positionSeconds / Math.max(1, progEntry.positionSeconds + 1)) * 100));
+                                  } else if (alreadyCompleted) {
+                                    progressPercent = 100;
+                                  }
+
+                                  // final url to play (prefer mergedUrl, otherwise v.url)
+                                  const urlToPlay = mergedUrl ?? v.url;
 
                                   return (
                                     <div
                                       key={videoKey}
                                       className={`flex items-center justify-between gap-3 p-2 rounded-md transition ${isVideoActive ? "bg-indigo-100/60" : "hover:bg-gray-50"}`}
                                     >
-                                      <div className="flex-1 text-left">
-                                        <div className={`text-sm font-medium ${isVideoActive ? "text-indigo-900" : "text-gray-800"}`}>{v.title}</div>
-                                        {isVideoActive && v.url && <div className="text-xs text-gray-500 mt-1">Playing: {v.title}</div>}
-                                        {!canPlay && moduleUnlocked && (
-                                          <div className="text-xs text-rose-600 mt-1">Complete previous video to unlock this</div>
-                                        )}
-                                        {!canPlay && !moduleUnlocked && freePreview && (
-                                          <div className="text-xs text-rose-600 mt-1">Complete previous video to unlock this preview</div>
-                                        )}
-                                        {alreadyCompleted && <div className="text-xs text-green-600 mt-1">Completed</div>}
+                                      <div className="flex items-center gap-3 flex-1 text-left">
+                                        <div className="relative w-28 h-16 rounded overflow-hidden bg-gray-100 shrink-0">
+                                          {mergedThumb ? (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img src={mergedThumb} alt={v.title} className="w-full h-full object-cover" />
+                                          ) : v.url ? (
+                                            <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">Preview</div>
+                                          ) : (
+                                            <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">No preview</div>
+                                          )}
+
+                                          {!visible && (
+                                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center text-white text-xs font-semibold">
+                                              Locked
+                                            </div>
+                                          )}
+                                        </div>
+
+                                        <div className="flex-1">
+                                          <div className={`text-sm font-medium ${isVideoActive ? "text-indigo-900" : "text-gray-800"}`}>{v.title}</div>
+
+                                          {!visible && moduleUnlocked && (
+                                            <div className="text-xs text-rose-600 mt-1">Complete previous video to unlock this</div>
+                                          )}
+                                          {!visible && !moduleUnlocked && freePreview && (
+                                            <div className="text-xs text-rose-600 mt-1">Complete previous video to unlock this preview</div>
+                                          )}
+                                          {alreadyCompleted && <div className="text-xs text-green-600 mt-1">Completed</div>}
+
+                                          {/* progress bar */}
+                                          <div className="mt-2">
+                                            <div className="h-2 w-full bg-slate-100 rounded overflow-hidden">
+                                              <div
+                                                className="h-2 bg-indigo-500"
+                                                style={{ width: `${progressPercent ?? 0}%`, transition: "width .2s" }}
+                                              />
+                                            </div>
+                                            <div className="text-xs text-gray-400 mt-1">
+                                              {progressPercent !== null ? `${progressPercent}%` : (alreadyCompleted ? "Completed" : "Not started")}
+                                            </div>
+                                          </div>
+                                        </div>
                                       </div>
 
                                       <div className="flex items-center gap-2">
-                                        {v.url ? (
+                                        {urlToPlay ? (
                                           <button
                                             type="button"
                                             onClick={() => {
-                                              if (!canPlay) return;
+                                              if (!visible) return;
                                               setActiveVideoKey(videoKey);
-
-                                              // fetch resume seconds if available
                                               const resume = getResumeSecondsForGlobalIndex(globalIndex);
                                               const safeModuleId = module.moduleId ?? "";
-
-                                              onPlayVideo(v.url!, v.title, safeModuleId, vIdx, { resumeSeconds: resume });
+                                              onPlayVideo(urlToPlay, v.title, safeModuleId, vIdx, { resumeSeconds: resume });
                                               if (!moduleUnlocked && freePreview && globalIndex >= 0) {
                                                 markGuestCompleted(globalIndex);
                                               }
                                             }}
-                                            className={`text-[11px] font-semibold ${canPlay ? "text-indigo-600 hover:text-indigo-800" : "text-gray-300 cursor-not-allowed"} uppercase tracking-wider`}
-                                            disabled={!canPlay}
+                                            className={`text-[11px] font-semibold ${visible ? "text-indigo-600 hover:text-indigo-800" : "text-gray-300 cursor-not-allowed"} uppercase tracking-wider`}
+                                            disabled={!visible}
                                           >
                                             Play
                                           </button>

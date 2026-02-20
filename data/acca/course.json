@@ -22,7 +22,21 @@
     { "id": "da_mod_4", "title": "Advanced Excel Functions", "url": "/CourseVideo/demo3.mp4" },
     { "id": "da_mod_5", "title": "Data Visualization in Excel", "url": "/CourseVideo/demo4.mp4" }
             ]
+          },
+
+          {
+            "submoduleId": "SUB_CBL_002",
+            "title": "CBL Company Formation & Legal Personality",
+            "description": "Company types, incorporation process, and corporate legal identity.",
+            "videos": [
+    { "id": "da_mod_1", "title": "Foundations of Excel for Analytics", "url": "/CourseVideo/demo.mp4" },
+    { "id": "da_mod_2", "title": "Master formulas for real-world analytics", "url": "/CourseVideo/demo1.mp4" },
+    { "id": "da_mod_3", "title": "Foundations of Excel for Analytics", "url": "/CourseVideo/demo2.mp4" },
+    { "id": "da_mod_4", "title": "Advanced Excel Functions", "url": "/CourseVideo/demo3.mp4" },
+    { "id": "da_mod_5", "title": "Data Visualization in Excel", "url": "/CourseVideo/demo4.mp4" }
+            ]
           }
+          
         ]
       },
       {

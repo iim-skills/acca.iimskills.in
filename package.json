@@ -18,6 +18,8 @@
     "prisma:migrate": "prisma migrate dev --name init_users"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.994.0",
+    "@aws-sdk/s3-request-presigner": "^3.994.0",
     "@heroicons/react": "^2.2.0",
     "@material-tailwind/react": "^2.1.10",
     "@next/bundle-analyzer": "^15.4.5",
@@ -36,7 +38,7 @@
     "axios": "^1.10.0",
     "bcryptjs": "^3.0.2",
     "class-variance-authority": "^0.7.1",
-    "cloudinary": "^2.8.0",
+    "cloudinary": "^2.9.0",
     "clsx": "^2.1.1",
     "crypto": "^1.0.1",
     "crypto-js": "^4.2.0",
@@ -111,6 +113,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
+    "@types/uuid": "^10.0.0",
     "eslint": "^9.36.0",
     "tailwindcss": "^4.1.8",
     "ts-node": "^10.9.2",

@@ -262,7 +262,7 @@ export default function BatchManagement() {
 
                       {/* Schedule & Date */}
                       <td className="px-8 py-6">
-                        <div className="flex items-center justify-start gap-6">
+                        <div className="flex flex-col items-center justify-start gap-2">
                           <div className="flex items-center gap-2">
                             <Clock1 size={16} className="text-slate-400" />
                             <span className="text-sm font-semibold text-slate-700">{batch.type}</span>
@@ -290,7 +290,7 @@ export default function BatchManagement() {
                             Total Enrolled
                           </div>
                              <div
-                              className={`text-sm font-black min-w-[64px] text-right ${
+                              className={`text-sm font-black min-w-16 text-right ${
                                 percent <= 50 ? "text-blue-600" : "text-rose-600"
                               }`}
                             >
@@ -327,7 +327,7 @@ export default function BatchManagement() {
                           </div>
 
                           {/* optional percentage label */}
-                          <div className="text-[11px] text-slate-400 mt-2">{percent}%</div>
+                           
                         </div>
                       </td>
 
@@ -364,7 +364,7 @@ export default function BatchManagement() {
 
       {/* Creation / Edit Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-100 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-md" onClick={() => setIsModalOpen(false)} />
           <div className="bg-white w-full max-w-lg rounded-xl shadow-2xl relative overflow-hidden animate-in zoom-in duration-300">
             <div className="bg-slate-900 p-6 md:p-10 text-white flex justify-between items-center">
@@ -451,7 +451,7 @@ export default function BatchManagement() {
 
               <button
                 disabled={loading}
-                className="w-full py-5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-[1.5rem] font-black uppercase tracking-[0.2em] text-xs flex items-center justify-center gap-3 transition-all"
+                className="w-full py-5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-3xl font-black uppercase tracking-[0.2em] text-xs flex items-center justify-center gap-3 transition-all"
               >
                 {loading ? (
                   <Loader2 className="animate-spin" />

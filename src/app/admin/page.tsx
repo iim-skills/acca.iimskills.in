@@ -138,13 +138,16 @@ import {
   Ticket, 
   FolderOpen, 
   BarChart3, 
-  LogOut 
+  LogOut, 
+  Video
 } from "lucide-react";
 import LMSPage from "./StudentLIst";
 import DashboardHome from "./components/DashboardHome";
 import ProfilePage from "./profile/page";
 import BatchPage from "./batches/page";
+import Course from "./course-builder/page";
 import CouponPage from "./coupons/page";
+import Videos from "./videos/page";
 
 /** * NOTE: The local imports for LMSPage, DashboardHome, etc. 
  * were replaced with mock components to ensure the preview compiles.
@@ -204,8 +207,10 @@ export default function App() {
   const tabs = [
     { key: "dashboard", name: "Dashboard", icon: <BarChart3 size={20} /> },
     { key: "coupon", name: "Coupons", icon: <Ticket size={20} /> },
+    { key: "course", name: "Course", icon: <Ticket size={20} /> },
     { key: "lms", name: "LMS", icon: <FolderOpen size={20} /> },
     { key: "batch", name: "Batches", icon: <Calendar size={20} /> },
+    { key: "videos", name: "Videos", icon: <Video size={20} /> },
     { key: "profile", name: "My Profile", icon: <User2 size={20} /> },
   ];
 
@@ -313,7 +318,7 @@ export default function App() {
                 <p className="text-sm font-bold text-slate-800 leading-none">{user.name}</p>
                 <p className="text-xs text-slate-500 mt-1">Super Admin</p>
               </div>
-              <div className="h-10 w-10 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold shadow-md shadow-blue-200">
+              <div className="h-10 w-10 bg-linear-to-tr from-blue-600 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold shadow-md shadow-blue-200">
                 {user.name.charAt(0)}
               </div>
             </div>
@@ -327,7 +332,9 @@ export default function App() {
             {active === "coupon" && <CouponPage />}
             {active === "batch" && <BatchPage />}
             {active === "lms" && <LMSPage />}
+            {active === "videos" && <Videos />}
             {active === "profile" && <ProfilePage />}
+            {active === "course" && <Course />}
           </div>
         </main>
       </div>
