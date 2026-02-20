@@ -208,7 +208,7 @@ export default function App() {
     { key: "dashboard", name: "Dashboard", icon: <BarChart3 size={20} /> },
     { key: "coupon", name: "Coupons", icon: <Ticket size={20} /> },
     { key: "course", name: "Course", icon: <Ticket size={20} /> },
-    { key: "lms", name: "LMS", icon: <FolderOpen size={20} /> },
+    { key: "lms", name: "Students", icon: <FolderOpen size={20} /> },
     { key: "batch", name: "Batches", icon: <Calendar size={20} /> },
     { key: "videos", name: "Videos", icon: <Video size={20} /> },
     { key: "profile", name: "My Profile", icon: <User2 size={20} /> },
