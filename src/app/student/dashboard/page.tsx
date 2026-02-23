@@ -398,13 +398,15 @@ export default function StudentDashboardLMS(): React.ReactElement {
       const onLoaded = () => {
         try {
           el.currentTime = Math.min(resumeAt, Math.floor(el.duration || resumeAt));
-          if (autoplayFlag) el.play().catch(() => {});
-        } catch {}
+          if (autoplayFlag) el.play().catch((err) => console.error("[StudentDashboard] autoplay failed", err));
+        } catch (e) {
+          console.error("[StudentDashboard] onLoaded metadata error", e);
+        }
       };
       el.addEventListener("loadedmetadata", onLoaded, { once: true });
       return () => el.removeEventListener("loadedmetadata", onLoaded);
     } else {
-      if (autoplayFlag) el.play().catch(() => {});
+      if (autoplayFlag) el.play().catch((err) => console.error("[StudentDashboard] autoplay failed", err));
     }
   }, [activeVideoUrl, resumeAt, autoplayFlag]);
 
@@ -415,7 +417,7 @@ export default function StudentDashboardLMS(): React.ReactElement {
     if (Math.abs(now - lastSavedRef.current) >= 5) {
       lastSavedRef.current = now;
       // log and report
-      // console.log("[StudentDashboard] timeupdate report", { globalIndex: activeGlobalIndex, now });
+      console.log("[StudentDashboard] timeupdate", { globalIndex: activeGlobalIndex, now });
       reportProgress(activeGlobalIndex, now, false);
     }
   };
@@ -441,7 +443,7 @@ export default function StudentDashboardLMS(): React.ReactElement {
         const el = videoRef.current;
         if (!el) return;
         e.preventDefault();
-        if (el.paused) el.play().catch(() => {});
+        if (el.paused) el.play().catch((err) => console.error("[StudentDashboard] play error", err));
         else el.pause();
       }
     };
@@ -473,6 +475,44 @@ export default function StudentDashboardLMS(): React.ReactElement {
       // ignore
     }
   }, [course]);
+
+  /* ---------- NEW: onPlayVideoInternal (used by CourseModules) ---------- */
+  const onPlayVideoInternal = useCallback(
+    (videoUrl: string | null, title?: string, moduleId?: string | number, videoIndex?: number, options?: { resumeSeconds?: number; autoplay?: boolean }) => {
+      try {
+        console.log("[StudentDashboard] onPlayVideo called", { videoUrl, title, moduleId, videoIndex, options });
+
+        const playable = toPlayableUrl(videoUrl);
+        console.log("[StudentDashboard] toPlayableUrl ->", playable);
+
+        setActiveSubmoduleTitle(title ?? null);
+        if (moduleId !== undefined && moduleId !== null) setActiveModuleId(String(moduleId));
+        setActiveVideoUrl(playable);
+        setResumeAt(options?.resumeSeconds ?? 0);
+        setAutoplayFlag(Boolean(options?.autoplay));
+
+        const gIdx = findGlobalIndexByUrl(videoUrl);
+        console.log("[StudentDashboard] resolved global index:", gIdx);
+        setActiveGlobalIndex(gIdx >= 0 ? gIdx : null);
+
+        // try immediate play for native video (if rendered). this may fail for iframes / cross-origin — log errors.
+        setTimeout(() => {
+          const v = videoRef.current;
+          if (!v) return;
+          v.play()
+            .then(() => {
+              console.log("[StudentDashboard] Native video.play() started");
+            })
+            .catch((err) => {
+              console.warn("[StudentDashboard] Native video.play() failed (expected for iframe / autoplay restrictions)", err);
+            });
+        }, 200);
+      } catch (err) {
+        console.error("[StudentDashboard] onPlayVideoInternal error", err);
+      }
+    },
+    [findGlobalIndexByUrl]
+  );
 
   /* ---------- RENDER / GUARDS ---------- */
   if (loadingStudent || loadingCourse) {
@@ -555,11 +595,7 @@ export default function StudentDashboardLMS(): React.ReactElement {
                 course={course}
                 allowedModules={studentModuleIds}
                 progress={student.progress ?? {}}
-                onPlayVideo={(videoUrl, title, moduleId, videoIndex, options) => {
-                  // make sure CourseModules can use the provided callback shape
-                  // we keep original onPlayVideo handler behavior by forwarding
-                  onPlayVideoInternal(videoUrl, title, moduleId, videoIndex, options);
-                }}
+                onPlayVideo={onPlayVideoInternal}
                 onReportPlayerProgress={(globalIndex, positionSeconds, completed) => {
                   reportProgress(globalIndex, positionSeconds, completed);
                 }}
@@ -725,13 +761,4 @@ export default function StudentDashboardLMS(): React.ReactElement {
       </div>
     </div>
   );
-}
-
-/* ================= HELPERS ADDED =================
-   onPlayVideoInternal is preserved so CourseModules can call it.
-   Most heavy-lifting (indexing, progress flush) done above.
-*/
-function onPlayVideoInternal(videoUrl: string, title?: string, moduleId?: string, videoIndex?: number, options?: { resumeSeconds?: number; autoplay?: boolean }) {
-  // This is intentionally left blank here because we forward to the inner handler in the component above.
-  // The main handler already defined inside component has access to state.
 }
