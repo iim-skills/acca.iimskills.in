@@ -48,7 +48,7 @@ export default function LMSPage() {
     if (!confirm("Delete this student? This action cannot be undone.")) return;
 
     try {
-      await fetch(`/api/admin/lms/students/${id}`, { method: "DELETE" });
+      await fetch(`/api/lms/students/${id}`, { method: "DELETE" });
       fetchStudents();
     } catch {
       alert("Failed to delete student");

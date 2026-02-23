@@ -217,88 +217,124 @@ export default function VideoAdmin(): React.ReactElement {
     }
   };
 
-  const handleUpload = async () => {
-    if (!videoName.trim()) return showMsg("Provide a video name.");
-    if (!file) return showMsg("Select a video file.");
-    if (!selectedModule) return showMsg("Select a module.");
-    if (selectedBatches.length === 0) return showMsg("Select at least one batch.");
+const handleUpload = async () => {
+  if (!videoName.trim()) return showMsg("Provide a video name.");
+  if (!file) return showMsg("Select a video file.");
+  if (!selectedModule) return showMsg("Select a module.");
+  if (selectedBatches.length === 0) return showMsg("Select at least one batch.");
 
-    try {
-      setUploading(true);
-      setProgress(0);
+  try {
+    setUploading(true);
+    setProgress(0);
 
-      const formData = new FormData();
-      const clientFilename = `${generateId()}_${file.name.replace(/\s+/g, "_")}`;
-      formData.append("file", file, clientFilename);
+    /* ================================
+       1️⃣ UPLOAD VIDEO TO CLOUDINARY
+    ================================= */
+    const formData = new FormData();
+    const clientFilename = `${generateId()}_${file.name.replace(/\s+/g, "_")}`;
+    formData.append("file", file, clientFilename);
 
-      const uploadResult = await new Promise<Record<string, any>>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open("POST", "/api/admin/videos/upload", true);
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) setProgress(Math.round((e.loaded / e.total) * 100));
-        };
-        xhr.onload = () => {
-          try {
-            if (xhr.status >= 200 && xhr.status < 300) {
-              const json = JSON.parse(xhr.responseText);
-              resolve(json);
-            } else {
-              reject(new Error(`Upload failed: ${xhr.status}`));
-            }
-          } catch (e) {
-            reject(e);
+    const uploadResult = await new Promise<any>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/admin/videos/upload", true);
+
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          setProgress(Math.round((e.loaded / e.total) * 100));
+        }
+      };
+
+      xhr.onload = () => {
+        try {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(JSON.parse(xhr.responseText));
+          } else {
+            reject(new Error(`Upload failed: ${xhr.status}`));
           }
-        };
-        xhr.onerror = () => reject(new Error("Network error"));
-        xhr.send(formData);
-      });
+        } catch (e) {
+          reject(e);
+        }
+      };
 
-      const batchInfos = selectedBatches.map((id) => {
-        const b = batches.find((x) => String(x.id) === String(id));
-        return { id, name: b?.name ?? null, startDate: b?.startDate ?? null };
-      });
+      xhr.onerror = () => reject(new Error("Network error"));
+      xhr.send(formData);
+    });
 
-      let submoduleTitle = "";
-      const currentC = courses.find((c) => c.slug === selectedCourse);
-      if (currentC && selectedSubmodule) {
-        const mods = normalizeCourseModules(currentC);
-        const targetM = mods.find((m) => m.id === selectedModule);
-        submoduleTitle = targetM?.submodules?.find((s) => s.id === selectedSubmodule)?.title || "";
-      }
+    console.log("UPLOAD RESULT:", uploadResult);
 
-      const saveRes = await fetch("/api/admin/videos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: videoName,
-          s3Key: (uploadResult && (uploadResult.public_id ?? uploadResult.key)) ?? null,
-          s3Url: (uploadResult && (uploadResult.url ?? uploadResult.href)) ?? null,
-          module: selectedModule,
-          courseSlug: selectedCourse,
-          batchIds: selectedBatches,
-          batchInfos,
-          submoduleId: selectedSubmodule || null,
-          submoduleTitle: submoduleTitle || null,
-          uploadedBy: "admin",
-        }),
-      });
+    /* ================================
+       2️⃣ EXTRACT CLOUDINARY DATA
+    ================================= */
+    const publicId = uploadResult?.public_id ?? null;
+    const secureUrl = uploadResult?.secure_url ?? null;
+    const thumbUrl = uploadResult?.thumb_url ?? null;
+    const duration = uploadResult?.duration ?? null;
 
-      if (!saveRes.ok) throw new Error("Metadata save failed");
-
-      showMsg("Video uploaded successfully!", "success");
-      setVideoName("");
-      setFile(null);
-      setSelectedBatches([]);
-      setSelectAllBatches(false);
-      setIsDrawerOpen(false);
-      await loadVideos();
-    } catch (err: unknown) {
-      showMsg((err as Error)?.message ?? String(err));
-    } finally {
-      setUploading(false);
-      setProgress(0);
+    if (!publicId || !secureUrl) {
+      throw new Error("Upload response missing public_id or secure_url");
     }
-  };
+
+    /* ================================
+       3️⃣ GET SUBMODULE TITLE
+    ================================= */
+    let submoduleTitle = "";
+
+    const currentC = courses.find((c) => c.slug === selectedCourse);
+    if (currentC && selectedSubmodule) {
+      const mods = normalizeCourseModules(currentC);
+      const targetM = mods.find((m) => m.id === selectedModule);
+      submoduleTitle =
+        targetM?.submodules?.find((s) => s.id === selectedSubmodule)?.title || "";
+    }
+
+    /* ================================
+       4️⃣ SAVE VIDEO TO DATABASE
+    ================================= */
+    const saveRes = await fetch("/api/admin/videos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: videoName,
+
+        // ⭐ IMPORTANT (matches backend)
+        public_id: publicId,
+        secure_url: secureUrl,
+        thumb_url: thumbUrl,
+        duration: duration,
+
+        course_slug: selectedCourse,
+        module_id: selectedModule,
+        submodule_id: selectedSubmodule || null,
+        submodule_title: submoduleTitle || null,
+        batch_ids: selectedBatches,
+        uploaded_by: "admin",
+      }),
+    });
+
+    if (!saveRes.ok) {
+      throw new Error("Metadata save failed");
+    }
+
+    /* ================================
+       5️⃣ SUCCESS RESET UI
+    ================================= */
+    showMsg("Video uploaded successfully!", "success");
+
+    setVideoName("");
+    setFile(null);
+    setSelectedBatches([]);
+    setSelectAllBatches(false);
+    setIsDrawerOpen(false);
+
+    await loadVideos();
+  } catch (err: any) {
+    console.error(err);
+    showMsg(err?.message || "Upload failed");
+  } finally {
+    setUploading(false);
+    setProgress(0);
+  }
+};
 
   const removeVideo = async (id?: string | number) => {
     // eslint-disable-next-line no-alert

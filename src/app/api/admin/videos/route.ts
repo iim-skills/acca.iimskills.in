@@ -43,24 +43,42 @@ export async function POST(req: Request) {
 
     await pool.query(
       `INSERT INTO videos
-      (name, public_id, secure_url, thumb_url, duration,
-       course_slug, module_id, module_title,
-       submodule_id, submodule_title,
-       batch_ids, uploaded_by)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      (name,
+       public_id,
+       secure_url,
+       thumb_url,
+       duration,
+       course_slug,
+       module_id,
+       module_title,
+       submodule_id,
+       submodule_title,
+       batch_ids,
+       uploaded_by,
+       s3_key,
+       s3_url)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         body.name,
-        body.s3Key,
-        body.s3Url,
-        body.thumbUrl,
+
+        // ⭐ Cloudinary values
+        body.public_id,
+        body.secure_url,
+        body.thumb_url,
         body.duration,
-        body.courseSlug,
-        body.moduleId,
-        body.moduleTitle,
-        body.submoduleId,
-        body.submoduleTitle,
-        JSON.stringify(body.batchIds || []),
-        body.uploadedBy || "admin",
+
+        body.course_slug,
+        body.module_id,
+        body.module_title,
+        body.submodule_id,
+        body.submodule_title,
+
+        JSON.stringify(body.batch_ids || []),
+        body.uploaded_by || "admin",
+
+        // ⭐ IMPORTANT: map to s3 fields
+        body.public_id,   // s3_key
+        body.secure_url,  // s3_url
       ]
     );
 
