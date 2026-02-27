@@ -3,6 +3,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import BookingMentors from "@/components/MentorsMeetForm";
 
 import {
   ChevronDown,
@@ -14,7 +15,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import Modal from "@/components/Modal";
-import BookingApp from "@/components/MentorsBooking";
+import BookingApp from "@/components/MentorsMeetForm";
 
 /* ===== TYPES ===== */
 export type VideoItem = {

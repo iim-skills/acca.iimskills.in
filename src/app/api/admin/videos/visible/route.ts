@@ -17,13 +17,22 @@ export async function GET(req: Request) {
     const viewerBatchIds = batchIdsParam.split(",").filter(Boolean);
 
     const [rows]: any = await pool.query(
-      `SELECT * FROM videos WHERE course_slug=? ORDER BY uploaded_at ASC`,
+      `SELECT * FROM videos WHERE course_slug=? ORDER BY id ASC`,
       [courseSlug]
     );
 
     const videos = rows.map((v: any) => ({
       ...v,
-      batch_ids: v.batch_ids ? JSON.parse(v.batch_ids) : [],
+      batch_ids: (() => {
+        try {
+          return v.batch_ids ? JSON.parse(v.batch_ids) : [];
+        } catch {
+          return String(v.batch_ids || "")
+            .split(",")
+            .map((x: string) => x.trim())
+            .filter(Boolean);
+        }
+      })(),
     }));
 
     const firstFiveIds = videos.slice(0, 5).map((v: any) => v.id);
@@ -32,7 +41,9 @@ export async function GET(req: Request) {
       const matchBatch =
         viewerBatchIds.length === 0
           ? true
-          : v.batch_ids.some((b: any) => viewerBatchIds.includes(String(b)));
+          : v.batch_ids.some((b: any) =>
+              viewerBatchIds.includes(String(b))
+            );
 
       return {
         ...v,
@@ -40,7 +51,10 @@ export async function GET(req: Request) {
       };
     });
 
-    return NextResponse.json(result);
+    // ✅ RETURN ONLY VISIBLE VIDEOS
+    const visibleVideos = result.filter((v: any) => v.visible === true);
+
+    return NextResponse.json(visibleVideos);
   } catch (err) {
     console.error(err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });

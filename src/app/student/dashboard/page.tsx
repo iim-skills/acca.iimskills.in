@@ -102,6 +102,8 @@ export default function StudentDashboardLMS(): React.ReactElement {
     return [];
   };
 
+  
+
   const toPlayableUrl = (url?: string | null): string | null => {
     if (!url) return null;
     if (url.startsWith("/")) return url;
@@ -220,7 +222,7 @@ export default function StudentDashboardLMS(): React.ReactElement {
 
       try {
         // Primary endpoint: ultra-fast SQL API which expects x-user-email header
-        const res = await fetch("/api/course", {
+        const res = await fetch("/api/student/course", {
           headers: { "x-user-email": student?.email ?? "" },
         });
 

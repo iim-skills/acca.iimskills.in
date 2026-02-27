@@ -147,6 +147,7 @@ import ProfilePage from "./profile/page";
 import BatchPage from "./batches/page";
 import Course from "./course-builder/page";
 import CouponPage from "./coupons/page";
+import MentorsBooking from "./MentorsBooking/page";
 import Videos from "./videos/page";
 
 /** * NOTE: The local imports for LMSPage, DashboardHome, etc. 
@@ -210,6 +211,7 @@ export default function App() {
     { key: "course", name: "Course", icon: <Ticket size={20} /> },
     { key: "lms", name: "Students", icon: <FolderOpen size={20} /> },
     { key: "batch", name: "Batches", icon: <Calendar size={20} /> },
+    { key: "mentors_booking", name: "Mentors Slots", icon: <Calendar size={20} /> },
     { key: "videos", name: "Videos", icon: <Video size={20} /> },
     { key: "profile", name: "My Profile", icon: <User2 size={20} /> },
   ];
@@ -331,6 +333,7 @@ export default function App() {
             {active === "dashboard" && <DashboardHome />}
             {active === "coupon" && <CouponPage />}
             {active === "batch" && <BatchPage />}
+            {active === "mentors_booking" && <MentorsBooking />}
             {active === "lms" && <LMSPage />}
             {active === "videos" && <Videos />}
             {active === "profile" && <ProfilePage />}
