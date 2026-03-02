@@ -1,7 +1,7 @@
 export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
-import { encrypt, decrypt } from "../../../../lib/ccavenue";
+import { encrypt, decrypt } from "../../../../../lib/ccavenue";
 
 export async function POST(req: Request) {
   const body = await req.json();
