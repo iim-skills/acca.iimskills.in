@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import db from "../../../../lib/db";
 
-// ✅ REQUIRED for browser POST
 export async function OPTIONS() {
   return NextResponse.json({}, { status: 200 });
 }
@@ -30,10 +29,10 @@ export async function POST(req: Request) {
         course_title,
         modules
       FROM lms_students
-      WHERE email = ? OR login_id = ?
+      WHERE LOWER(email) = LOWER(?) OR login_id = ?
       LIMIT 1
       `,
-      [email, email]
+      [email.toLowerCase(), email]
     );
 
     if (!rows || rows.length === 0) {
@@ -45,12 +44,21 @@ export async function POST(req: Request) {
 
     const student = rows[0];
 
-    // TEMP: plain text password check
-    if (student.password !== password) {
+    if (student.password.trim() !== password.trim()) {
       return NextResponse.json(
         { error: "Invalid credentials" },
         { status: 401 }
       );
+    }
+
+    let modules = [];
+    try {
+      modules =
+        typeof student.modules === "string"
+          ? JSON.parse(student.modules)
+          : student.modules || [];
+    } catch {
+      modules = [];
     }
 
     return NextResponse.json({
@@ -60,7 +68,7 @@ export async function POST(req: Request) {
       phone: student.phone,
       courseSlug: student.course_slug,
       courseTitle: student.course_title,
-      modules: JSON.parse(student.modules || "[]"),
+      modules,
       role: "student",
     });
   } catch (error) {

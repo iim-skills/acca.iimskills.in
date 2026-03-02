@@ -1,9 +1,8 @@
+// components/CourseModules.tsx
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import BookingMentors from "@/components/MentorsMeetForm";
-
 import {
   ChevronDown,
   ChevronUp,
@@ -13,8 +12,8 @@ import {
   Lock,
   CheckCircle2,
 } from "lucide-react";
-import Modal from "@/components/Modal";
-import BookingApp from "@/components/MentorsMeetForm";
+import Modal from "./Modal";
+import BookingApp from "./MentorsMeetForm";
 
 /* ===== TYPES ===== */
 export type VideoItem = {
@@ -22,7 +21,7 @@ export type VideoItem = {
   title?: string;
   url?: string;
   // NEW:
-  videoId?: string; // should contain DB video_id (or other stable id)
+  videoId?: string; // id from videos table OR cloudinary public_id
   thumb?: string; // thumbnail url
   duration?: number; // optional duration seconds
   visible?: boolean; // whether video is visible to this viewer (batch-based)
@@ -101,18 +100,6 @@ function flattenCourseVideos(course: Course | null) {
       s.videos?.forEach((v, vi) => {
         const moduleKeyPart = m.moduleId ?? `module-${mi}`;
         const key = `${moduleKeyPart}-sub-${si}-vid-${vi}`;
-
-        // Prefer stable DB id fields if available. Keep order of preference:
-        // v.videoId (explicit), v.id, v.public_id, v.s3_key — but leave undefined if not present
-        const vid =
-          (v.videoId && String(v.videoId)) ||
-          (v.id && String(v.id)) ||
-          // @ts-ignore - some data sources may use different naming
-          (v?.public_id && String(v.public_id)) ||
-          // @ts-ignore
-          (v?.s3_key && String(v.s3_key)) ||
-          undefined;
-
         out.push({
           moduleIndex: mi,
           subIndex: si,
@@ -121,7 +108,7 @@ function flattenCourseVideos(course: Course | null) {
           submoduleId: s.submoduleId,
           title: v.title,
           url: v.url,
-          videoId: vid,
+          videoId: (v.id ?? v.videoId) as string | undefined,
           key,
         });
       });
@@ -140,19 +127,6 @@ type MergedInfo = {
   thumb?: string;
   duration?: number;
   visible?: boolean;
-};
-
-/* =========================
-   ProgressPayload type (for TS safety)
-   ========================= */
-type ProgressPayload = {
-  userKey: string;
-  courseId: string;
-  positionSeconds: number;
-  duration: number;
-  completed: boolean;
-  videoId?: string;
-  globalIndex?: number;
 };
 
 /* =========================
@@ -249,61 +223,62 @@ export default function CourseModules({
 
   /* =========================
      NEW: Determine viewer's batch ids
+     - Try /api/me (common pattern) to retrieve student batches if logged in
+     - Fallback to localStorage "viewer_batches" CSV (non-intrusive)
+     - If neither exists, viewerBatchIds remains [] and free-preview logic applies
      ========================= */
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const email =
-          (JSON.parse(localStorage.getItem("user") || "{}")?.email) ||
-          localStorage.getItem("course_user_key") ||
-          "";
+ useEffect(() => {
+  let mounted = true;
 
-        const meRes = await fetch("/api/student/me", {
-          headers: {
-            "x-user-email": email,
-          },
-        });
+  (async () => {
+    try {
+      const raw = localStorage.getItem("user");
+      if (!raw) return;
 
-        if (meRes.ok) {
-          const me = await meRes.json();
-          const batches =
-            me?.batches ||
-            me?.batch_ids ||
-            me?.batchIds ||
-            [];
+      const parsed = JSON.parse(raw);
+      const studentId =
+        parsed?.id ??
+        parsed?.userId ??
+        parsed?.studentId ??
+        null;
 
-          if (mounted && Array.isArray(batches) && batches.length > 0) {
-            setViewerBatchIds(batches.map((b: any) => String(b)));
-            return;
-          }
-        }
-      } catch {
-        // ignore, fallback to localStorage
+      if (!studentId) return;
+
+      // ✅ USE POST INSTEAD OF GET
+      const meRes = await fetch("/api/student/me", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ studentId }),
+      });
+
+      if (!meRes.ok) return;
+
+      const me = await meRes.json();
+
+      const batches =
+        me?.user?.batches ||
+        me?.user?.batch_ids ||
+        me?.user?.batchIds ||
+        [];
+
+      if (mounted && Array.isArray(batches) && batches.length > 0) {
+        setViewerBatchIds(batches.map((b: any) => String(b)));
       }
 
-      try {
-        const raw = localStorage.getItem("viewer_batches") || localStorage.getItem("student_batches");
-        if (raw) {
-          const arr = String(raw).split(",").map((s) => s.trim()).filter(Boolean);
-          if (mounted) setViewerBatchIds(arr);
-          return;
-        }
-      } catch {
-        // ignore
-      }
-    })();
+    } catch (err) {
+      console.error("Batch fetch error:", err);
+    }
+  })();
 
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  return () => {
+    mounted = false;
+  };
+}, []);
 
   /* =========================
-     Fetch server progress for guest user OR logged-in user
-     - NOTE: depend only on courseId and structure size to avoid noisy refetches
+     Fetch server progress for guest userKey OR logged-in user
+     This preserves old behavior but extends to map server video progress (video_id preferred)
      ========================= */
-  const flatVideos = useMemo(() => flattenCourseVideos(course), [course]);
   useEffect(() => {
     if (!courseId) return;
     let mounted = true;
@@ -311,7 +286,7 @@ export default function CourseModules({
       try {
         const userKey = getUserKey();
         console.log("[CourseModules] fetching server progress for", { courseId, userKey });
-        const res = await fetch(`/api/course_progress?courseId=${encodeURIComponent(courseId)}&userKey=${encodeURIComponent(userKey)}`);
+        const res = await fetch(`/api/courseApi/progress?courseId=${encodeURIComponent(courseId)}&userKey=${encodeURIComponent(userKey)}`);
         if (!res.ok) {
           console.warn("[CourseModules] fetch progress returned not ok:", res.status, await res.text());
           return;
@@ -321,77 +296,33 @@ export default function CourseModules({
         if (!mounted) return;
 
         // Build a map from video_public_id/videoId -> globalIndex to map server responses to indexes
+        const flat = flattenCourseVideos(course);
         const videoIdToGlobalIndex = new Map<string, number>();
-        flatVideos.forEach((fv, idx) => {
+        flat.forEach((fv, idx) => {
           if (fv.videoId) videoIdToGlobalIndex.set(String(fv.videoId), idx);
         });
 
         const map = new Map<number, ProgressEntry>();
-
         data.forEach((d) => {
           let gIdx = -1;
-
-          // Candidate ids from the backend response
-          const candidates = [
-            d.videoId,
-            d.video_id,
-            d.video_public_id,
-            d.video_publicid,
-            d.videoPublicId,
-            d.id,
-            // sometimes backend might store numeric keys (like "7"), so include that too
-            String(d.videoId ?? d.video_id ?? d.id ?? "")
-          ].filter(Boolean).map(String);
-
-          // 1) try direct map lookup
-          for (const c of candidates) {
-            if (videoIdToGlobalIndex.has(c)) {
-              gIdx = videoIdToGlobalIndex.get(c)!;
-              break;
+          if (typeof d.globalIndex === "number") {
+            gIdx = d.globalIndex;
+          } else if (typeof d.global_index === "number") {
+            gIdx = d.global_index;
+          } else if (d.videoId || d.video_public_id || d.video_publicid) {
+            const vid = d.videoId ?? d.video_public_id ?? d.video_publicid;
+            const maybe = videoIdToGlobalIndex.get(String(vid));
+            if (typeof maybe === "number") gIdx = maybe;
+            else {
+              const findIdx = flat.findIndex((fv) => String(fv.videoId) === String(vid));
+              if (findIdx >= 0) gIdx = findIdx;
             }
-          }
-
-          // 2) fallback: try findIndex by comparing fv.videoId (if present)
-          if (gIdx === -1) {
-            for (let i = 0; i < flatVideos.length; i++) {
-              const fv = flatVideos[i];
-              if (fv.videoId && candidates.includes(String(fv.videoId))) {
-                gIdx = i;
-                break;
-              }
-              // also try matching candidate to the flat key (some systems save keys)
-              if (candidates.includes(fv.key)) {
-                gIdx = i;
-                break;
-              }
-              // if fv.url contains the candidate as a public id (cloudinary), try that
-              try {
-                const url = fv.url ?? "";
-                for (const c of candidates) {
-                  if (!c) continue;
-                  if (typeof url === "string" && url.includes(String(c))) {
-                    gIdx = i;
-                    break;
-                  }
-                }
-                if (gIdx !== -1) break;
-              } catch {}
-            }
-          }
-
-          // 3) last resort: if backend returned a numeric global_index, use it
-          if (gIdx === -1) {
-            if (typeof d.globalIndex === "number") gIdx = d.globalIndex;
-            else if (typeof d.global_index === "number") gIdx = d.global_index;
           }
 
           if (gIdx >= 0) {
-            const pos = Number(d.positionSeconds ?? d.position_seconds ?? d.position_sec ?? 0);
-            const comp = Boolean(d.completed ?? d.is_completed ?? d.complete);
-            map.set(gIdx, { positionSeconds: pos, completed: comp });
+            map.set(gIdx, { positionSeconds: Number(d.positionSeconds ?? d.position_seconds ?? 0), completed: Boolean(d.completed) });
           }
         });
-
         setServerProgress(map);
       } catch (err) {
         console.error("[CourseModules] error fetching progress:", err);
@@ -400,9 +331,8 @@ export default function CourseModules({
     return () => {
       mounted = false;
     };
-    // depend on courseId and length of flatVideos to avoid noisy refetches
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [courseId, flatVideos.length]);
+  }, [courseId, course]);
 
   useEffect(() => {
     if (!courseId) {
@@ -434,10 +364,19 @@ export default function CourseModules({
     window.addEventListener("lms_video_completed", handler as EventListener);
     return () => window.removeEventListener("lms_video_completed", handler as EventListener);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serverProgress, guestProgress, courseId]);
+  }, [serverProgress, guestProgress, course]);
 
-  const allowedSet = useMemo(() => new Set(allowedModules || []), [allowedModules]);
-  const isPaidUser = Boolean(allowedModules && allowedModules.length > 0);
+ // Normalize allowed modules (remove MOD_ prefix)
+const allowedSet = useMemo(() => {
+  const normalized = (allowedModules || []).map((m) =>
+    String(m)
+      .replace(/^MOD_/i, "")
+      .trim()
+  );
+  return new Set(normalized);
+}, [allowedModules]);
+
+const isPaidUser = Boolean(allowedModules && allowedModules.length > 0);
 
   if (!course || !course.modules?.length) {
     return (
@@ -448,22 +387,13 @@ export default function CourseModules({
   }
 
   // flatten videos + maps (same as before)
+  const flatVideos = useMemo(() => flattenCourseVideos(course), [course]);
+
   const videoKeyToGlobalIndex = useMemo(() => {
     const map = new Map<string, number>();
     flatVideos.forEach((v, idx) => map.set(v.key, idx));
     return map;
   }, [flatVideos]);
-
-  // keep refs of activeVideoKey and serverProgress so unload handler uses latest values
-  const activeVideoKeyRef = useRef<string | null>(activeVideoKey);
-  useEffect(() => {
-    activeVideoKeyRef.current = activeVideoKey;
-  }, [activeVideoKey]);
-
-  const serverProgressRef = useRef<Map<number, ProgressEntry>>(serverProgress);
-  useEffect(() => {
-    serverProgressRef.current = serverProgress;
-  }, [serverProgress]);
 
   // completed set is combined from serverProgress, guestProgress and existing `progress` (server by module)
   const completedSet = useMemo(() => {
@@ -518,26 +448,44 @@ export default function CourseModules({
     return true;
   };
 
-  const unlockedModulesSet = useMemo(() => {
-    const s = new Set<string>();
-    const modules = course.modules ?? [];
+const unlockedModulesSet = useMemo(() => {
+  const s = new Set<string>();
+  const modules = course.modules ?? [];
 
-    modules.forEach((m) => {
-      if (m.moduleId && allowedSet.has(m.moduleId)) s.add(m.moduleId);
-    });
+  modules.forEach((m, i) => {
+    if (!m.moduleId) return;
 
-    for (let i = 0; i < modules.length; i++) {
-      const m = modules[i];
-      const mid = m.moduleId ?? `module-${i}`;
-      if (s.has(mid)) continue;
-      if (i === 0) continue;
-      const prev = modules[i - 1];
-      const prevId = prev.moduleId ?? `module-${i - 1}`;
-      if (s.has(prevId) && isModuleCompletedByCompletedSet(prev)) s.add(mid);
+    const moduleIdStr = String(m.moduleId)
+      .replace(/^MOD_/i, "")
+      .trim();
+
+    // Direct unlock if in allowed list
+    if (allowedSet.has(moduleIdStr)) {
+      s.add(m.moduleId);
+      return;
     }
-    return s;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [course.modules, allowedSet, completedSet, flatVideos]);
+
+    // Sequential unlock logic
+    if (i === 0) return;
+
+    const prev = modules[i - 1];
+    if (!prev?.moduleId) return;
+
+    const prevModuleIdStr = String(prev.moduleId)
+      .replace(/^MOD_/i, "")
+      .trim();
+
+    if (
+      allowedSet.has(prevModuleIdStr) &&
+      isModuleCompletedByCompletedSet(prev)
+    ) {
+      s.add(m.moduleId);
+    }
+    
+  });
+
+  return s;
+}, [course.modules, allowedSet, completedSet]);
 
   useEffect(() => {
     try {
@@ -560,7 +508,84 @@ export default function CourseModules({
   };
 
   /* =========================
-     mergedMap logic (unchanged but dependency fixed)
+     Internal save: used when parent doesn't supply onReportPlayerProgress
+     - unchanged but updated to prefer videoId when available
+     ========================= */
+  const saveProgressToServerInternal = async (globalIndex: number, positionSeconds: number, completed = false) => {
+    if (!courseId) {
+      if (completed) markGuestCompleted(globalIndex);
+      return;
+    }
+
+    if (saveTimersRef.current[globalIndex]) {
+      window.clearTimeout(saveTimersRef.current[globalIndex]!);
+    }
+
+    saveTimersRef.current[globalIndex] = window.setTimeout(async () => {
+      try {
+        const userKey = getUserKey();
+        const fv = flatVideos[globalIndex];
+        const videoId = fv?.videoId;
+
+        const payload: any = {
+          userKey,
+          courseId,
+          positionSeconds: Math.floor(Math.max(0, positionSeconds)),
+          completed,
+        };
+
+        if (videoId) payload.videoId = videoId;
+        else payload.globalIndex = globalIndex;
+
+        console.log("[CourseModules] internal save: starting", { globalIndex, positionSeconds, completed, courseId, userKey, payload });
+        const res = await fetch("/api/course_progress", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+          console.warn("[CourseModules] internal save server error", await res.text());
+          console.log("AllowedModules raw:", allowedModules);
+console.log("AllowedSet normalized:", Array.from(allowedSet));
+
+        } else {
+          console.log("[CourseModules] internal save success", { globalIndex });
+        }
+
+        setServerProgress((prev) => {
+          const next = new Map(prev);
+          next.set(globalIndex, { positionSeconds, completed });
+          return next;
+        });
+      } catch (err) {
+        console.error("[CourseModules] internal save error:", err);
+      } finally {
+        saveTimersRef.current[globalIndex] = null;
+      }
+    }, 1200);
+  };
+
+  // use parent's handler if provided; otherwise use internal
+  const reportProgress = onReportPlayerProgress ?? saveProgressToServerInternal;
+
+  const getResumeSecondsForGlobalIndex = (globalIndex: number): number | undefined => {
+    const s = serverProgress.get(globalIndex);
+    if (s?.positionSeconds && s.positionSeconds > 1) return s.positionSeconds;
+    return undefined;
+  };
+
+  const handleBookMeet = () => {
+    setMeetModalOpen(true);
+  };
+
+  const hasCompletedFirstVideo = completedSet.has(0);
+
+  /* =========================
+     NEW: Fetch visible videos for this viewer and merge them into local Map state
+     - Calls /api/videos/visible?courseSlug=...&batchIds=1,2 (server-side)
+     - Merges visible video fields (s3_url -> url, public_id -> videoId, thumb -> thumb, duration)
+     - If server call fails or no match, preserves original course.v.url (backwards-compatible)
      ========================= */
   const [mergedMap, setMergedMap] = useState<Map<string, MergedInfo>>(new Map());
   useEffect(() => {
@@ -590,16 +615,16 @@ export default function CourseModules({
           byModule.get(mod)!.push(v);
           if (v.s3_key) byPublicId.set(String(v.s3_key), v);
           if (v.public_id) byPublicId.set(String(v.public_id), v);
-          if (v.id) byPublicId.set(String(v.id), v);
         });
 
         // Build merged map using flattenCourseVideos to create keys
+        const flat = flattenCourseVideos(course);
         const newMap = new Map<string, MergedInfo>();
 
-        flatVideos.forEach((fv) => {
+        flat.forEach((fv) => {
           let matched: any = null;
 
-          // 1) try by videoId from course data (fv.videoId)
+          // 1) try by videoId from course data
           if (fv.videoId && byPublicId.has(String(fv.videoId))) {
             matched = byPublicId.get(String(fv.videoId));
           }
@@ -654,7 +679,7 @@ export default function CourseModules({
       ac.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [course?.slug, viewerBatchIds]);
+  }, [course?.slug, viewerBatchIds.join?.(",")]);
 
   // helper to read merged data (keeps original props unchanged)
   const getMergedForKey = (key: string) => {
@@ -665,96 +690,35 @@ export default function CourseModules({
     }
   };
 
-  /* =========================
-     Internal save: used when parent doesn't supply onReportPlayerProgress
-     - now sends duration and uses videoId when available
-     - typed payload to avoid TS error when adding videoId/globalIndex
-     ========================= */
-  const saveProgressToServerInternal = async (globalIndex: number, positionSeconds: number, completed = false) => {
-    if (!courseId) {
-      if (completed) markGuestCompleted(globalIndex);
+  // Internal: play by global index (unchanged but uses merged url when available)
+  const playGlobalIndex = (globalIndex: number, autoplay = false) => {
+    const fv = flatVideos[globalIndex];
+    if (!fv) {
+      console.warn("[CourseModules] playGlobalIndex: missing fv", { globalIndex });
       return;
     }
-
-    if (saveTimersRef.current[globalIndex]) {
-      window.clearTimeout(saveTimersRef.current[globalIndex]!);
+    // if we have a merged visible record, prefer that url
+    const merged = getMergedForKey(fv.key);
+    const urlToPlay = merged?.url ?? fv.url;
+    if (!urlToPlay) {
+      console.warn("[CourseModules] playGlobalIndex: missing url", { globalIndex, fv });
+      return;
     }
-
-    saveTimersRef.current[globalIndex] = window.setTimeout(async () => {
-      try {
-        const userKey = getUserKey();
-        const fv = flatVideos[globalIndex];
-        const videoId = fv?.videoId;
-
-        // NEW: prefer merged duration if available
-        const merged = getMergedForKey(fv?.key ?? "");
-        const durationVal = typeof merged?.duration === "number" && merged.duration > 0 ? Math.floor(merged.duration) : 0;
-
-        const payload: ProgressPayload = {
-          userKey,
-          courseId,
-          positionSeconds: Math.floor(Math.max(0, positionSeconds)),
-          duration: durationVal,
-          completed,
-        };
-
-        if (videoId) payload.videoId = videoId;
-        else payload.globalIndex = globalIndex;
-
-        console.log("[CourseModules] internal save: starting", { globalIndex, positionSeconds, completed, courseId, userKey, payload });
-        const res = await fetch("/api/course_progress", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-
-        if (!res.ok) {
-          console.warn("[CourseModules] internal save server error", await res.text());
-        } else {
-          console.log("[CourseModules] internal save success", { globalIndex });
-        }
-
-        setServerProgress((prev) => {
-          const next = new Map(prev);
-          next.set(globalIndex, { positionSeconds: Math.floor(Math.max(0, positionSeconds)), completed });
-          return next;
-        });
-      } catch (err) {
-        console.error("[CourseModules] internal save error:", err);
-      } finally {
-        saveTimersRef.current[globalIndex] = null;
-      }
-    }, 1200);
+    const module = course.modules?.[fv.moduleIndex];
+    const moduleIdSafe = module?.moduleId ?? "";
+    const resume = getResumeSecondsForGlobalIndex(globalIndex);
+    console.log("[CourseModules] playGlobalIndex -> onPlayVideo", { globalIndex, url: urlToPlay, resume, autoplay });
+    setActiveVideoKey(fv.key);
+    onPlayVideo(urlToPlay, fv.title, moduleIdSafe, fv.videoIndex, { resumeSeconds: resume, autoplay });
   };
 
-  // use parent's handler if provided; otherwise use internal
-  const reportProgress = onReportPlayerProgress ?? saveProgressToServerInternal;
-
-  const getResumeSecondsForGlobalIndex = (globalIndex: number): number | undefined => {
-    const s = serverProgress.get(globalIndex);
-    if (s?.positionSeconds && s.positionSeconds > 1) return s.positionSeconds;
-    return undefined;
-  };
-
-  const handleBookMeet = () => {
-    setMeetModalOpen(true);
-  };
-
-  const hasCompletedFirstVideo = completedSet.has(0);
-
-  /* =========================
-     Updated: handleVideoCompleted now saves duration (if known) as resumeForSave
-     ========================= */
+  // called either from our custom event listener or internally
   const handleVideoCompleted = (globalIndex: number) => {
     console.log("[CourseModules] handleVideoCompleted for", globalIndex);
     markGuestCompleted(globalIndex);
 
-    const merged = getMergedForKey(flatVideos[globalIndex]?.key ?? "");
-    const duration = merged?.duration ? Math.floor(merged.duration) : 0;
-
-    const resumeForSave = duration > 0 ? duration : (serverProgress.get(globalIndex)?.positionSeconds ?? 0);
-
-    console.log("[CourseModules] saving completed true", { globalIndex, resumeForSave, duration });
+    const resumeForSave = serverProgress.get(globalIndex)?.positionSeconds ?? 0;
+    console.log("[CourseModules] saving completed true", { globalIndex, resumeForSave });
     reportProgress(globalIndex, resumeForSave, true);
 
     // ⭐ find next UNCOMPLETED video instead of next index
@@ -788,90 +752,12 @@ export default function CourseModules({
     }
   };
 
-  // Internal: play by global index (unchanged but uses merged url when available)
-  const playGlobalIndex = (globalIndex: number, autoplay = false) => {
-    const fv = flatVideos[globalIndex];
-    if (!fv) {
-      console.warn("[CourseModules] playGlobalIndex: missing fv", { globalIndex });
-      return;
-    }
-    // if we have a merged visible record, prefer that url
-    const merged = getMergedForKey(fv.key);
-    const urlToPlay = merged?.url ?? fv.url;
-    if (!urlToPlay) {
-      console.warn("[CourseModules] playGlobalIndex: missing url", { globalIndex, fv });
-      return;
-    }
-    const module = course.modules?.[fv.moduleIndex];
-    const moduleIdSafe = module?.moduleId ?? "";
-    const resume = getResumeSecondsForGlobalIndex(globalIndex);
-    console.log("[CourseModules] playGlobalIndex -> onPlayVideo", { globalIndex, url: urlToPlay, resume, autoplay });
-    setActiveVideoKey(fv.key);
-    onPlayVideo(urlToPlay, fv.title, moduleIdSafe, fv.videoIndex, { resumeSeconds: resume, autoplay });
-  };
-
   /* =========================
-     Save on unload (tab close / refresh / logout)
-     Uses refs for latest values to avoid stale closure issues
-     ========================= */
-  useEffect(() => {
-    const handler = () => {
-      const activeKey = activeVideoKeyRef.current;
-      if (!activeKey) return;
-      const gIndex = videoKeyToGlobalIndex.get(activeKey);
-      if (typeof gIndex !== "number" || gIndex < 0) return;
-
-      // read serverProgressRef for latest known position
-      const lastEntry = serverProgressRef.current.get(gIndex);
-      const lastPos = lastEntry?.positionSeconds ?? 0;
-      const merged = getMergedForKey(flatVideos[gIndex]?.key ?? "");
-      const duration = merged?.duration ? Math.floor(merged.duration) : 0;
-
-      const resumeForSave = duration > 0 ? duration : lastPos;
-
-      try {
-        const payload: ProgressPayload = {
-          userKey: getUserKey(),
-          courseId,
-          positionSeconds: Math.floor(Math.max(0, resumeForSave)),
-          duration: duration,
-          completed: Boolean(duration > 0 && resumeForSave >= duration),
-        };
-
-        const fv = flatVideos[gIndex];
-        if (fv?.videoId) payload.videoId = fv.videoId;
-        else payload.globalIndex = gIndex;
-
-        // Best-effort: try navigator.sendBeacon with JSON (works in many browsers)
-        const url = "/api/course_progress";
-        const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
-        if (navigator && typeof navigator.sendBeacon === "function") {
-          navigator.sendBeacon(url, blob);
-        } else {
-          // fallback synchronous XHR (best-effort, not ideal but usable)
-          const xhr = new XMLHttpRequest();
-          xhr.open("POST", url, false); // false = synchronous
-          xhr.setRequestHeader("Content-Type", "application/json");
-          try {
-            xhr.send(JSON.stringify(payload));
-          } catch (err) {
-            // ignore
-          }
-        }
-      } catch (err) {
-        // ignore
-      }
-    };
-
-    window.addEventListener("beforeunload", handler);
-    return () => {
-      window.removeEventListener("beforeunload", handler);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [courseId, flatVideos, videoKeyToGlobalIndex]);
-
-  /* =========================
-     RENDER (unchanged)
+     RENDER (mostly unchanged, but per-video we:
+      - look up merged info (thumb, url, visible)
+      - display thumbnail
+      - overlay Locked if not visible
+      - compute progress percent using serverProgress or duration if available
      ========================= */
   return (
     <div className="w-full max-w-3xl mx-auto space-y-6">

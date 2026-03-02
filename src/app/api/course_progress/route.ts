@@ -1,3 +1,5 @@
+// app/api/course_progress/route.ts
+
 import { NextResponse } from "next/server";
 import mysql from "mysql2/promise";
 
@@ -8,84 +10,121 @@ const pool = mysql.createPool({
   database: process.env.DB_NAME,
 });
 
-/* ================= SAVE PROGRESS ================= */
+/* ======================================================
+   GET PROGRESS (FROM students.progress JSON COLUMN)
+====================================================== */
+
+export async function GET(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const courseId = searchParams.get("courseId");
+    const userKey = searchParams.get("userKey");
+
+    if (!courseId || !userKey) {
+      return NextResponse.json([]);
+    }
+
+    const [rows]: any = await pool.query(
+      `SELECT progress FROM lms_students WHERE email = ? LIMIT 1`,
+      [userKey]
+    );
+
+    if (!rows.length || !rows[0].progress) {
+      return NextResponse.json([]);
+    }
+
+    let fullProgress: Record<string, any> = {};
+
+    try {
+      fullProgress = JSON.parse(rows[0].progress);
+    } catch {
+      return NextResponse.json([]);
+    }
+
+    const courseProgress = fullProgress[courseId];
+
+    if (!courseProgress) {
+      return NextResponse.json([]);
+    }
+
+    const result = Object.entries(courseProgress).map(
+      ([videoId, data]: any) => ({
+        videoId,
+        positionSeconds: Number(data.positionSeconds ?? 0),
+        duration: Number(data.duration ?? 0),
+        completed: Boolean(data.completed),
+      })
+    );
+
+    return NextResponse.json(result);
+  } catch (err) {
+    console.error("GET course_progress error:", err);
+    return NextResponse.json([], { status: 500 });
+  }
+}
+
+/* ======================================================
+   SAVE / UPDATE PROGRESS (INSIDE students.progress JSON)
+====================================================== */
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-
-    console.log("📥 Saving Progress:", body);
 
     const {
       userKey,
       courseId,
       videoId,
-      globalIndex,
       positionSeconds,
+      duration,
       completed,
     } = body;
 
-    // 🚨 prevent overwriting real progress with 0
-    if (completed && Number(positionSeconds || 0) === 0) {
-      console.log("⛔ Skip invalid completed save (0 sec)");
-      return NextResponse.json({ skipped: true });
+    if (!userKey || !courseId || !videoId) {
+      return NextResponse.json(
+        { error: "Missing required fields" },
+        { status: 400 }
+      );
     }
 
-    await pool.query(
-      `
-      INSERT INTO course_progress
-      (user_key, course_id, video_id, global_index, position_sec, completed)
-      VALUES (?, ?, ?, ?, ?, ?)
-      ON DUPLICATE KEY UPDATE
-        global_index = VALUES(global_index),
-        video_id = VALUES(video_id),
-        position_sec = VALUES(position_sec),
-        completed = VALUES(completed),
-        updated_at = CURRENT_TIMESTAMP
-      `,
-      [
-        userKey,
-        courseId,
-        videoId ?? null,
-        globalIndex ?? null,
-        Number(positionSeconds || 0),
-        completed ? 1 : 0,
-      ]
+    const [rows]: any = await pool.query(
+      `SELECT progress FROM lms_students WHERE email = ? LIMIT 1`,
+      [userKey]
     );
 
-    console.log("✅ Progress Updated");
+    let fullProgress: Record<string, any> = {};
+
+    if (rows.length && rows[0].progress) {
+      try {
+        fullProgress = JSON.parse(rows[0].progress);
+      } catch {
+        fullProgress = {};
+      }
+    }
+
+    if (!fullProgress[courseId]) {
+      fullProgress[courseId] = {};
+    }
+
+    // ✅ Trust frontend for completion
+    fullProgress[courseId][videoId] = {
+      positionSeconds: Math.max(0, Math.floor(positionSeconds || 0)),
+      duration: Math.max(0, Math.floor(duration || 0)),
+      completed: Boolean(completed),
+      updated_at: new Date().toISOString(),
+    };
+
+    await pool.query(
+      `UPDATE lms_students SET progress = ? WHERE email = ?`,
+      [JSON.stringify(fullProgress), userKey]
+    );
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    console.error("❌ Progress API error:", err);
-    return NextResponse.json({ error: "Failed" }, { status: 500 });
-  }
-}
-
-/* ================= LOAD LAST VIDEO ================= */
-export async function GET(req: Request) {
-  try {
-    const { searchParams } = new URL(req.url);
-
-    const userKey = searchParams.get("userKey");
-    const courseId = searchParams.get("courseId");
-
-    const [rows]: any = await pool.query(
-      `
-      SELECT video_id, global_index, position_sec
-      FROM course_progress
-      WHERE user_key=? AND course_id=?
-      ORDER BY updated_at DESC
-      LIMIT 1
-      `,
-      [userKey, courseId]
+    console.error("POST course_progress error:", err);
+    return NextResponse.json(
+      { error: "Failed to save progress" },
+      { status: 500 }
     );
-
-    console.log("📤 Last Progress:", rows);
-
-    // ⭐ RETURN ARRAY (frontend expects array)
-    return NextResponse.json(rows ?? []);
-  } catch (err) {
-    console.error("❌ Load Progress Error:", err);
-    return NextResponse.json({ error: "Failed" }, { status: 500 });
   }
 }
