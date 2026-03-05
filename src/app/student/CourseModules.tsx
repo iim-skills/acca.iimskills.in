@@ -2,8 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import BookingMentors from "@/components/MentorsMeetForm";
-
+import BookingApp from "@/components/MentorsMeetForm";
 import {
   ChevronDown,
   ChevronUp,
@@ -14,18 +13,16 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import Modal from "@/components/Modal";
-import BookingApp from "@/components/MentorsMeetForm";
 
 /* ===== TYPES ===== */
 export type VideoItem = {
   id?: string;
   title?: string;
   url?: string;
-  // NEW:
-  videoId?: string; // should contain DB video_id (or other stable id)
-  thumb?: string; // thumbnail url
-  duration?: number; // optional duration seconds
-  visible?: boolean; // whether video is visible to this viewer (batch-based)
+  videoId?: string;
+  thumb?: string;
+  duration?: number;
+  visible?: boolean;
 };
 
 export type Submodule = {
@@ -62,7 +59,7 @@ type ProgressEntry = {
 type Props = {
   course: Course | null;
   allowedModules?: string[];
-  progress?: Record<string, number[]>; // existing server-side completion structure (by module)
+  progress?: Record<string, number[]>;
   onPlayVideo: (
     videoUrl: string,
     title?: string,
@@ -71,16 +68,14 @@ type Props = {
     options?: { resumeSeconds?: number; autoplay?: boolean }
   ) => void;
   onReportPlayerProgress?: (globalIndex: number, positionSeconds: number, completed?: boolean) => void;
+
+  // NEW: parent will open quiz (same as onPlayVideo pattern)
+  onOpenQuiz?: (quiz: Quiz) => void;
 };
 
-/* ===== CONSTANTS ===== */
 const FREE_PREVIEW_COUNT = 5;
 const GUEST_PROGRESS_KEY = (courseId: string) => `guest_progress_${courseId || "unknown_course"}`;
 
-/* =========================
-   Helper: flatten videos -> global indexing
-   Accepts Course | null to avoid TS null issues
-   ========================= */
 function flattenCourseVideos(course: Course | null) {
   const out: Array<{
     moduleIndex: number;
@@ -101,18 +96,6 @@ function flattenCourseVideos(course: Course | null) {
       s.videos?.forEach((v, vi) => {
         const moduleKeyPart = m.moduleId ?? `module-${mi}`;
         const key = `${moduleKeyPart}-sub-${si}-vid-${vi}`;
-
-        // Prefer stable DB id fields if available. Keep order of preference:
-        // v.videoId (explicit), v.id, v.public_id, v.s3_key — but leave undefined if not present
-        const vid =
-          (v.videoId && String(v.videoId)) ||
-          (v.id && String(v.id)) ||
-          // @ts-ignore - some data sources may use different naming
-          (v?.public_id && String(v.public_id)) ||
-          // @ts-ignore
-          (v?.s3_key && String(v.s3_key)) ||
-          undefined;
-
         out.push({
           moduleIndex: mi,
           subIndex: si,
@@ -121,7 +104,7 @@ function flattenCourseVideos(course: Course | null) {
           submoduleId: s.submoduleId,
           title: v.title,
           url: v.url,
-          videoId: vid,
+          videoId: (v.id ?? v.videoId) as string | undefined,
           key,
         });
       });
@@ -132,27 +115,25 @@ function flattenCourseVideos(course: Course | null) {
 }
 
 /* =========================
-   Merged info type
+   QUIZ types
    ========================= */
-type MergedInfo = {
-  url?: string;
-  videoId?: string;
-  thumb?: string;
-  duration?: number;
-  visible?: boolean;
+export type QuizQuestion = {
+  id?: string;
+  text?: string;
+  type?: string;
+  options?: Array<{ id?: string; text?: string }>;
+  correctOption?: string | number;
+  correctAnswer?: string;
+  answer?: string | number;
 };
 
-/* =========================
-   ProgressPayload type (for TS safety)
-   ========================= */
-type ProgressPayload = {
-  userKey: string;
-  courseId: string;
-  positionSeconds: number;
-  duration: number;
-  completed: boolean;
-  videoId?: string;
-  globalIndex?: number;
+export type Quiz = {
+  id: string;
+  name?: string;
+  submodule_id?: string;
+  course_slug?: string;
+  time_minutes?: number;
+  questions: QuizQuestion[];
 };
 
 /* =========================
@@ -164,8 +145,8 @@ export default function CourseModules({
   progress = {},
   onPlayVideo,
   onReportPlayerProgress,
+  onOpenQuiz,
 }: Props): React.ReactElement {
-  // preserved original state
   const [openModuleId, setOpenModuleId] = useState<string | null>(null);
   const [openSubKey, setOpenSubKey] = useState<string | null>(null);
   const [activeVideoKey, setActiveVideoKey] = useState<string | null>(null);
@@ -173,20 +154,19 @@ export default function CourseModules({
   const [guestProgress, setGuestProgress] = useState<Set<number>>(new Set());
   const [meetModalOpen, setMeetModalOpen] = useState(false);
 
-  // serverProgress: map globalIndex -> ProgressEntry
   const [serverProgress, setServerProgress] = useState<Map<number, ProgressEntry>>(new Map());
   const saveTimersRef = useRef<Record<number, number | null>>({});
 
-  // detect free-login user (client-only)
   const [isFreeLoggedIn, setIsFreeLoggedIn] = useState<boolean>(false);
-
-  // NEW: viewer batch ids (string ids)
   const [viewerBatchIds, setViewerBatchIds] = useState<string[]>([]);
+
+  // QUIZ: quizzes mapping: submoduleId => Quiz[]
+  const [quizzesBySubmodule, setQuizzesBySubmodule] = useState<Record<string, Quiz[]>>({});
 
   const router = useRouter();
 
   const handleJoinFullCourse = () => {
-    router.push("/enroll"); // 👈 your enroll page route
+    router.push("/enroll");
   };
 
   useEffect(() => {
@@ -194,13 +174,11 @@ export default function CourseModules({
       const raw = localStorage.getItem("user");
       if (raw) {
         const u = JSON.parse(raw);
-        // we consider loginType 'guest' as free login (from your free login implementation)
         if (u?.loginType === "guest" || u?.role === "guest" || u?.loginType === "free") {
           setIsFreeLoggedIn(true);
           return;
         }
       }
-      // fallback: if course_user_key exists and not a paid allowedModules array, treat as free
       const ck = localStorage.getItem("course_user_key");
       if (ck && (!allowedModules || allowedModules.length === 0)) {
         setIsFreeLoggedIn(true);
@@ -210,11 +188,8 @@ export default function CourseModules({
     } catch {
       setIsFreeLoggedIn(false);
     }
-    // only run on mount and when allowedModules changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allowedModules.join?.(",")]);
 
-  // normalize courseId to a guaranteed string
   const courseId = course?.courseId ?? "";
 
   const getUserKey = (): string => {
@@ -231,7 +206,6 @@ export default function CourseModules({
     }
   };
 
-  // Auto-open first module + first submodule for free users
   useEffect(() => {
     if (!course?.modules?.length) return;
     if (!isFreeLoggedIn) return;
@@ -248,7 +222,7 @@ export default function CourseModules({
   }, [course, isFreeLoggedIn]);
 
   /* =========================
-     NEW: Determine viewer's batch ids
+     Determine viewer's batch ids
      ========================= */
   useEffect(() => {
     let mounted = true;
@@ -267,19 +241,14 @@ export default function CourseModules({
 
         if (meRes.ok) {
           const me = await meRes.json();
-          const batches =
-            me?.batches ||
-            me?.batch_ids ||
-            me?.batchIds ||
-            [];
-
+          const batches = me?.batches || me?.batch_ids || me?.batchIds || [];
           if (mounted && Array.isArray(batches) && batches.length > 0) {
             setViewerBatchIds(batches.map((b: any) => String(b)));
             return;
           }
         }
       } catch {
-        // ignore, fallback to localStorage
+        // ignore
       }
 
       try {
@@ -300,98 +269,46 @@ export default function CourseModules({
   }, []);
 
   /* =========================
-     Fetch server progress for guest user OR logged-in user
-     - NOTE: depend only on courseId and structure size to avoid noisy refetches
+     Fetch server progress
      ========================= */
-  const flatVideos = useMemo(() => flattenCourseVideos(course), [course]);
   useEffect(() => {
     if (!courseId) return;
     let mounted = true;
     (async () => {
       try {
         const userKey = getUserKey();
-        console.log("[CourseModules] fetching server progress for", { courseId, userKey });
         const res = await fetch(`/api/course_progress?courseId=${encodeURIComponent(courseId)}&userKey=${encodeURIComponent(userKey)}`);
         if (!res.ok) {
-          console.warn("[CourseModules] fetch progress returned not ok:", res.status, await res.text());
           return;
         }
         const data = (await res.json()) as Array<any>;
-        console.log("[CourseModules] fetched progress:", data);
         if (!mounted) return;
 
-        // Build a map from video_public_id/videoId -> globalIndex to map server responses to indexes
+        const flat = flattenCourseVideos(course);
         const videoIdToGlobalIndex = new Map<string, number>();
-        flatVideos.forEach((fv, idx) => {
+        flat.forEach((fv, idx) => {
           if (fv.videoId) videoIdToGlobalIndex.set(String(fv.videoId), idx);
         });
 
         const map = new Map<number, ProgressEntry>();
-
         data.forEach((d) => {
           let gIdx = -1;
-
-          // Candidate ids from the backend response
-          const candidates = [
-            d.videoId,
-            d.video_id,
-            d.video_public_id,
-            d.video_publicid,
-            d.videoPublicId,
-            d.id,
-            // sometimes backend might store numeric keys (like "7"), so include that too
-            String(d.videoId ?? d.video_id ?? d.id ?? "")
-          ].filter(Boolean).map(String);
-
-          // 1) try direct map lookup
-          for (const c of candidates) {
-            if (videoIdToGlobalIndex.has(c)) {
-              gIdx = videoIdToGlobalIndex.get(c)!;
-              break;
+          if (typeof d.globalIndex === "number") gIdx = d.globalIndex;
+          else if (typeof d.global_index === "number") gIdx = d.global_index;
+          else if (d.videoId || d.video_public_id || d.video_publicid) {
+            const vid = d.videoId ?? d.video_public_id ?? d.video_publicid;
+            const maybe = videoIdToGlobalIndex.get(String(vid));
+            if (typeof maybe === "number") gIdx = maybe;
+            else {
+              const findIdx = flat.findIndex((fv) => String(fv.videoId) === String(vid));
+              if (findIdx >= 0) gIdx = findIdx;
             }
-          }
-
-          // 2) fallback: try findIndex by comparing fv.videoId (if present)
-          if (gIdx === -1) {
-            for (let i = 0; i < flatVideos.length; i++) {
-              const fv = flatVideos[i];
-              if (fv.videoId && candidates.includes(String(fv.videoId))) {
-                gIdx = i;
-                break;
-              }
-              // also try matching candidate to the flat key (some systems save keys)
-              if (candidates.includes(fv.key)) {
-                gIdx = i;
-                break;
-              }
-              // if fv.url contains the candidate as a public id (cloudinary), try that
-              try {
-                const url = fv.url ?? "";
-                for (const c of candidates) {
-                  if (!c) continue;
-                  if (typeof url === "string" && url.includes(String(c))) {
-                    gIdx = i;
-                    break;
-                  }
-                }
-                if (gIdx !== -1) break;
-              } catch {}
-            }
-          }
-
-          // 3) last resort: if backend returned a numeric global_index, use it
-          if (gIdx === -1) {
-            if (typeof d.globalIndex === "number") gIdx = d.globalIndex;
-            else if (typeof d.global_index === "number") gIdx = d.global_index;
           }
 
           if (gIdx >= 0) {
-            const pos = Number(d.positionSeconds ?? d.position_seconds ?? d.position_sec ?? 0);
-            const comp = Boolean(d.completed ?? d.is_completed ?? d.complete);
-            map.set(gIdx, { positionSeconds: pos, completed: comp });
+            map.set(gIdx, { positionSeconds: Number(d.positionSeconds ?? d.position_seconds ?? 0), completed: Boolean(d.completed) });
           }
         });
-
         setServerProgress(map);
       } catch (err) {
         console.error("[CourseModules] error fetching progress:", err);
@@ -400,9 +317,7 @@ export default function CourseModules({
     return () => {
       mounted = false;
     };
-    // depend on courseId and length of flatVideos to avoid noisy refetches
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [courseId, flatVideos.length]);
+  }, [courseId, course]);
 
   useEffect(() => {
     if (!courseId) {
@@ -418,23 +333,18 @@ export default function CourseModules({
     }
   }, [courseId]);
 
-  // listen for global custom event dispatched when the native player completes a video
   useEffect(() => {
     const handler = (e: Event) => {
       try {
         const ce = e as CustomEvent<{ globalIndex: number }>;
         if (typeof ce.detail?.globalIndex === "number") {
-          console.log("[CourseModules] received lms_video_completed event", ce.detail.globalIndex);
           handleVideoCompleted(ce.detail.globalIndex);
         }
-      } catch {
-        // ignore
-      }
+      } catch {}
     };
     window.addEventListener("lms_video_completed", handler as EventListener);
     return () => window.removeEventListener("lms_video_completed", handler as EventListener);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serverProgress, guestProgress, courseId]);
+  }, [serverProgress, guestProgress, course]);
 
   const allowedSet = useMemo(() => new Set(allowedModules || []), [allowedModules]);
   const isPaidUser = Boolean(allowedModules && allowedModules.length > 0);
@@ -447,14 +357,14 @@ export default function CourseModules({
     );
   }
 
-  // flatten videos + maps (same as before)
+  const flatVideos = useMemo(() => flattenCourseVideos(course), [course]);
+
   const videoKeyToGlobalIndex = useMemo(() => {
     const map = new Map<string, number>();
     flatVideos.forEach((v, idx) => map.set(v.key, idx));
     return map;
   }, [flatVideos]);
 
-  // keep refs of activeVideoKey and serverProgress so unload handler uses latest values
   const activeVideoKeyRef = useRef<string | null>(activeVideoKey);
   useEffect(() => {
     activeVideoKeyRef.current = activeVideoKey;
@@ -465,7 +375,6 @@ export default function CourseModules({
     serverProgressRef.current = serverProgress;
   }, [serverProgress]);
 
-  // completed set is combined from serverProgress, guestProgress and existing `progress` (server by module)
   const completedSet = useMemo(() => {
     const s = new Set<number>();
 
@@ -536,7 +445,6 @@ export default function CourseModules({
       if (s.has(prevId) && isModuleCompletedByCompletedSet(prev)) s.add(mid);
     }
     return s;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [course.modules, allowedSet, completedSet, flatVideos]);
 
   useEffect(() => {
@@ -545,9 +453,7 @@ export default function CourseModules({
         const arr = Array.from(guestProgress.values());
         localStorage.setItem(GUEST_PROGRESS_KEY(courseId), JSON.stringify(arr));
       }
-    } catch {
-      // ignore
-    }
+    } catch {}
   }, [guestProgress, courseId]);
 
   const markGuestCompleted = (gIndex: number) => {
@@ -560,9 +466,9 @@ export default function CourseModules({
   };
 
   /* =========================
-     mergedMap logic (unchanged but dependency fixed)
+     mergedMap logic (unchanged)
      ========================= */
-  const [mergedMap, setMergedMap] = useState<Map<string, MergedInfo>>(new Map());
+  const [mergedMap, setMergedMap] = useState<Map<string, any>>(new Map());
   useEffect(() => {
     let mounted = true;
     const ac = new AbortController();
@@ -577,10 +483,9 @@ export default function CourseModules({
           console.info("[CourseModules] visible videos API not available or returned not ok:", res.status);
           return;
         }
-        const visible = await res.json(); // expected array
+        const visible = await res.json();
         if (!mounted || !Array.isArray(visible)) return;
 
-        // Build quick lookup maps
         const byModule = new Map<string, any[]>();
         const byPublicId = new Map<string, any>();
 
@@ -590,21 +495,18 @@ export default function CourseModules({
           byModule.get(mod)!.push(v);
           if (v.s3_key) byPublicId.set(String(v.s3_key), v);
           if (v.public_id) byPublicId.set(String(v.public_id), v);
-          if (v.id) byPublicId.set(String(v.id), v);
         });
 
-        // Build merged map using flattenCourseVideos to create keys
-        const newMap = new Map<string, MergedInfo>();
+        const flat = flattenCourseVideos(course);
+        const newMap = new Map<string, any>();
 
-        flatVideos.forEach((fv) => {
+        flat.forEach((fv) => {
           let matched: any = null;
 
-          // 1) try by videoId from course data (fv.videoId)
           if (fv.videoId && byPublicId.has(String(fv.videoId))) {
             matched = byPublicId.get(String(fv.videoId));
           }
 
-          // 2) try to extract public id from fv.url if it's cloudinary url
           if (!matched && fv.url && String(fv.url).includes("res.cloudinary.com")) {
             try {
               const parts = String(fv.url).split("/");
@@ -614,7 +516,6 @@ export default function CourseModules({
             } catch {}
           }
 
-          // 3) try by module + title exact match (case-insensitive)
           if (!matched) {
             const candidates = byModule.get(String(fv.moduleId ?? "")) || [];
             if (candidates.length) {
@@ -625,7 +526,6 @@ export default function CourseModules({
             }
           }
 
-          // 4) fallback by order within module
           if (!matched) {
             const candidates = byModule.get(String(fv.moduleId ?? "")) || [];
             if (candidates.length > fv.videoIndex) matched = candidates[fv.videoIndex];
@@ -653,10 +553,8 @@ export default function CourseModules({
       mounted = false;
       ac.abort();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [course?.slug, viewerBatchIds]);
+  }, [course?.slug, viewerBatchIds.join?.(",")]);
 
-  // helper to read merged data (keeps original props unchanged)
   const getMergedForKey = (key: string) => {
     try {
       return mergedMap.get(key);
@@ -666,9 +564,55 @@ export default function CourseModules({
   };
 
   /* =========================
-     Internal save: used when parent doesn't supply onReportPlayerProgress
-     - now sends duration and uses videoId when available
-     - typed payload to avoid TS error when adding videoId/globalIndex
+     QUIZ: fetch quizzes for course and map to submodules
+     - expects API: GET /api/admin/quizzes?courseSlug=...  (or ?submoduleId=...)
+     ========================= */
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      if (!course?.slug) return;
+      try {
+        const res = await fetch(`/api/admin/quizzes?courseSlug=${encodeURIComponent(course.slug)}`);
+        if (!res.ok) {
+          console.info("[CourseModules] quizzes API returned not ok:", res.status);
+          return;
+        }
+        const items = await res.json(); // expecting array of rows from your quizzes table
+        if (!mounted || !Array.isArray(items)) return;
+
+        const map: Record<string, Quiz[]> = {};
+        items.forEach((row: any) => {
+          try {
+            const subId = String(row.submodule_id ?? row.submodule ?? row.submoduleId ?? "");
+            const questions = typeof row.questions === "string" ? JSON.parse(row.questions) : row.questions ?? [];
+            const quiz: Quiz = {
+              id: String(row.id ?? row.quiz_id ?? row._id ?? `${row.name ?? "quiz"}-${Math.random()}`),
+              name: row.name ?? row.title ?? `Quiz ${row.id}`,
+              submodule_id: subId,
+              course_slug: row.course_slug ?? course.slug,
+              time_minutes: Number(row.time_minutes ?? row.time_minutes ?? 0) || undefined,
+              questions,
+            };
+            if (!map[subId]) map[subId] = [];
+            map[subId].push(quiz);
+          } catch (err) {
+            console.warn("[CourseModules] skipping quiz parsing error", err, row);
+          }
+        });
+
+        setQuizzesBySubmodule(map);
+      } catch (err) {
+        console.error("[CourseModules] error fetching quizzes:", err);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [course?.slug]);
+
+  /* =========================
+     internal save+report logic (preserved)
      ========================= */
   const saveProgressToServerInternal = async (globalIndex: number, positionSeconds: number, completed = false) => {
     if (!courseId) {
@@ -686,11 +630,10 @@ export default function CourseModules({
         const fv = flatVideos[globalIndex];
         const videoId = fv?.videoId;
 
-        // NEW: prefer merged duration if available
         const merged = getMergedForKey(fv?.key ?? "");
         const durationVal = typeof merged?.duration === "number" && merged.duration > 0 ? Math.floor(merged.duration) : 0;
 
-        const payload: ProgressPayload = {
+        const payload: any = {
           userKey,
           courseId,
           positionSeconds: Math.floor(Math.max(0, positionSeconds)),
@@ -701,7 +644,6 @@ export default function CourseModules({
         if (videoId) payload.videoId = videoId;
         else payload.globalIndex = globalIndex;
 
-        console.log("[CourseModules] internal save: starting", { globalIndex, positionSeconds, completed, courseId, userKey, payload });
         const res = await fetch("/api/course_progress", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -710,8 +652,6 @@ export default function CourseModules({
 
         if (!res.ok) {
           console.warn("[CourseModules] internal save server error", await res.text());
-        } else {
-          console.log("[CourseModules] internal save success", { globalIndex });
         }
 
         setServerProgress((prev) => {
@@ -727,7 +667,6 @@ export default function CourseModules({
     }, 1200);
   };
 
-  // use parent's handler if provided; otherwise use internal
   const reportProgress = onReportPlayerProgress ?? saveProgressToServerInternal;
 
   const getResumeSecondsForGlobalIndex = (globalIndex: number): number | undefined => {
@@ -736,17 +675,11 @@ export default function CourseModules({
     return undefined;
   };
 
-  const handleBookMeet = () => {
-    setMeetModalOpen(true);
-  };
+  const handleBookMeet = () => setMeetModalOpen(true);
 
   const hasCompletedFirstVideo = completedSet.has(0);
 
-  /* =========================
-     Updated: handleVideoCompleted now saves duration (if known) as resumeForSave
-     ========================= */
   const handleVideoCompleted = (globalIndex: number) => {
-    console.log("[CourseModules] handleVideoCompleted for", globalIndex);
     markGuestCompleted(globalIndex);
 
     const merged = getMergedForKey(flatVideos[globalIndex]?.key ?? "");
@@ -754,10 +687,9 @@ export default function CourseModules({
 
     const resumeForSave = duration > 0 ? duration : (serverProgress.get(globalIndex)?.positionSeconds ?? 0);
 
-    console.log("[CourseModules] saving completed true", { globalIndex, resumeForSave, duration });
     reportProgress(globalIndex, resumeForSave, true);
 
-    // ⭐ find next UNCOMPLETED video instead of next index
+    // autoplay next uncompleted video
     let nextIndex = -1;
     for (let i = globalIndex + 1; i < flatVideos.length; i++) {
       if (!completedSet.has(i)) {
@@ -776,26 +708,20 @@ export default function CourseModules({
           (!nextModule?.moduleId && unlockedModulesSet.has(nextModuleKey))
       );
 
-      console.log("[CourseModules] nextIndex check", { nextIndex, nextModuleUnlocked });
       if (nextModuleUnlocked || isVideoFreePreview(nextIndex)) {
         setTimeout(() => {
-          console.log("[CourseModules] autoplaying nextIndex", nextIndex);
           playGlobalIndex(nextIndex, true);
         }, 300);
-      } else {
-        console.log("[CourseModules] nextIndex not unlocked", nextIndex);
       }
     }
   };
 
-  // Internal: play by global index (unchanged but uses merged url when available)
   const playGlobalIndex = (globalIndex: number, autoplay = false) => {
     const fv = flatVideos[globalIndex];
     if (!fv) {
       console.warn("[CourseModules] playGlobalIndex: missing fv", { globalIndex });
       return;
     }
-    // if we have a merged visible record, prefer that url
     const merged = getMergedForKey(fv.key);
     const urlToPlay = merged?.url ?? fv.url;
     if (!urlToPlay) {
@@ -805,14 +731,12 @@ export default function CourseModules({
     const module = course.modules?.[fv.moduleIndex];
     const moduleIdSafe = module?.moduleId ?? "";
     const resume = getResumeSecondsForGlobalIndex(globalIndex);
-    console.log("[CourseModules] playGlobalIndex -> onPlayVideo", { globalIndex, url: urlToPlay, resume, autoplay });
     setActiveVideoKey(fv.key);
     onPlayVideo(urlToPlay, fv.title, moduleIdSafe, fv.videoIndex, { resumeSeconds: resume, autoplay });
   };
 
   /* =========================
-     Save on unload (tab close / refresh / logout)
-     Uses refs for latest values to avoid stale closure issues
+     Save on unload (preserved)
      ========================= */
   useEffect(() => {
     const handler = () => {
@@ -821,7 +745,6 @@ export default function CourseModules({
       const gIndex = videoKeyToGlobalIndex.get(activeKey);
       if (typeof gIndex !== "number" || gIndex < 0) return;
 
-      // read serverProgressRef for latest known position
       const lastEntry = serverProgressRef.current.get(gIndex);
       const lastPos = lastEntry?.positionSeconds ?? 0;
       const merged = getMergedForKey(flatVideos[gIndex]?.key ?? "");
@@ -830,7 +753,7 @@ export default function CourseModules({
       const resumeForSave = duration > 0 ? duration : lastPos;
 
       try {
-        const payload: ProgressPayload = {
+        const payload: any = {
           userKey: getUserKey(),
           courseId,
           positionSeconds: Math.floor(Math.max(0, resumeForSave)),
@@ -842,39 +765,33 @@ export default function CourseModules({
         if (fv?.videoId) payload.videoId = fv.videoId;
         else payload.globalIndex = gIndex;
 
-        // Best-effort: try navigator.sendBeacon with JSON (works in many browsers)
         const url = "/api/course_progress";
         const blob = new Blob([JSON.stringify(payload)], { type: "application/json" });
         if (navigator && typeof navigator.sendBeacon === "function") {
           navigator.sendBeacon(url, blob);
         } else {
-          // fallback synchronous XHR (best-effort, not ideal but usable)
           const xhr = new XMLHttpRequest();
-          xhr.open("POST", url, false); // false = synchronous
+          xhr.open("POST", url, false);
           xhr.setRequestHeader("Content-Type", "application/json");
           try {
             xhr.send(JSON.stringify(payload));
-          } catch (err) {
-            // ignore
-          }
+          } catch (err) {}
         }
-      } catch (err) {
-        // ignore
-      }
+      } catch (err) {}
     };
 
     window.addEventListener("beforeunload", handler);
     return () => {
       window.removeEventListener("beforeunload", handler);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [courseId, flatVideos, videoKeyToGlobalIndex]);
 
   /* =========================
-     RENDER (unchanged)
+     RENDER
+     - left column modules only (parent controls right)
      ========================= */
   return (
-    <div className="w-full max-w-3xl mx-auto space-y-6">
+    <div className="w-full space-y-6">
       {/* Header */}
       <div className="pb-4 border-b border-gray-100">
         <h2 className="text-xl font-bold text-gray-900">{course.name}</h2>
@@ -888,7 +805,7 @@ export default function CourseModules({
             <Video size={14} /> Video Lessons
           </span>
 
-          {isPaidUser && (
+          {Boolean(allowedModules && allowedModules.length > 0) && (
             <div className="ml-auto">
               <button
                 onClick={handleBookMeet}
@@ -900,7 +817,7 @@ export default function CourseModules({
             </div>
           )}
 
-          {isFreeLoggedIn && !isPaidUser && (
+          {isFreeLoggedIn && (!allowedModules || allowedModules.length === 0) && (
             <div className="ml-auto">
               <button
                 onClick={handleJoinFullCourse}
@@ -931,7 +848,21 @@ export default function CourseModules({
             <div key={moduleKey} className="border border-gray-200 rounded-lg overflow-hidden bg-white">
               {/* Module header */}
               <div
-                className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors ${isOpen ? "bg-gray-50" : "hover:bg-gray-50"}`}
+                onClick={() => {
+                  if (!moduleUnlocked) return;
+                  if (isOpen) {
+                    setOpenModuleId(null);
+                    setOpenSubKey(null);
+                    setActiveVideoKey(null);
+                  } else {
+                    setOpenModuleId(moduleKey);
+                    setOpenSubKey(null);
+                    setActiveVideoKey(null);
+                  }
+                }}
+                className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors cursor-pointer ${
+                  isOpen ? "bg-gray-50" : "hover:bg-gray-50"
+                } ${!moduleUnlocked ? "cursor-not-allowed opacity-70" : ""}`}
               >
                 <div className="flex items-center gap-3">
                   <span className="text-xs font-bold text-gray-400 w-4">
@@ -940,32 +871,18 @@ export default function CourseModules({
                   <div>
                     <h3 className="text-sm font-semibold text-gray-800">{module.name}</h3>
                     <p className="text-[10px] text-gray-400">{module.submodules?.length || 0} lessons</p>
-                    {!moduleUnlocked && (
-                      <div className="text-xs text-red-500 mt-1">🔒 Locked — contact admin to unlock</div>
-                    )}
+
+                    {!moduleUnlocked && <div className="text-xs text-red-500 mt-1">🔒 Locked — contact admin to unlock</div>}
                   </div>
                 </div>
 
                 <div className="flex items-center gap-2">
                   {moduleUnlocked ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (isOpen) {
-                          setOpenModuleId(null);
-                          setOpenSubKey(null);
-                          setActiveVideoKey(null);
-                        } else {
-                          setOpenModuleId(moduleKey);
-                          setOpenSubKey(null);
-                          setActiveVideoKey(null);
-                        }
-                      }}
-                      aria-expanded={isOpen}
-                      className="p-1"
-                    >
-                      {isOpen ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
-                    </button>
+                    isOpen ? (
+                      <ChevronUp size={16} className="text-gray-400" />
+                    ) : (
+                      <ChevronDown size={16} className="text-gray-400" />
+                    )
                   ) : (
                     <div className="group relative p-1">
                       <Lock size={18} className="text-gray-400" />
@@ -1031,36 +948,29 @@ export default function CourseModules({
                                   const globalIndex = videoKeyToGlobalIndex.get(videoKey) ?? -1;
                                   const isVideoActive = activeVideoKey === videoKey;
 
-                                  // NEW: merged record for this key (if available)
                                   const merged = getMergedForKey(videoKey);
                                   const mergedUrl = merged?.url;
                                   const mergedThumb = merged?.thumb;
                                   const mergedVideoId = merged?.videoId;
                                   const mergedDuration = merged?.duration;
 
-                                  // existing completed logic still used
                                   const alreadyCompleted = globalIndex >= 0 && completedSet.has(globalIndex);
                                   const previousAllCompleted = areAllPreviousCompleted(globalIndex);
                                   const freePreview = isVideoFreePreview(globalIndex);
 
-                                  // NEW: determine visible flag
-                                  // if merged.visible exists, rely on it; otherwise fallback to previous unlock logic (free-preview or moduleUnlocked)
                                   const visibleByServer = merged?.visible ?? undefined;
                                   const visible = typeof visibleByServer === "boolean" ? visibleByServer : (alreadyCompleted || (previousAllCompleted && (moduleUnlocked || freePreview)));
 
-                                  // per-video progress percent (prefer serverProgress + mergedDuration)
                                   const progEntry = serverProgress.get(globalIndex);
                                   let progressPercent: number | null = null;
                                   if (progEntry && mergedDuration && mergedDuration > 2) {
                                     progressPercent = Math.min(100, Math.round((progEntry.positionSeconds / mergedDuration) * 100));
                                   } else if (progEntry && mergedDuration == null) {
-                                    // if no duration, show completed or 0
                                     progressPercent = progEntry.completed ? 100 : Math.min(99, Math.round((progEntry.positionSeconds / Math.max(1, progEntry.positionSeconds + 1)) * 100));
                                   } else if (alreadyCompleted) {
                                     progressPercent = 100;
                                   }
 
-                                  // final url to play (prefer mergedUrl, otherwise v.url)
                                   const urlToPlay = mergedUrl ?? v.url;
 
                                   return (
@@ -1073,11 +983,7 @@ export default function CourseModules({
                                           {mergedThumb ? (
                                             // eslint-disable-next-line @next/next/no-img-element
                                             <img src={mergedThumb} alt={v.title} className="w-full h-full object-cover" />
-                                          ) : v.url ? (
-                                            <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">Preview</div>
-                                          ) : (
-                                            <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">No preview</div>
-                                          )}
+                                          ) : null}
 
                                           {!visible && (
                                             <div className="absolute inset-0 bg-black/40 flex items-center justify-center text-white text-xs font-semibold">
@@ -1096,19 +1002,6 @@ export default function CourseModules({
                                             <div className="text-xs text-rose-600 mt-1">Complete previous video to unlock this preview</div>
                                           )}
                                           {alreadyCompleted && <div className="text-xs text-green-600 mt-1">Completed</div>}
-
-                                          {/* progress bar */}
-                                          <div className="mt-2">
-                                            <div className="h-2 w-full bg-slate-100 rounded overflow-hidden">
-                                              <div
-                                                className="h-2 bg-indigo-500"
-                                                style={{ width: `${progressPercent ?? 0}%`, transition: "width .2s" }}
-                                              />
-                                            </div>
-                                            <div className="text-xs text-gray-400 mt-1">
-                                              {progressPercent !== null ? `${progressPercent}%` : (alreadyCompleted ? "Completed" : "Not started")}
-                                            </div>
-                                          </div>
                                         </div>
                                       </div>
 
@@ -1135,36 +1028,40 @@ export default function CourseModules({
                                           <span className="text-xs text-gray-300">No URL</span>
                                         )}
                                       </div>
-
-                                      {globalIndex === FREE_PREVIEW_COUNT - 1 && hasCompletedFirstVideo && (
-                                        <div className="w-full mt-3">
-                                          {isPaidUser ? (
-                                            <div className="flex items-center gap-3">
-                                              <button
-                                                onClick={handleBookMeet}
-                                                disabled={completedCount < FREE_PREVIEW_COUNT}
-                                                className={`px-3 py-2 rounded-md text-sm font-semibold ${completedCount >= FREE_PREVIEW_COUNT ? "bg-indigo-600 text-white hover:bg-indigo-700" : "bg-gray-100 text-gray-400 cursor-not-allowed"}`}
-                                              >
-                                                Book A meet with mentors
-                                              </button>
-                                              <span className="text-xs text-gray-400">({completedCount}/{FREE_PREVIEW_COUNT} completed)</span>
-                                            </div>
-                                          ) : (
-                                            <div className="flex items-center gap-3">
-                                              <button onClick={handleJoinFullCourse} className="px-3 py-2 rounded-md text-sm font-semibold bg-amber-500 text-white hover:bg-amber-600">
-                                                Join Full course
-                                              </button>
-                                              <span className="text-xs text-gray-400">Unlock the full course and mentoring</span>
-                                            </div>
-                                          )}
-                                        </div>
-                                      )}
                                     </div>
                                   );
                                 })
                               ) : (
                                 <div className="text-sm text-gray-400 italic p-2">No videos available for this point.</div>
                               )}
+
+                              {/* QUIZ: show quiz link(s) for this submodule */}
+                              <div className="mt-3">
+                                {(() => {
+                                  const subId = String(sub.submoduleId ?? "");
+                                  const qz = quizzesBySubmodule[subId] ?? [];
+                                  if (!qz || qz.length === 0) return null;
+                                  return (
+                                    <div className="pt-3 border-t">
+                                      {qz.map((q) => (
+                                        <button
+                                          key={q.id}
+                                          onClick={() => {
+                                            // Delegate quiz opening to parent (page.tsx)
+                                            if (onOpenQuiz) {
+                                              onOpenQuiz(q);
+                                            }
+                                          }}
+                                          className="text-sm px-3 py-2 rounded-md bg-white border hover:bg-indigo-50 text-indigo-700 mr-2"
+                                          title={`Open quiz: ${q.name}`}
+                                        >
+                                          Take quiz: {q.name ?? "Quiz"}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  );
+                                })()}
+                              </div>
                             </div>
                           )}
                         </div>
@@ -1183,7 +1080,6 @@ export default function CourseModules({
         })}
       </div>
 
-      {/* Modal for booking meet */}
       <Modal isOpen={meetModalOpen} onClose={() => setMeetModalOpen(false)}>
         <BookingApp onSuccess={() => setMeetModalOpen(false)} />
       </Modal>
