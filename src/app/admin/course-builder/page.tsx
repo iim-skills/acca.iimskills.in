@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Loader2,
   BookOpen,
@@ -10,10 +10,7 @@ import {
   X,
   ChevronDown,
   LayoutGrid,
-  Settings,
   Plus,
-  ArrowRight,
-  Info,
   Pencil
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -22,10 +19,26 @@ import { motion, AnimatePresence } from "framer-motion";
    TYPES
 ====================================================== */
 
+type SessionType = {
+  sessionId: string;
+  name: string;
+  videoId?: number | string;
+  videoTitle?: string;
+};
+
+type QuizRefType = {
+  quizRefId: string;
+  name: string;
+  quizId?: number | string;
+  quizTitle?: string;
+};
+
 type SubmoduleType = {
   submoduleId: string;
   title: string;
   description?: string;
+  sessions?: SessionType[];
+  quizzes?: QuizRefType[];
 };
 
 type ModuleType = {
@@ -66,6 +79,22 @@ const generateSubmoduleId = (moduleId: string, subs: SubmoduleType[] = []) => {
   return `${moduleId}_SUB_${next}`;
 };
 
+const generateSessionId = (submoduleId: string, sessions: SessionType[] = []) => {
+  const numbers = sessions
+    .map((s) => Number(s.sessionId?.replace(`${submoduleId}_SES_`, "")))
+    .filter((n) => !isNaN(n));
+  const next = numbers.length ? Math.max(...numbers) + 1 : 1;
+  return `${submoduleId}_SES_${next}`;
+};
+
+const generateQuizRefId = (submoduleId: string, quizzes: QuizRefType[] = []) => {
+  const numbers = quizzes
+    .map((q) => Number(q.quizRefId?.replace(`${submoduleId}_QZ_`, "")))
+    .filter((n) => !isNaN(n));
+  const next = numbers.length ? Math.max(...numbers) + 1 : 1;
+  return `${submoduleId}_QZ_${next}`;
+};
+
 export default function App() {
   const [courses, setCourses] = useState<CourseType[]>([]);
   const [loading, setLoading] = useState(false);
@@ -73,7 +102,7 @@ export default function App() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingCourse, setEditingCourse] = useState<CourseType | null>(null);
   const [message, setMessage] = useState({ text: "", type: "" });
-  
+
   // New Course Form State
   const [newCourse, setNewCourse] = useState({ name: "", slug: "" });
 
@@ -82,6 +111,26 @@ export default function App() {
 
   // Track which module is expanded in the edit drawer
   const [activeEditModuleId, setActiveEditModuleId] = useState<string | null>(null);
+
+  /* ======================================================
+     Data for sessions/quizzes lists (fetched from DB)
+  ====================================================== */
+  const [videos, setVideos] = useState<{ id: number; title: string }[]>([]);
+  const [quizzes, setQuizzes] = useState<{ id: number; title: string }[]>([]);
+  const [listsLoading, setListsLoading] = useState(false);
+  const [listsError, setListsError] = useState<string | null>(null);
+
+  // UI state for per-submodule add forms
+  // keyed by `${moduleId}_${submoduleId}`
+  // NOTE: now we open only the clicked form (we replace state instead of merging)
+  const [addSessionOpen, setAddSessionOpen] = useState<Record<string, boolean>>({});
+  const [addQuizOpen, setAddQuizOpen] = useState<Record<string, boolean>>({});
+
+  // Temporary values for the add forms
+  const [tempSessionName, setTempSessionName] = useState<Record<string, string>>({});
+  const [tempSessionVideo, setTempSessionVideo] = useState<Record<string, string>>({});
+  const [tempQuizName, setTempQuizName] = useState<Record<string, string>>({});
+  const [tempQuizSelect, setTempQuizSelect] = useState<Record<string, string>>({});
 
   /* ======================================================
      DATA FETCHING
@@ -98,7 +147,7 @@ export default function App() {
       const data = await response.json();
       const courseList = Array.isArray(data) ? data : [];
       setCourses(courseList);
-      
+
       const initialMap: Record<number, string> = {};
       courseList.forEach(course => {
         const mods = course.courseData?.modules || course.modules || [];
@@ -110,8 +159,8 @@ export default function App() {
       // Mock data for preview
       const mockData: CourseType[] = [
         {
-          id: 1, name: "Advanced React Mastery", slug: "react-mastery", 
-          courseData: { 
+          id: 1, name: "Advanced React Mastery", slug: "react-mastery",
+          courseData: {
             modules: [
               { moduleId: "MOD_1", name: "Introduction", submodules: [{ submoduleId: "MOD_1_SUB_1", title: "Setup Environment" }, { submoduleId: "MOD_1_SUB_2", title: "Architecture Overview" }] },
               { moduleId: "MOD_2", name: "Hooks Deep Dive", submodules: [{ submoduleId: "MOD_2_SUB_1", title: "Custom Hooks" }] }
@@ -126,6 +175,51 @@ export default function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // load videos + quizzes when drawer opens / editingCourse changes
+  useEffect(() => {
+    if (!isDrawerOpen) return;
+    // fetch if we don't already have lists
+    if (videos.length === 0 || quizzes.length === 0) {
+      fetchVideosAndQuizzes();
+    }
+  }, [isDrawerOpen, editingCourse?.id]);
+
+  const fetchVideosAndQuizzes = async () => {
+    setListsLoading(true);
+    setListsError(null);
+    try {
+      // Adjust endpoints if your API paths differ
+      const [vRes, qRes] = await Promise.all([
+        fetch("/api/admin/videos"),
+        fetch("/api/admin/quizzes")
+      ]);
+      if (!vRes.ok && !qRes.ok) {
+        throw new Error("failed to fetch lists");
+      }
+      const vData = vRes.ok ? await vRes.json() : [];
+      const qData = qRes.ok ? await qRes.json() : [];
+
+      // Expecting arrays like [{id, title}, ...]
+      setVideos(Array.isArray(vData) ? vData : []);
+      setQuizzes(Array.isArray(qData) ? qData : []);
+    } catch (e) {
+      console.error("fetchVideosAndQuizzes error:", e);
+      setVideos([]);
+      setQuizzes([]);
+      setListsError("Failed to load videos or quizzes. Try again.");
+      showMsg("Failed to load videos/quizzes from server", "error");
+    } finally {
+      setListsLoading(false);
+    }
+  };
+
+  const ensureListsLoaded = async () => {
+    // if lists already loaded and not empty, do nothing
+    if (listsLoading) return;
+    if (videos.length > 0 && quizzes.length > 0) return;
+    await fetchVideosAndQuizzes();
   };
 
   const showMsg = (text: string, type = "success") => {
@@ -145,9 +239,8 @@ export default function App() {
 
     setLoading(true);
     try {
-      // Logic for ID generation: using length + 1 or timestamp
       const nextId = courses.length > 0 ? Math.max(...courses.map(c => c.id)) + 1 : 1;
-      
+
       const createdCourse: CourseType = {
         id: nextId,
         name: newCourse.name,
@@ -155,15 +248,12 @@ export default function App() {
         courseData: { modules: [] }
       };
 
-      // In a real app, you'd POST to /api/admin/courses here
-      // For this UI, we update state locally to show progress
       setCourses([...courses, createdCourse]);
-      
+
       showMsg("Course created!");
       setIsCreateModalOpen(false);
       setNewCourse({ name: "", slug: "" });
-      
-      // Automatically open edit drawer for the new course
+
       openEditDrawer(createdCourse);
     } catch {
       showMsg("Failed to create course", "error");
@@ -188,6 +278,13 @@ export default function App() {
     };
     setEditingCourse(structuredClone(prepared));
     setActiveEditModuleId(null);
+    // reset per-submodule UI state
+    setAddSessionOpen({});
+    setAddQuizOpen({});
+    setTempSessionName({});
+    setTempSessionVideo({});
+    setTempQuizName({});
+    setTempQuizSelect({});
     setIsDrawerOpen(true);
   };
 
@@ -215,14 +312,15 @@ export default function App() {
     const modules = [...(editingCourse.courseData?.modules || [])];
     const module = modules[mIndex];
     const newSubId = generateSubmoduleId(module.moduleId, module.submodules || []);
-    module.submodules = [...(module.submodules || []), { submoduleId: newSubId, title: "New Submodule" }];
+    module.submodules = [...(module.submodules || []), { submoduleId: newSubId, title: "New Submodule", sessions: [], quizzes: [] }];
     setEditingCourse({ ...editingCourse, courseData: { ...editingCourse.courseData, modules } });
   };
 
   const updateSubmodule = (mIndex: number, sIndex: number, field: keyof SubmoduleType, value: string) => {
     if (!editingCourse) return;
     const updated = [...(editingCourse.courseData?.modules || [])];
-    updated[mIndex].submodules![sIndex] = { ...updated[mIndex].submodules![sIndex], [field]: value };
+    const target = updated[mIndex].submodules![sIndex];
+    updated[mIndex].submodules![sIndex] = { ...target, [field]: value };
     setEditingCourse({ ...editingCourse, courseData: { ...editingCourse.courseData, modules: updated } });
   };
 
@@ -239,6 +337,118 @@ export default function App() {
     updated[mIndex].submodules?.splice(sIndex, 1);
     setEditingCourse({ ...editingCourse, courseData: { ...editingCourse.courseData, modules: updated } });
   };
+
+  /* ======================================================
+     Add Session / Quiz functionality (fixed)
+  ====================================================== */
+
+  const keyFor = (moduleId: string, submoduleId: string) => `${moduleId}_${submoduleId}`;
+
+  // open Add Session: ensure lists loaded, open only this submodule's form, init temp fields
+  const openAddSession = async (moduleId: string, submoduleId: string) => {
+    const k = keyFor(moduleId, submoduleId);
+    try {
+      await ensureListsLoaded();
+    } catch {
+      // ensureListsLoaded already shows message on failure
+    }
+    // open only this key (close others)
+    setAddSessionOpen({ [k]: true });
+    // init temp values for this key
+    setTempSessionName(prev => ({ ...prev, [k]: prev[k] ?? "" }));
+    setTempSessionVideo(prev => ({ ...prev, [k]: prev[k] ?? "" }));
+    // close quiz form if open for same submodule
+    setAddQuizOpen(prev => {
+      const copy = { ...prev };
+      delete copy[k];
+      return copy;
+    });
+  };
+
+  const closeAddSession = (moduleId: string, submoduleId: string) => {
+    const k = keyFor(moduleId, submoduleId);
+    setAddSessionOpen({}); // close all to make default closed
+    setTempSessionName(prev => ({ ...prev, [k]: "" }));
+    setTempSessionVideo(prev => ({ ...prev, [k]: "" }));
+  };
+
+  // open Add Quiz: ensure lists loaded, open only this submodule's form, init temp fields
+  const openAddQuiz = async (moduleId: string, submoduleId: string) => {
+    const k = keyFor(moduleId, submoduleId);
+    try {
+      await ensureListsLoaded();
+    } catch {
+      // handled already
+    }
+    setAddQuizOpen({ [k]: true });
+    setTempQuizName(prev => ({ ...prev, [k]: prev[k] ?? "" }));
+    setTempQuizSelect(prev => ({ ...prev, [k]: prev[k] ?? "" }));
+    // close session form for same submodule
+    setAddSessionOpen(prev => {
+      const copy = { ...prev };
+      delete copy[k];
+      return copy;
+    });
+  };
+
+  const closeAddQuiz = (moduleId: string, submoduleId: string) => {
+    const k = keyFor(moduleId, submoduleId);
+    setAddQuizOpen({});
+    setTempQuizName(prev => ({ ...prev, [k]: "" }));
+    setTempQuizSelect(prev => ({ ...prev, [k]: "" }));
+  };
+
+  const saveNewSession = (mIndex: number, sIndex: number) => {
+    if (!editingCourse) return;
+    const module = editingCourse.courseData!.modules![mIndex];
+    const sub = module.submodules![sIndex];
+    const k = keyFor(module.moduleId, sub.submoduleId);
+    const name = (tempSessionName[k] || "").trim();
+    const videoId = tempSessionVideo[k];
+    if (!name) {
+      showMsg("Session name required", "error");
+      return;
+    }
+    const newSession: SessionType = {
+      sessionId: generateSessionId(sub.submoduleId, sub.sessions || []),
+      name,
+      videoId: videoId || undefined,
+      videoTitle: videos.find(v => String(v.id) === String(videoId))?.title,
+    };
+    const updated = [...(editingCourse.courseData?.modules || [])];
+    updated[mIndex].submodules![sIndex].sessions = [...(updated[mIndex].submodules![sIndex].sessions || []), newSession];
+    setEditingCourse({ ...editingCourse, courseData: { ...editingCourse.courseData, modules: updated } });
+    showMsg("Session added");
+    closeAddSession(module.moduleId, sub.submoduleId);
+  };
+
+  const saveNewQuiz = (mIndex: number, sIndex: number) => {
+    if (!editingCourse) return;
+    const module = editingCourse.courseData!.modules![mIndex];
+    const sub = module.submodules![sIndex];
+    const k = keyFor(module.moduleId, sub.submoduleId);
+    const name = (tempQuizName[k] || "").trim();
+    const quizId = tempQuizSelect[k];
+    if (!name) {
+      showMsg("Quiz name required", "error");
+      return;
+    }
+    const newQuizRef: QuizRefType = {
+      quizRefId: generateQuizRefId(sub.submoduleId, sub.quizzes || []),
+      name,
+      quizId: quizId || undefined,
+      quizTitle: quizzes.find(q => String(q.id) === String(quizId))?.title,
+    };
+    const updated = [...(editingCourse.courseData?.modules || [])];
+    updated[mIndex].submodules![sIndex].quizzes = [...(updated[mIndex].submodules![sIndex].quizzes || []), newQuizRef];
+    setEditingCourse({ ...editingCourse, courseData: { ...editingCourse.courseData, modules: updated } });
+    showMsg("Quiz added");
+    closeAddQuiz(module.moduleId, sub.submoduleId);
+  };
+
+  /* ======================================================
+     SAVE
+  ====================================================== */
 
   const saveCourse = async () => {
     if (!editingCourse) return;
@@ -259,6 +469,10 @@ export default function App() {
     }
   };
 
+  /* ======================================================
+     RENDER
+  ====================================================== */
+
   return (
     <div className="min-h-screen bg-[#f8fafc] text-slate-900 font-sans pb-20 selection:bg-indigo-100 selection:text-indigo-700">
       {/* HEADER */}
@@ -272,14 +486,14 @@ export default function App() {
               <h1 className="text-lg font-bold tracking-tight text-slate-800">Curriculum Manager</h1>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-4">
             {message.text && (
               <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className={`px-4 py-1.5 rounded-full text-xs font-semibold ${message.type === 'error' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'}`}>
                 {message.text}
               </motion.div>
             )}
-            <button 
+            <button
               onClick={() => setIsCreateModalOpen(true)}
               className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-indigo-100 flex items-center gap-2 hover:bg-indigo-700 transition-all"
             >
@@ -312,7 +526,7 @@ export default function App() {
                     const modules = course.courseData?.modules || course.modules || [];
                     const selectedModuleId = selectedModuleMap[course.id];
                     const activeModule = modules.find(m => m.moduleId === selectedModuleId);
-                    
+
                     return (
                       <tr key={course.id} className="hover:bg-slate-50/30 transition-colors">
                         <td className="px-6 py-5">
@@ -324,7 +538,7 @@ export default function App() {
                         <td className="px-6 py-5">
                           {modules.length > 0 ? (
                             <div className="relative inline-block w-48">
-                              <select 
+                              <select
                                 value={selectedModuleId}
                                 onChange={(e) => setSelectedModuleMap({ ...selectedModuleMap, [course.id]: e.target.value })}
                                 className="w-full appearance-none bg-slate-100 rounded-lg px-3 py-2 text-xs font-semibold text-slate-700 cursor-pointer pr-8 focus:ring-2 focus:ring-indigo-500 outline-none"
@@ -374,8 +588,8 @@ export default function App() {
               <div className="space-y-4">
                 <div>
                   <label className="text-[11px] uppercase tracking-wider font-bold text-slate-400 mb-1.5 block">Course Name</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     value={newCourse.name}
                     onChange={(e) => updateSlugFromName(e.target.value)}
                     placeholder="e.g. Master Class in Design"
@@ -384,8 +598,8 @@ export default function App() {
                 </div>
                 <div>
                   <label className="text-[11px] uppercase tracking-wider font-bold text-slate-400 mb-1.5 block">URL Slug</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     value={newCourse.slug}
                     onChange={(e) => setNewCourse({ ...newCourse, slug: e.target.value })}
                     placeholder="e.g. master-design"
@@ -421,44 +635,195 @@ export default function App() {
               </div>
 
               <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                {(editingCourse.courseData?.modules || []).map((module, mIndex) => {
-                  const isExpanded = activeEditModuleId === module.moduleId;
-                  return (
-                    <div key={module.moduleId} className={`border rounded-2xl overflow-hidden ${isExpanded ? 'border-indigo-200 bg-indigo-50/10' : 'border-slate-200'}`}>
-                      <div className="p-4 flex items-center justify-between gap-4">
-                        <div className="flex-1 flex items-center gap-3">
-                          <LayoutGrid size={16} className={isExpanded ? 'text-indigo-500' : 'text-slate-400'} />
-                          {isExpanded ? (
-                            <input value={module.name} onChange={(e) => updateModule(mIndex, "name", e.target.value)} className="bg-transparent border-none focus:ring-0 text-sm font-bold text-slate-700 w-full p-0" autoFocus />
-                          ) : (
-                            <span className="text-sm font-bold text-slate-700">{module.name}</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <button onClick={() => setActiveEditModuleId(isExpanded ? null : module.moduleId)} className="p-2 text-slate-400 hover:text-indigo-600 rounded-lg">
-                            {isExpanded ? <ChevronDown className="rotate-180" size={16} /> : <Pencil size={16} />}
-                          </button>
-                          <button onClick={() => deleteModule(mIndex)} className="p-2 text-slate-300 hover:text-red-500 rounded-lg"><Trash2 size={16} /></button>
-                        </div>
-                      </div>
-                      {isExpanded && (
-                        <div className="p-4 pt-0 space-y-3">
-                          <div className="space-y-2">
-                            {module.submodules?.map((sub, sIndex) => (
-                              <div key={sub.submoduleId} className="flex items-center gap-2">
-                                <input value={sub.title} onChange={(e) => updateSubmodule(mIndex, sIndex, "title", e.target.value)} className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs shadow-sm outline-none" />
-                                <button onClick={() => deleteSubmodule(mIndex, sIndex)} className="p-2 text-slate-300 hover:text-red-500"><X size={14} /></button>
-                              </div>
-                            ))}
-                          </div>
-                          <button onClick={() => addSubmodule(mIndex)} className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-[11px] font-bold rounded-lg shadow-sm">
-                            <Plus size={12} strokeWidth={3} /> Add Submodule
-                          </button>
-                        </div>
-                      )}
+{(editingCourse.courseData?.modules || []).map((module, mIndex) => {
+  const isExpanded = activeEditModuleId === module.moduleId;
+
+  return (
+    <div
+      key={module.moduleId}
+      className={`border rounded-2xl overflow-hidden ${isExpanded ? "border-indigo-200 bg-indigo-50/10" : "border-slate-200"}`}
+    >
+      {/* MODULE HEADER */}
+      <div className="p-4 flex items-center justify-between gap-4">
+        <div className="flex-1 flex items-center gap-3">
+          <LayoutGrid size={16} className={isExpanded ? "text-indigo-500" : "text-slate-400"} />
+
+          {isExpanded ? (
+            <input
+              value={module.name}
+              onChange={(e) => updateModule(mIndex, "name", e.target.value)}
+              className="bg-transparent border-none focus:ring-0 text-sm font-bold text-slate-700 w-full p-0"
+              autoFocus
+            />
+          ) : (
+            <span className="text-sm font-bold text-slate-700">
+              {module.name}
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setActiveEditModuleId(isExpanded ? null : module.moduleId)}
+            className="p-2 text-slate-400 hover:text-indigo-600 rounded-lg"
+          >
+            {isExpanded ? (
+              <ChevronDown className="rotate-180" size={16} />
+            ) : (
+              <Pencil size={16} />
+            )}
+          </button>
+
+          <button onClick={() => deleteModule(mIndex)} className="p-2 text-slate-300 hover:text-red-500 rounded-lg">
+            <Trash2 size={16} />
+          </button>
+        </div>
+      </div>
+
+      {/* MODULE BODY */}
+      {isExpanded && (
+        <div className="p-4 pt-0 space-y-3">
+          <div className="space-y-2">
+            {module.submodules?.map((sub, sIndex) => {
+              const k = keyFor(module.moduleId, sub.submoduleId);
+
+              return (
+                <div key={sub.submoduleId} className="border rounded-lg p-3 bg-white">
+                  {/* SUBMODULE HEADER */}
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <input
+                      value={sub.title}
+                      onChange={(e) => updateSubmodule(mIndex, sIndex, "title", e.target.value)}
+                      className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-semibold text-slate-700"
+                    />
+
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => openAddSession(module.moduleId, sub.submoduleId)}
+                        className="px-2 py-1 text-[11px] bg-indigo-600 text-white rounded"
+                      >
+                        Add Session
+                      </button>
+
+                      <button
+                        onClick={() => openAddQuiz(module.moduleId, sub.submoduleId)}
+                        className="px-2 py-1 text-[11px] bg-emerald-600 text-white rounded"
+                      >
+                        Add Quiz
+                      </button>
+
+                      <button onClick={() => deleteSubmodule(mIndex, sIndex)} className="text-red-400">
+                        <X size={16} />
+                      </button>
                     </div>
-                  );
-                })}
+                  </div>
+
+                  {/* Sessions */}
+                  <div className="flex flex-wrap gap-2">
+                    {(sub.sessions || []).map((sess) => (
+                      <div key={sess.sessionId} className="px-2 py-1 bg-slate-50 border rounded text-xs">
+                        {sess.name}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Quizzes */}
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {(sub.quizzes || []).map((q) => (
+                      <div key={q.quizRefId} className="px-2 py-1 bg-slate-50 border rounded text-xs">
+                        {q.name}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* ---- ADD SESSION FORM (rendered only when explicitly opened) ---- */}
+                  {addSessionOpen[k] && (
+                    <div className="mt-3 p-3 border rounded bg-slate-50">
+                      <label className="text-[12px] font-medium text-slate-700">Session name</label>
+                      <input
+                        value={tempSessionName[k] || ""}
+                        onChange={(e) => setTempSessionName({ ...tempSessionName, [k]: e.target.value })}
+                        className="w-full mt-1 mb-2 p-2 rounded border bg-white text-sm"
+                        placeholder="e.g. Session 1: Intro"
+                      />
+
+                      <label className="text-[12px] font-medium text-slate-700">Recording (select from videos)</label>
+                      {listsLoading ? (
+                        <div className="text-xs text-slate-500 mt-2 flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Loading videos...</div>
+                      ) : listsError ? (
+                        <div className="text-xs text-red-500 mt-2">{listsError}</div>
+                      ) : (
+                        <select
+                          value={tempSessionVideo[k] || ""}
+                          onChange={(e) => setTempSessionVideo({ ...tempSessionVideo, [k]: e.target.value })}
+                          className="w-full mt-1 mb-3 p-2 rounded border bg-white text-sm"
+                        >
+                          <option value="">-- choose a recording (optional) --</option>
+                          {videos.map(v => (
+                            <option key={v.id} value={v.id}>{v.title}</option>
+                          ))}
+                        </select>
+                      )}
+
+                      <div className="flex gap-2 justify-end">
+                        <button onClick={() => closeAddSession(module.moduleId, sub.submoduleId)} className="px-3 py-1 rounded text-sm bg-white border">Cancel</button>
+                        <button onClick={() => saveNewSession(mIndex, sIndex)} className="px-3 py-1 rounded text-sm bg-indigo-600 text-white">Save Session</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ---- ADD QUIZ FORM (rendered only when explicitly opened) ---- */}
+                  {addQuizOpen[k] && (
+                    <div className="mt-3 p-3 border rounded bg-slate-50">
+                      <label className="text-[12px] font-medium text-slate-700">Quiz name</label>
+                      <input
+                        value={tempQuizName[k] || ""}
+                        onChange={(e) => setTempQuizName({ ...tempQuizName, [k]: e.target.value })}
+                        className="w-full mt-1 mb-2 p-2 rounded border bg-white text-sm"
+                        placeholder="e.g. Quiz 1: Basics"
+                      />
+
+                      <label className="text-[12px] font-medium text-slate-700">Select existing quiz</label>
+                      {listsLoading ? (
+                        <div className="text-xs text-slate-500 mt-2 flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Loading quizzes...</div>
+                      ) : listsError ? (
+                        <div className="text-xs text-red-500 mt-2">{listsError}</div>
+                      ) : (
+                        <select
+                          value={tempQuizSelect[k] || ""}
+                          onChange={(e) => setTempQuizSelect({ ...tempQuizSelect, [k]: e.target.value })}
+                          className="w-full mt-1 mb-3 p-2 rounded border bg-white text-sm"
+                        >
+                          <option value="">-- choose a quiz (optional) --</option>
+                          {quizzes.map(q => (
+                            <option key={q.id} value={q.id}>{q.title}</option>
+                          ))}
+                        </select>
+                      )}
+
+                      <div className="flex gap-2 justify-end">
+                        <button onClick={() => closeAddQuiz(module.moduleId, sub.submoduleId)} className="px-3 py-1 rounded text-sm bg-white border">Cancel</button>
+                        <button onClick={() => saveNewQuiz(mIndex, sIndex)} className="px-3 py-1 rounded text-sm bg-emerald-600 text-white">Save Quiz</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ADD SUBMODULE */}
+          <button
+            onClick={() => addSubmodule(mIndex)}
+            className="w-full py-3 border-2 border-dashed border-slate-200 rounded-xl text-sm font-bold text-slate-400 hover:border-indigo-300 hover:text-indigo-500"
+          >
+            + Add New Submodule
+          </button>
+        </div>
+      )}
+    </div>
+  );
+})}
                 <button onClick={addModule} className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl flex items-center justify-center gap-2 text-slate-400 hover:text-indigo-500 hover:border-indigo-200 font-bold text-sm">
                   <Plus size={18} /> Add New Module
                 </button>

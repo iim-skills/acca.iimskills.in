@@ -1,31 +1,14 @@
+// app/api/admin/courses/route.ts
 import { NextResponse } from "next/server";
-import mysql from "mysql2/promise";
+import db from "../../../../lib/db";
 
-/* =====================================================
-   DB CONNECTION
-===================================================== */
-
-const db = mysql.createPool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-});
-
-/* =====================================================
-   GET ALL COURSES
-   ⭐ Returns modules directly for frontend
-===================================================== */
+/* GET: list courses (parses courseData and returns modules) */
 export async function GET() {
   try {
-    const [rows]: any = await db.query(
-      "SELECT * FROM courses ORDER BY id DESC"
-    );
+    const [rows]: any = await db.query("SELECT * FROM courses ORDER BY id DESC");
 
     const parsed = rows.map((c: any) => {
       let courseData;
-
-      // 🔥 Safely parse JSON from LONGTEXT
       try {
         courseData =
           typeof c.courseData === "string"
@@ -37,17 +20,13 @@ export async function GET() {
 
       return {
         id: c.id,
-        courseId: c.courseId,
+        courseId: c.courseId ?? null,
         slug: c.slug,
         name: c.name,
         description: c.description,
-
-        // ⭐⭐⭐ VERY IMPORTANT FOR VIDEO ADMIN ⭐⭐⭐
+        // important for frontend: expose modules directly
         modules: courseData.modules || [],
-
-        // optional — keep full data if needed elsewhere
         courseData,
-
         createdAt: c.createdAt,
         updatedAt: c.updatedAt,
       };
@@ -55,17 +34,12 @@ export async function GET() {
 
     return NextResponse.json(parsed);
   } catch (err) {
-    console.error("GET /courses error:", err);
-    return NextResponse.json(
-      { error: "Failed to fetch courses" },
-      { status: 500 }
-    );
+    console.error("GET /api/admin/courses error:", err);
+    return NextResponse.json({ error: "Failed to fetch courses" }, { status: 500 });
   }
 }
 
-/* =====================================================
-   CREATE NEW COURSE
-===================================================== */
+/* POST: create a new course (keeps behaviour from your original) */
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -74,37 +48,21 @@ export async function POST(req: Request) {
     const slug = body.slug?.trim();
     const description = body.description || "";
     const courseId = body.courseId || null;
-
-    // default structure
     const courseData = body.courseData || { modules: [] };
 
     if (!name || !slug) {
-      return NextResponse.json(
-        { error: "name and slug are required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "name and slug are required" }, { status: 400 });
     }
 
-    /* ===== Check unique slug ===== */
-    const [exists]: any = await db.execute(
-      "SELECT id FROM courses WHERE slug = ? LIMIT 1",
-      [slug]
-    );
-
+    const [exists]: any = await db.execute("SELECT id FROM courses WHERE slug = ? LIMIT 1", [slug]);
     if (exists.length > 0) {
-      return NextResponse.json(
-        { error: "slug already exists" },
-        { status: 409 }
-      );
+      return NextResponse.json({ error: "slug already exists" }, { status: 409 });
     }
 
     const jsonStr = JSON.stringify(courseData);
 
-    /* ===== Insert ===== */
     const [result]: any = await db.execute(
-      `INSERT INTO courses 
-      (courseId, name, slug, description, courseData) 
-      VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO courses (courseId, name, slug, description, courseData) VALUES (?, ?, ?, ?, ?)`,
       [courseId, name, slug, description, jsonStr]
     );
 
@@ -120,10 +78,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json(newCourse, { status: 201 });
   } catch (err) {
-    console.error("POST /courses error:", err);
-    return NextResponse.json(
-      { error: "Failed to create course" },
-      { status: 500 }
-    );
+    console.error("POST /api/admin/courses error:", err);
+    return NextResponse.json({ error: "Failed to create course" }, { status: 500 });
   }
 }

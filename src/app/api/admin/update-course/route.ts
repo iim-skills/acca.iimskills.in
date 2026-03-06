@@ -1,86 +1,77 @@
+// app/api/admin/update-course/route.ts
 import { NextResponse } from "next/server";
-import mysql from "mysql2/promise";
-
-const db = mysql.createPool({
-  host: process.env.DB_HOST,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
-});
-
-// Generate unique courseId
-function generateCourseId() {
-  return "COURSE_" + Date.now();
-}
+import db from "../../../../lib/db";
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
 
-    const { id, name, slug, description, courseData } = body;
-    const jsonData = JSON.stringify(courseData || { modules: [] });
-
-    console.log("UPSERT BODY:", body);
-
-    // Check if row exists
-    const [rows]: any = await db.query(
-      "SELECT id FROM courses WHERE id = ? LIMIT 1",
-      [id]
-    );
-
-    const exists = rows.length > 0;
-
-    if (!exists) {
-      console.log("⛔ ID NOT FOUND → INSERTING NEW ROW");
-
-      const newCourseId = generateCourseId();
-
-      const [insert]: any = await db.query(
-        `INSERT INTO courses (courseId, name, slug, description, courseData)
-         VALUES (?, ?, ?, ?, ?)`,
-        [
-          newCourseId,
-          name,
-          slug,
-          description || "",
-          jsonData
-        ]
-      );
-
-      return NextResponse.json({
-        success: true,
-        created: true,
-        id: insert.insertId,
-        courseId: newCourseId,
-        message: "New course created",
-      });
+    // expecting { id, name, slug, description, courseData }
+    const id = Number(body.id || 0);
+    if (!id) {
+      return NextResponse.json({ error: "course id is required" }, { status: 400 });
     }
 
-    // Row exists → UPDATE
-    console.log("✅ ID FOUND → UPDATING ROW");
+    const name = (body.name ?? "").toString().trim();
+    const slug = (body.slug ?? "").toString().trim();
+    const description = (body.description ?? "").toString();
+    const courseData = body.courseData ?? { modules: [] };
 
-    await db.query(
-      `UPDATE courses 
-       SET name = ?, slug = ?, description = ?, courseData = ?
-       WHERE id = ?`,
-      [
-        name,
-        slug,
-        description || "",
-        jsonData,
-        id
-      ]
+    // validate minimal fields
+    if (!name || !slug) {
+      return NextResponse.json({ error: "name and slug are required" }, { status: 400 });
+    }
+
+    // stringify courseData safely
+    let jsonStr: string;
+    try {
+      jsonStr = JSON.stringify(courseData);
+    } catch (e) {
+      console.error("Invalid courseData JSON", e);
+      return NextResponse.json({ error: "Invalid courseData" }, { status: 400 });
+    }
+
+    // Optional: check slug unique for other courses
+    const [slugRows]: any = await db.execute("SELECT id FROM courses WHERE slug = ? AND id <> ? LIMIT 1", [slug, id]);
+    if (slugRows.length > 0) {
+      return NextResponse.json({ error: "slug already used by another course" }, { status: 409 });
+    }
+
+    // Update row
+    await db.execute(
+      `UPDATE courses SET name = ?, slug = ?, description = ?, courseData = ?, updatedAt = NOW() WHERE id = ?`,
+      [name, slug, description, jsonStr, id]
     );
 
-    return NextResponse.json({
-      success: true,
-      updated: true,
-      id,
-      message: "Course updated successfully",
-    });
+    // Return the saved record (re-query)
+    const [rows]: any = await db.execute("SELECT * FROM courses WHERE id = ? LIMIT 1", [id]);
+    const row = Array.isArray(rows) && rows.length ? rows[0] : null;
+    if (!row) {
+      return NextResponse.json({ error: "Course not found after update" }, { status: 500 });
+    }
 
+    let parsedCourseData;
+    try {
+      parsedCourseData = typeof row.courseData === "string" ? JSON.parse(row.courseData) : row.courseData;
+    } catch {
+      parsedCourseData = { modules: [] };
+    }
+
+    const response = {
+      id: row.id,
+      courseId: row.courseId ?? null,
+      name: row.name,
+      slug: row.slug,
+      description: row.description,
+      modules: parsedCourseData.modules || [],
+      courseData: parsedCourseData,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+
+    return NextResponse.json(response);
   } catch (err) {
-    console.error("🔥 UPSERT ERROR:", err);
-    return NextResponse.json({ error: true, details: String(err) });
+    console.error("POST /api/admin/update-course error:", err);
+    return NextResponse.json({ error: "Failed to update course" }, { status: 500 });
   }
 }
