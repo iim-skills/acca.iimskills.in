@@ -71,8 +71,6 @@ type Props = {
     options?: { resumeSeconds?: number; autoplay?: boolean }
   ) => void;
   onReportPlayerProgress?: (globalIndex: number, positionSeconds: number, completed?: boolean) => void;
-
-  // parent will open quiz (same as onPlayVideo pattern)
   onOpenQuiz?: (quiz: any) => void;
 };
 
@@ -114,6 +112,7 @@ function flattenCourseVideos(course: Course | null) {
     });
   });
 
+  console.log("[flattenCourseVideos] Total flat videos:", out.length, out.map((v, i) => `[${i}] "${v.title}" key=${v.key}`));
   return out;
 }
 
@@ -142,7 +141,6 @@ export type Quiz = {
 /* =========================
    Helpers
    ========================= */
-
 function safeJSONParse(value: any, fallback: any = null) {
   try {
     if (value === null || value === undefined || value === "") return fallback;
@@ -156,7 +154,6 @@ function safeJSONParse(value: any, fallback: any = null) {
 /* =========================
    Component
    ========================= */
-
 export default function CourseModules({
   course,
   allowedModules = [],
@@ -177,9 +174,7 @@ export default function CourseModules({
 
   const [isFreeLoggedIn, setIsFreeLoggedIn] = useState<boolean>(false);
 
-  // QUIZ: quizzes mapping: submoduleId => Quiz[]
   const [quizzesBySubmodule, setQuizzesBySubmodule] = useState<Record<string, Quiz[]>>({});
-
   const [mergedMap, setMergedMap] = useState<Map<string, any>>(new Map());
 
   const router = useRouter();
@@ -249,11 +244,14 @@ export default function CourseModules({
     (async () => {
       try {
         const userKey = getUserKey();
+        console.log("[CourseModules] 📡 Fetching server progress | courseId:", courseId, "| userKey:", userKey);
         const res = await fetch(`/api/course_progress?courseId=${encodeURIComponent(courseId)}&userKey=${encodeURIComponent(userKey)}`);
         if (!res.ok) {
+          console.warn("[CourseModules] ❌ Server progress fetch failed, status:", res.status);
           return;
         }
         const data = (await res.json()) as Array<any>;
+        console.log("[CourseModules] 📥 Raw server progress data:", data);
         if (!mounted) return;
 
         const flat = flattenCourseVideos(course);
@@ -278,17 +276,22 @@ export default function CourseModules({
           }
 
           if (gIdx >= 0) {
-            map.set(gIdx, { positionSeconds: Number(d.positionSeconds ?? d.position_seconds ?? 0), completed: Boolean(d.completed) });
+            map.set(gIdx, {
+              positionSeconds: Number(d.positionSeconds ?? d.position_seconds ?? 0),
+              completed: Boolean(d.completed),
+            });
+            console.log(`[CourseModules] ✅ Mapped serverProgress: globalIndex=${gIdx}, completed=${d.completed}, positionSeconds=${d.positionSeconds ?? d.position_seconds}`);
+          } else {
+            console.warn("[CourseModules] ⚠️ Could not resolve globalIndex for entry:", d);
           }
         });
+        console.log("[CourseModules] Final serverProgress map:", Array.from(map.entries()));
         setServerProgress(map);
       } catch (err) {
-        console.error("[CourseModules] error fetching progress:", err);
+        console.error("[CourseModules] ❌ Error fetching progress:", err);
       }
     })();
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, [courseId, course]);
 
   useEffect(() => {
@@ -298,8 +301,14 @@ export default function CourseModules({
     }
     try {
       const raw = localStorage.getItem(GUEST_PROGRESS_KEY(courseId));
-      if (raw) setGuestProgress(new Set(JSON.parse(raw) as number[] || []));
-      else setGuestProgress(new Set());
+      if (raw) {
+        const parsed = JSON.parse(raw) as number[];
+        console.log("[CourseModules] 💾 Loaded guestProgress from localStorage:", parsed);
+        setGuestProgress(new Set(parsed || []));
+      } else {
+        console.log("[CourseModules] No guestProgress in localStorage for courseId:", courseId);
+        setGuestProgress(new Set());
+      }
     } catch {
       setGuestProgress(new Set());
     }
@@ -309,10 +318,15 @@ export default function CourseModules({
     const handler = (e: Event) => {
       try {
         const ce = e as CustomEvent<{ globalIndex: number }>;
+        console.log("[CourseModules] 🎬 lms_video_completed event fired! detail:", ce.detail);
         if (typeof ce.detail?.globalIndex === "number") {
           handleVideoCompleted(ce.detail.globalIndex);
+        } else {
+          console.warn("[CourseModules] ⚠️ lms_video_completed missing globalIndex in detail:", ce.detail);
         }
-      } catch {}
+      } catch (err) {
+        console.error("[CourseModules] ❌ Error in lms_video_completed handler:", err);
+      }
     };
     window.addEventListener("lms_video_completed", handler as EventListener);
     return () => window.removeEventListener("lms_video_completed", handler as EventListener);
@@ -333,6 +347,7 @@ export default function CourseModules({
   const videoKeyToGlobalIndex = useMemo(() => {
     const map = new Map<string, number>();
     flatVideos.forEach((v, idx) => map.set(v.key, idx));
+    console.log("[CourseModules] videoKeyToGlobalIndex:", Array.from(map.entries()));
     return map;
   }, [flatVideos]);
 
@@ -358,7 +373,10 @@ export default function CourseModules({
           moduleVideos.forEach((fv, localIdx) => {
             if (completedForModule.includes(localIdx)) {
               const gIdx = videoKeyToGlobalIndex.get(fv.key);
-              if (typeof gIdx === "number") s.add(gIdx);
+              if (typeof gIdx === "number") {
+                s.add(gIdx);
+                console.log(`[completedSet] From prop progress: moduleId=${moduleId}, localIdx=${localIdx} → globalIdx=${gIdx}`);
+              }
             }
           });
         }
@@ -366,18 +384,25 @@ export default function CourseModules({
     }
 
     serverProgress.forEach((entry, idx) => {
-      if (entry.completed) s.add(idx);
+      if (entry.completed) {
+        s.add(idx);
+        console.log(`[completedSet] From serverProgress: globalIdx=${idx}`);
+      }
     });
 
-    guestProgress.forEach((g) => s.add(g));
+    guestProgress.forEach((g) => {
+      s.add(g);
+      console.log(`[completedSet] From guestProgress: globalIdx=${g}`);
+    });
+
+    console.log("[completedSet] ✅ FINAL completedSet:", Array.from(s));
     return s;
   }, [progress, flatVideos, videoKeyToGlobalIndex, guestProgress, course.modules, serverProgress]);
 
   const isVideoFreePreview = (globalIndex: number) => globalIndex >= 0 && globalIndex < FREE_PREVIEW_COUNT;
 
-  // New helper: find first uncompleted global index within a module
   const firstUncompletedIndexInModule = useMemo(() => {
-    const map = new Map<number, number | null>(); // moduleIndex -> globalIndex (first not completed) or null if all completed
+    const map = new Map<number, number | null>();
     const modules = course.modules ?? [];
     modules.forEach((m, moduleIdx) => {
       const vids = flatVideos.filter((fv) => fv.moduleIndex === moduleIdx);
@@ -394,22 +419,12 @@ export default function CourseModules({
     return map;
   }, [course.modules, flatVideos, completedSet]);
 
-  // Used to determine whether a submodule's quiz should be unlocked.
-  // Here we unlock quiz after the first video of submodule is completed.
   const isQuizUnlockedForSubmodule = (moduleIdx: number, subIdx: number) => {
     const vids = flatVideos.filter((fv) => fv.moduleIndex === moduleIdx && fv.subIndex === subIdx);
     if (vids.length === 0) return false;
-    const firstGlobal = vids.length > 0 ? flatVideos.findIndex((fv) => fv.key === vids[0].key) : -1;
+    const firstGlobal = flatVideos.findIndex((fv) => fv.key === vids[0].key);
     if (firstGlobal < 0) return false;
     return completedSet.has(firstGlobal);
-  };
-
-  const areAllPreviousCompleted = (globalIndex: number) => {
-    if (globalIndex <= 0) return true;
-    for (let i = 0; i < globalIndex; i++) {
-      if (!completedSet.has(i)) return false;
-    }
-    return true;
   };
 
   const isModuleCompletedByCompletedSet = (module: Module) => {
@@ -444,6 +459,7 @@ export default function CourseModules({
       const prevId = prev.moduleId ?? `module-${i - 1}`;
       if (s.has(prevId) && isModuleCompletedByCompletedSet(prev)) s.add(mid);
     }
+    console.log("[CourseModules] unlockedModulesSet:", Array.from(s));
     return s;
   }, [course.modules, allowedSet, completedSet, flatVideos]);
 
@@ -451,22 +467,34 @@ export default function CourseModules({
     try {
       if (courseId) {
         const arr = Array.from(guestProgress.values());
+        console.log("[CourseModules] 💾 Persisting guestProgress to localStorage:", arr);
         localStorage.setItem(GUEST_PROGRESS_KEY(courseId), JSON.stringify(arr));
       }
     } catch {}
   }, [guestProgress, courseId]);
 
   const markGuestCompleted = (gIndex: number) => {
+    console.log("⭐ markGuestCompleted called:", gIndex);
+
     setGuestProgress((prev) => {
-      if (prev.has(gIndex)) return prev;
+      console.log("guestProgress BEFORE:", Array.from(prev));
+
+      if (prev.has(gIndex)) {
+        console.log("Already completed:", gIndex);
+        return prev;
+      }
+
       const next = new Set(prev);
       next.add(gIndex);
+
+      console.log("guestProgress AFTER:", Array.from(next));
+
       return next;
     });
   };
 
   /* =========================
-      Build mergedMap from course data (no admin API)
+      Build mergedMap
       ========================= */
   useEffect(() => {
     if (!course?.modules) {
@@ -478,7 +506,6 @@ export default function CourseModules({
 
     course.modules.forEach((m, mi) => {
       const moduleKeyPart = m.moduleId ?? `module-${mi}`;
-
       (m.submodules || []).forEach((s, si) => {
         (s.videos || []).forEach((v, vi) => {
           const key = `${moduleKeyPart}-sub-${si}-vid-${vi}`;
@@ -493,6 +520,7 @@ export default function CourseModules({
       });
     });
 
+    console.log("[CourseModules] mergedMap keys:", Array.from(newMap.keys()));
     setMergedMap(newMap);
   }, [course]);
 
@@ -505,7 +533,7 @@ export default function CourseModules({
   };
 
   /* =========================
-      Build quizzesBySubmodule from course data (no admin API)
+      Build quizzesBySubmodule
       ========================= */
   useEffect(() => {
     const map: Record<string, Quiz[]> = {};
@@ -518,31 +546,30 @@ export default function CourseModules({
       (m.submodules || []).forEach((s) => {
         const subId = String(s.submoduleId ?? "");
         const subQuizzes = (s as any).quizzes || [];
-
         if (!subQuizzes || subQuizzes.length === 0) return;
-
-        map[subId] = subQuizzes.map((q: any) => {
-          const quizObj: Quiz = {
-            id: String(q.quizId ?? q.id ?? q.quizRefId ?? Math.random()),
-            name: q.name ?? q.quizTitle ?? q.title ?? `Quiz ${q.quizId ?? q.id ?? ""}`,
-            submodule_id: subId,
-            course_slug: course.slug ?? "",
-            time_minutes: q.quiz?.time_minutes ?? q.time_minutes ?? undefined,
-            questions: q.quiz?.questions ?? q.questions ?? [],
-          };
-          return quizObj;
-        });
+        map[subId] = subQuizzes.map((q: any) => ({
+          id: String(q.quizId ?? q.id ?? q.quizRefId ?? Math.random()),
+          name: q.name ?? q.quizTitle ?? q.title ?? `Quiz ${q.quizId ?? q.id ?? ""}`,
+          submodule_id: subId,
+          course_slug: course.slug ?? "",
+          time_minutes: q.quiz?.time_minutes ?? q.time_minutes ?? undefined,
+          questions: q.quiz?.questions ?? q.questions ?? [],
+        }));
       });
     });
 
+    console.log("[CourseModules] quizzesBySubmodule keys:", Object.keys(map));
     setQuizzesBySubmodule(map);
   }, [course]);
 
   /* =========================
-      internal save+report logic (preserved)
+      Internal save+report logic
       ========================= */
   const saveProgressToServerInternal = async (globalIndex: number, positionSeconds: number, completed = false) => {
+    console.log(`[CourseModules] 📡 saveProgress | globalIndex=${globalIndex} | positionSeconds=${positionSeconds} | completed=${completed}`);
+
     if (!courseId) {
+      console.warn("[CourseModules] No courseId — guest only save");
       if (completed) markGuestCompleted(globalIndex);
       return;
     }
@@ -571,6 +598,8 @@ export default function CourseModules({
         if (videoId) payload.videoId = videoId;
         else payload.globalIndex = globalIndex;
 
+        console.log("[CourseModules] 📤 POST /api/course_progress payload:", payload);
+
         const res = await fetch("/api/course_progress", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -578,16 +607,19 @@ export default function CourseModules({
         });
 
         if (!res.ok) {
-          console.warn("[CourseModules] internal save server error", await res.text());
+          console.warn("[CourseModules] ❌ Server save failed:", res.status, await res.text());
+        } else {
+          console.log("[CourseModules] ✅ Server save OK for globalIndex:", globalIndex);
         }
 
         setServerProgress((prev) => {
           const next = new Map(prev);
           next.set(globalIndex, { positionSeconds: Math.floor(Math.max(0, positionSeconds)), completed });
+          console.log("[CourseModules] 🔄 serverProgress updated:", Array.from(next.entries()));
           return next;
         });
       } catch (err) {
-        console.error("[CourseModules] internal save error:", err);
+        console.error("[CourseModules] ❌ saveProgress error:", err);
       } finally {
         saveTimersRef.current[globalIndex] = null;
       }
@@ -604,68 +636,131 @@ export default function CourseModules({
 
   const handleBookMeet = () => setMeetModalOpen(true);
 
+  /**
+   * Updated handleVideoCompleted:
+   * - Uses a virtualCompleted set (completedSet + current index) so we can choose the next video immediately
+   * - Checks prev module completion based on that virtual set, so unlocking next module is deterministic
+   */
   const handleVideoCompleted = (globalIndex: number) => {
+    console.log("--------------------------------------------------");
+    console.log("🎬 VIDEO COMPLETED EVENT");
+    console.log("Completed globalIndex:", globalIndex);
+    console.log("Current completedSet BEFORE:", Array.from(completedSet));
+
+    // Immediately mark in guest progress (async state update)
     markGuestCompleted(globalIndex);
 
     const merged = getMergedForKey(flatVideos[globalIndex]?.key ?? "");
     const duration = merged?.duration ? Math.floor(merged.duration) : 0;
-
     const resumeForSave = duration > 0 ? duration : (serverProgress.get(globalIndex)?.positionSeconds ?? 0);
 
+    console.log(`[CourseModules] Saving progress for globalIndex=${globalIndex}, resumeForSave=${resumeForSave}, duration=${duration}`);
     reportProgress(globalIndex, resumeForSave, true);
 
-    // autoplay next uncompleted video and open corresponding module/submodule
+    console.log("[CourseModules] Total flat videos:", flatVideos.length);
+
+    // Create a virtualCompleted set to avoid waiting for React state update
+    const virtualCompleted = new Set<number>(completedSet);
+    virtualCompleted.add(globalIndex);
+    console.log("Virtual completedSet (after adding current):", Array.from(virtualCompleted));
+
+    // FIND NEXT VIDEO using virtualCompleted
     let nextIndex = -1;
     for (let i = globalIndex + 1; i < flatVideos.length; i++) {
-      if (!completedSet.has(i)) {
+      const isCompleted = virtualCompleted.has(i);
+      console.log(`Checking nextIndex candidate: ${i} | completed=${isCompleted}`);
+      if (!isCompleted) {
         nextIndex = i;
         break;
       }
     }
 
-    if (nextIndex !== -1 && nextIndex < flatVideos.length) {
-      const nextFlat = flatVideos[nextIndex];
-      const nextModuleIdx = nextFlat.moduleIndex;
-      const nextModule = course.modules?.[nextModuleIdx];
-      const nextModuleKey = nextModule?.moduleId ?? `module-${nextModuleIdx}`;
-      const nextModuleUnlocked = Boolean(
-        (nextModule?.moduleId && (unlockedModulesSet.has(nextModule.moduleId) || allowedSet.has(nextModule.moduleId))) ||
-          (!nextModule?.moduleId && unlockedModulesSet.has(nextModuleKey))
-      );
+    console.log("Next video index found:", nextIndex);
 
-      if (nextModuleUnlocked || isVideoFreePreview(nextIndex)) {
-        // ensure UI opens the module + submodule containing the next video
-        setOpenModuleId(nextModuleKey);
-        setOpenSubKey(`${nextModuleKey}-sub-${nextFlat.subIndex}`);
+    if (nextIndex === -1) {
+      console.log("⚠️ No next video found.");
+      console.log("--------------------------------------------------");
+      return;
+    }
 
-        setTimeout(() => {
-          playGlobalIndex(nextIndex, true);
-        }, 300);
+    const nextFlat = flatVideos[nextIndex];
+    console.log("Next video details:", nextFlat);
+
+    const nextModuleIdx = nextFlat.moduleIndex;
+    const nextModule = course.modules?.[nextModuleIdx];
+    const nextModuleKey = nextModule?.moduleId ?? `module-${nextModuleIdx}`;
+    console.log("Next module:", nextModuleKey);
+
+    // Check allowedSet/unlockedModulesSet as before
+    const nextModuleAllowed = Boolean(
+      (nextModule?.moduleId && (unlockedModulesSet.has(nextModule.moduleId) || allowedSet.has(nextModule.moduleId))) ||
+        (!nextModule?.moduleId && unlockedModulesSet.has(nextModuleKey))
+    );
+
+    // Additionally, compute previous module completed status using virtualCompleted
+    let prevModuleCompletedVirtual = false;
+    if (nextModuleIdx === 0) {
+      prevModuleCompletedVirtual = true;
+    } else {
+      const prevModule = course.modules?.[nextModuleIdx - 1];
+      if (!prevModule) prevModuleCompletedVirtual = true;
+      else {
+        // iterate all videos in prevModule and ensure all present in virtualCompleted
+        const prevModuleVideos = flatVideos.filter((fv) => fv.moduleIndex === nextModuleIdx - 1);
+        if (prevModuleVideos.length === 0) prevModuleCompletedVirtual = true;
+        else {
+          prevModuleCompletedVirtual = prevModuleVideos.every((fv) => {
+            const idx = videoKeyToGlobalIndex.get(fv.key);
+            return typeof idx === "number" ? virtualCompleted.has(idx) : false;
+          });
+        }
       }
     }
+    console.log("prevModuleCompletedVirtual:", prevModuleCompletedVirtual);
+
+    const nextModuleUnlocked = nextModuleAllowed || prevModuleCompletedVirtual;
+
+    console.log("[CourseModules] Next module unlocked (combined):", nextModuleUnlocked);
+    console.log("Is free preview for next index:", isVideoFreePreview(nextIndex));
+
+    if (nextModuleUnlocked || isVideoFreePreview(nextIndex)) {
+      console.log("✅ Opening next video");
+      setOpenModuleId(nextModuleKey);
+      setOpenSubKey(`${nextModuleKey}-sub-${nextFlat.subIndex}`);
+
+      setTimeout(() => {
+        console.log("▶️ Auto playing next video:", nextIndex);
+        playGlobalIndex(nextIndex, true);
+      }, 400);
+    } else {
+      console.log("❌ Next video blocked by module lock");
+    }
+
+    console.log("--------------------------------------------------");
   };
 
   const playGlobalIndex = (globalIndex: number, autoplay = false) => {
     const fv = flatVideos[globalIndex];
     if (!fv) {
-      console.warn("[CourseModules] playGlobalIndex: missing fv", { globalIndex });
+      console.warn("[CourseModules] playGlobalIndex: no fv for globalIndex:", globalIndex);
       return;
     }
     const merged = getMergedForKey(fv.key);
     const urlToPlay = merged?.url ?? fv.url;
     if (!urlToPlay) {
-      console.warn("[CourseModules] playGlobalIndex: missing url", { globalIndex, fv });
+      console.warn("[CourseModules] playGlobalIndex: no url for globalIndex:", globalIndex);
       return;
     }
     const module = course.modules?.[fv.moduleIndex];
     const moduleIdSafe = module?.moduleId ?? "";
     const resume = getResumeSecondsForGlobalIndex(globalIndex);
+    console.log(`[CourseModules] ▶️ playGlobalIndex: globalIndex=${globalIndex}, title="${fv.title}", resume=${resume}, autoplay=${autoplay}`);
     setActiveVideoKey(fv.key);
     onPlayVideo(urlToPlay, fv.title, moduleIdSafe, fv.videoIndex, { resumeSeconds: resume, autoplay });
   };
 
   /* =========================
-      Save on unload (preserved)
+      Save on unload
       ========================= */
   useEffect(() => {
     const handler = () => {
@@ -678,7 +773,6 @@ export default function CourseModules({
       const lastPos = lastEntry?.positionSeconds ?? 0;
       const merged = getMergedForKey(flatVideos[gIndex]?.key ?? "");
       const duration = merged?.duration ? Math.floor(merged.duration) : 0;
-
       const resumeForSave = duration > 0 ? duration : lastPos;
 
       try {
@@ -686,10 +780,9 @@ export default function CourseModules({
           userKey: getUserKey(),
           courseId,
           positionSeconds: Math.floor(Math.max(0, resumeForSave)),
-          duration: duration,
+          duration,
           completed: Boolean(duration > 0 && resumeForSave >= duration),
         };
-
         const fv = flatVideos[gIndex];
         if (fv?.videoId) payload.videoId = fv.videoId;
         else payload.globalIndex = gIndex;
@@ -702,17 +795,13 @@ export default function CourseModules({
           const xhr = new XMLHttpRequest();
           xhr.open("POST", url, false);
           xhr.setRequestHeader("Content-Type", "application/json");
-          try {
-            xhr.send(JSON.stringify(payload));
-          } catch (err) {}
+          try { xhr.send(JSON.stringify(payload)); } catch {}
         }
-      } catch (err) {}
+      } catch {}
     };
 
     window.addEventListener("beforeunload", handler);
-    return () => {
-      window.removeEventListener("beforeunload", handler);
-    };
+    return () => window.removeEventListener("beforeunload", handler);
   }, [courseId, flatVideos, videoKeyToGlobalIndex]);
 
   /* =========================
@@ -745,7 +834,6 @@ export default function CourseModules({
               </button>
             </div>
           )}
-
           {isFreeLoggedIn && (!allowedModules || allowedModules.length === 0) && (
             <div className="ml-auto">
               <button
@@ -773,9 +861,6 @@ export default function CourseModules({
                   (!module.moduleId && unlockedModulesSet.has(moduleKey))
               );
 
-          // first uncompleted video global index within this module (or null)
-          const firstNotCompletedGlobal = firstUncompletedIndexInModule.get(moduleIndex) ?? null;
-
           return (
             <div
               key={moduleKey}
@@ -797,22 +882,26 @@ export default function CourseModules({
                     setActiveVideoKey(null);
                   }
                 }}
-                className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors cursor-pointer ${isOpen ? "bg-gray-50" : "hover:bg-gray-50"} ${
-                  !moduleUnlocked ? "cursor-not-allowed opacity-70" : ""
-                }`}
+                className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors cursor-pointer ${isOpen ? "bg-gray-50" : "hover:bg-gray-50"} ${!moduleUnlocked ? "cursor-not-allowed opacity-70" : ""}`}
               >
                 <div className="flex items-center gap-3">
-                  <span className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm transition-colors bg-indigo-600 text-white shadow-lg shadow-indigo-100">{(moduleIndex + 1).toString().padStart(2, "0")}</span>
+                  <span className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm transition-colors bg-indigo-600 text-white shadow-lg shadow-indigo-100">
+                    {(moduleIndex + 1).toString().padStart(2, "0")}
+                  </span>
                   <div>
                     <h3 className="text-sm font-bold transition-colors text-slate-900">{module.name}</h3>
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">{module.submodules?.length || 0} lessons</p>
-
                     {!moduleUnlocked && <div className="text-xs text-red-500 mt-1">🔒 Locked — contact admin to unlock</div>}
                   </div>
                 </div>
-
                 <div className="flex items-center gap-2">
-                  {moduleUnlocked ? isOpen ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" /> : <div className="group relative p-1"><Lock size={18} className="text-gray-400" /><div className="hidden group-hover:block absolute -top-10 right-0 bg-black text-white text-xs px-2 py-1 rounded">Upgrade to Access</div></div>}
+                  {moduleUnlocked
+                    ? isOpen ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />
+                    : <div className="group relative p-1">
+                        <Lock size={18} className="text-gray-400" />
+                        <div className="hidden group-hover:block absolute -top-10 right-0 bg-black text-white text-xs px-2 py-1 rounded">Upgrade to Access</div>
+                      </div>
+                  }
                 </div>
               </div>
 
@@ -823,10 +912,7 @@ export default function CourseModules({
                     module.submodules.map((sub, subIndex) => {
                       const moduleKeyPart = module.moduleId ?? `module-${moduleIndex}`;
                       const originalVideos = sub.videos || [];
-
-                      // Interleaving Logic Preparation
                       const quizzes = quizzesBySubmodule[String(sub.submoduleId ?? "")] || [];
-
                       const subKey = `${moduleKey}-sub-${subIndex}`;
                       const subIsOpen = openSubKey === subKey;
 
@@ -857,7 +943,7 @@ export default function CourseModules({
                             </button>
                           </div>
 
-                          {/* INTERLEAVED CONTENT list */}
+                          {/* Videos + Quizzes */}
                           {subIsOpen && (
                             <div className="mt-3 space-y-2">
                               {originalVideos.length > 0 ? (
@@ -868,35 +954,54 @@ export default function CourseModules({
 
                                   const merged = getMergedForKey(videoKey);
                                   const mergedUrl = merged?.url;
-                                  const mergedThumb = merged?.thumb;
 
                                   const alreadyCompleted = globalIndex >= 0 && completedSet.has(globalIndex);
                                   const freePreview = isVideoFreePreview(globalIndex);
                                   const visible = Boolean(mergedUrl ?? vv.url);
                                   const urlToPlay = mergedUrl ?? vv.url;
 
-                                  // New: determine unlocked state per module-first-uncompleted rule
-                                  const isThisFirstUncompletedInModule = firstNotCompletedGlobal === globalIndex;
-                                  const unlockedBecauseAllowedModule = module.moduleId ? allowedSet.has(module.moduleId) : false;
-                                  const unlockedBecauseCompleted = alreadyCompleted;
-                                  const unlockedBecauseFreePreview = freePreview && !module.moduleId; // preserve free preview but avoid overriding module lock
-                                  const unlocked = Boolean(
-                                    moduleUnlocked &&
-                                      (unlockedBecauseCompleted || unlockedBecauseAllowedModule || unlockedBecauseFreePreview || isThisFirstUncompletedInModule)
+                                  // ✅ First video always active; each subsequent video needs previous completed
+                                  const isFirstVideo = globalIndex === 0;
+                                  const previousCompleted =
+  globalIndex > 0 && completedSet.has(globalIndex - 1);
+
+const unlocked = Boolean(
+  moduleUnlocked && (isFirstVideo || previousCompleted || alreadyCompleted)
+);
+
+                                  console.log(
+                                    `[UNLOCK CHECK] "${vv.title}"`,
+                                    {
+                                      globalIndex,
+                                      isFirstVideo,
+                                      previousCompleted,
+                                      alreadyCompleted,
+                                      moduleUnlocked,
+                                      unlocked,
+                                      completedSet: Array.from(completedSet),
+                                    }
+                                  );
+
+                                  console.log(
+                                    `[RENDER] "${vv.title}" | gIdx=${globalIndex} | completed=${alreadyCompleted} | isFirst=${isFirstVideo} | prevCompleted=${previousCompleted} | unlocked=${unlocked} | completedSet=[${Array.from(completedSet).join(",")}]`
                                   );
 
                                   return (
                                     <React.Fragment key={videoKey}>
-                                      {/* Video Row */}
                                       <div className={`flex items-center justify-between gap-3 p-2 rounded-md transition ${isVideoActive ? "" : "hover:bg-gray-50"}`}>
                                         <div className="flex w-full items-center gap-2">
                                           {urlToPlay ? (
                                             <button
                                               type="button"
                                               onClick={() => {
-                                                if (!visible || !unlocked) return;
+                                                console.log(`[CourseModules] 🖱️ Clicked "${vv.title}" | gIdx=${globalIndex} | unlocked=${unlocked} | visible=${visible}`);
+                                                if (!visible || !unlocked) {
+                                                  console.warn(`[CourseModules] ⛔ Blocked: visible=${visible}, unlocked=${unlocked}`);
+                                                  return;
+                                                }
                                                 setActiveVideoKey(videoKey);
                                                 const resume = getResumeSecondsForGlobalIndex(globalIndex);
+                                                console.log(`[CourseModules] ▶️ onPlayVideo "${vv.title}" resume=${resume}`);
                                                 onPlayVideo(urlToPlay, vv.title, module.moduleId ?? "", idx, { resumeSeconds: resume });
                                                 if (!moduleUnlocked && freePreview && globalIndex >= 0) markGuestCompleted(globalIndex);
                                               }}
@@ -907,7 +1012,6 @@ export default function CourseModules({
                                                 <MdDisplaySettings size={16} className="text-indigo-600" />
                                                 <p className="text-xs font-semibold flex items-center gap-2">
                                                   {vv.title}
-                                                  {/* Completed indicator: shown when video is already completed */}
                                                   {alreadyCompleted && (
                                                     <span className="inline-flex items-center ml-2 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 border border-emerald-100">
                                                       <CheckCircle2 size={12} className="text-emerald-500" />
@@ -916,10 +1020,11 @@ export default function CourseModules({
                                                   )}
                                                 </p>
                                               </div>
-
                                               <div className="flex items-center gap-2">
                                                 {!unlocked && (
-                                                  <span className="text-[11px] px-2 py-1 rounded bg-gray-50 border text-gray-400 flex items-center gap-1"><Lock size={12} /> Locked</span>
+                                                  <span className="text-[11px] px-2 py-1 rounded bg-gray-50 border text-gray-400 flex items-center gap-1">
+                                                    <Lock size={12} /> Locked
+                                                  </span>
                                                 )}
                                                 {unlocked && (
                                                   <p className="px-3 py-1 bg-indigo-600 text-white text-[10px] font-bold rounded">Play</p>
@@ -932,7 +1037,6 @@ export default function CourseModules({
                                         </div>
                                       </div>
 
-                                      {/* Quiz Button placement: show quiz after first video, quizzes disabled until first video completed */}
                                       {idx === 0 && quizzes.length > 0 && (
                                         <div className="flex items-center gap-3 p-3 rounded-xl border border-dashed border-amber-200 bg-amber-50/30 hover:bg-amber-50 cursor-pointer transition-all group/quiz">
                                           {quizzes.map((q) => {
@@ -949,7 +1053,11 @@ export default function CourseModules({
                                                   <p className="text-xs font-semibold">{q.name}</p>
                                                 </div>
                                                 <div>
-                                                  <button onClick={() => onOpenQuiz && onOpenQuiz(q)} className={`px-3 py-1 text-[10px] font-bold rounded ${quizUnlocked ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-400"}`} disabled={!quizUnlocked}>
+                                                  <button
+                                                    onClick={() => onOpenQuiz && onOpenQuiz(q)}
+                                                    className={`px-3 py-1 text-[10px] font-bold rounded ${quizUnlocked ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-400"}`}
+                                                    disabled={!quizUnlocked}
+                                                  >
                                                     {quizUnlocked ? "TAKE QUIZ" : "LOCKED"}
                                                   </button>
                                                 </div>
@@ -964,7 +1072,6 @@ export default function CourseModules({
                               ) : (
                                 <>
                                   <div className="text-sm text-gray-400 italic p-2">No videos available.</div>
-                                  {/* Still show quizzes even if no videos exist */}
                                   {quizzes.map((q) => (
                                     <button
                                       key={q.id}

@@ -1,26 +1,22 @@
 "use client";
 
-import React, { useMemo, useRef } from "react";
-import { 
-  Film, 
-  ChevronRight, 
-  Target, 
-  User, 
-  Layers, 
-  Play, 
-  CheckCircle2, 
-  Info,
+import React, { useMemo, useRef, useEffect, useState } from "react";
+import {
+  Play,
   X,
   Maximize2,
   Trophy,
-  Activity
+  Activity,
+  Layers,
+  User,
+  Info
 } from "lucide-react";
 
 /* ================= TYPES ================= */
 
 type VideoItem = { id?: string; title?: string; url?: string };
-type Submodule = { submoduleId?: string; title?: string; description?: string; videos?: VideoItem[]; thumbnail?: string };
-type Module = { moduleId?: string; slug?: string; name?: string; description?: string; moduleVideo?: string; submodules?: Submodule[] };
+type Submodule = { submoduleId?: string; title?: string; description?: string; videos?: VideoItem[] };
+type Module = { moduleId?: string; slug?: string; name?: string; description?: string; submodules?: Submodule[] };
 type CourseFile = { courseId?: string; slug?: string; name?: string; description?: string; modules?: Module[] };
 
 type StudentAPIResp = {
@@ -46,8 +42,6 @@ type Props = {
   QuizPanel: React.ComponentType<any>;
 };
 
-/* ================= COMPONENT ================= */
-
 export default function App({
   course,
   student,
@@ -59,206 +53,334 @@ export default function App({
   onPlayVideo,
   QuizPanel,
 }: Props) {
+
   const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  // Dedupe flags so we don't fire completion multiple times per video
+  const videoCompleteFiredRef = useRef<boolean>(false);
+  // track the current URL so we reset dedupe when video changes
+  const lastVideoUrlRef = useRef<string | null>(null);
+
+  // a small flash message for quiz-submitted confirmation
+  const [flashMessage, setFlashMessage] = useState<string | null>(null);
+
+  /* ================= VIDEO COMPLETE EVENT ================= */
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    // reset dedupe when video url changes
+    if (lastVideoUrlRef.current !== activeVideoUrl) {
+      videoCompleteFiredRef.current = false;
+      lastVideoUrlRef.current = activeVideoUrl;
+    }
+
+    const handleEnded = () => {
+      // guard: only fire once per video load
+      if (videoCompleteFiredRef.current) {
+        // console.debug("[video] completion already fired for this video");
+        return;
+      }
+      videoCompleteFiredRef.current = true;
+
+      console.log("🎬 Video finished");
+
+      // dispatch the canonical event your CourseModules listens to
+      window.dispatchEvent(
+        new CustomEvent("lms_video_completed", {
+          detail: {
+            // we keep using window.currentVideoIndex if your app sets it elsewhere
+            globalIndex: (window as any).currentVideoIndex ?? 0
+          }
+        })
+      );
+
+      // Optionally also dispatch a more generic 'request_next' event
+      // for other parts of the app that care about advancing.
+      window.dispatchEvent(
+        new CustomEvent("lms_request_next_item", {
+          detail: {
+            type: "video",
+            moduleId: activeModuleId,
+            submoduleTitle: activeSubmoduleTitle
+          }
+        })
+      );
+    };
+
+    const handleTimeUpdate = () => {
+      if (!video.duration) return;
+
+      const progress = video.currentTime / video.duration;
+
+      // 95% watch = complete
+      if (progress > 0.95) {
+        handleEnded();
+      }
+    };
+
+    video.addEventListener("ended", handleEnded);
+    video.addEventListener("timeupdate", handleTimeUpdate);
+
+    return () => {
+      video.removeEventListener("ended", handleEnded);
+      video.removeEventListener("timeupdate", handleTimeUpdate);
+    };
+
+  }, [activeVideoUrl, activeModuleId, activeSubmoduleTitle]);
+
+
+  /* ================= QUIZ SUBMIT HANDLER ================= */
+
+  // Called when the QuizPanel reports a successful submission.
+  // We show a single flash message, dispatch an event the parent can listen to,
+  // and close the quiz UI.
+  const handleQuizSubmit = async (result?: any) => {
+    try {
+      console.log("[Quiz] submit result:", result);
+      // show the message to the user
+      setFlashMessage("Your quiz submitted successfully — activating next item");
+
+      // dispatch an event the CourseModules (or other parent) can listen to
+      window.dispatchEvent(
+        new CustomEvent("lms_quiz_submitted", {
+          detail: {
+            moduleId: activeModuleId,
+            submoduleTitle: activeSubmoduleTitle,
+            // optionally include quiz result data
+            result
+          }
+        })
+      );
+
+      // Also dispatch a generic request-next event
+      window.dispatchEvent(
+        new CustomEvent("lms_request_next_item", {
+          detail: {
+            type: "quiz",
+            moduleId: activeModuleId,
+            submoduleTitle: activeSubmoduleTitle,
+            result
+          }
+        })
+      );
+
+      // close quiz UI after a short delay to allow user to read the message
+      // (you can change timing as needed)
+      setTimeout(() => {
+        onCloseQuiz();
+      }, 700);
+
+      // auto-hide flash after a short time
+      window.setTimeout(() => {
+        setFlashMessage(null);
+      }, 2800);
+    } catch (err) {
+      console.error("[Quiz] submit handler error", err);
+      setFlashMessage("There was a problem submitting the quiz. Please try again.");
+      window.setTimeout(() => setFlashMessage(null), 3000);
+    }
+  };
+
 
   /* ================= PROGRESS CALCULATION ================= */
 
   const progressPercent = useMemo(() => {
+
     const modules = course?.modules ?? [];
     if (!modules.length) return 0;
 
     const modulePercents = modules.map((module) => {
-      const totalVideos = module.submodules?.reduce((acc, s) => acc + (s.videos?.length ?? 0), 0) ?? 0;
-      const completed = student.progress?.[String(module.moduleId)]?.length ?? 0;
-      if (totalVideos === 0) return 0;
+
+      const totalVideos =
+        module.submodules?.reduce((acc, s) => acc + (s.videos?.length ?? 0), 0) ?? 0;
+
+      const completed =
+        student.progress?.[String(module.moduleId)]?.length ?? 0;
+
+      if (!totalVideos) return 0;
+
       return Math.min(100, Math.round((completed / totalVideos) * 100));
+
     });
 
     const sum = modulePercents.reduce((a, b) => a + b, 0);
+
     return Math.round(sum / modulePercents.length);
+
   }, [course, student.progress]);
 
-  const activeModule = course?.modules?.find((m) => m.moduleId === activeModuleId);
+  const activeModule = course?.modules?.find(
+    (m) => m.moduleId === activeModuleId
+  );
 
-  /* ================= RENDER ================= */
+  /* ================= UI ================= */
 
   return (
-    <div className="bg-[#f8fafc] min-h-screen p-4 font-sans text-slate-800 animate-in fade-in duration-300">
+    <div className="bg-[#f8fafc] min-h-screen p-4 font-sans text-slate-800">
+
       <div className="max-w-4xl mx-auto space-y-4">
-        
-        {/* COMPACT HEADER & PROGRESS */}
-        <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-200">
-          <div className="flex items-center justify-between gap-4 mb-3">
+
+        {/* HEADER */}
+        <div className="bg-white rounded-xl p-4 shadow-sm border">
+
+          <div className="flex items-center justify-between mb-3">
+
             <div>
-              <h2 className="text-base font-bold tracking-tight text-slate-900">Learning Dashboard</h2>
-              <p className="text-slate-500 text-[11px]">Continue your learning journey</p>
+              <h2 className="text-base font-bold">Learning Dashboard</h2>
+              <p className="text-xs text-slate-500">
+                Continue your learning journey
+              </p>
             </div>
-            <div className="flex items-center gap-2 bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-100">
-              <Activity className="text-indigo-600" size={14} />
-              <span className="text-[11px] font-bold text-indigo-700">{progressPercent}% Done</span>
+
+            <div className="flex items-center gap-2 bg-indigo-50 px-3 py-1 rounded-lg">
+              <Activity size={14} className="text-indigo-600" />
+              <span className="text-xs font-bold text-indigo-700">
+                {progressPercent}% Done
+              </span>
             </div>
+
           </div>
 
-          <div className="relative w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-            <div 
-              className="absolute top-0 left-0 h-full bg-indigo-600 rounded-full transition-all duration-700 ease-out" 
-              style={{ width: `${progressPercent}%` }} 
+          <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+
+            <div
+              className="h-full bg-indigo-600 transition-all duration-500"
+              style={{ width: `${progressPercent}%` }}
             />
+
           </div>
         </div>
 
-        {/* MINIMAL CONTENT AREA */}
-        <div className="relative">
-          <div
-            className={`
-              transition-all duration-300 rounded-xl overflow-hidden border border-slate-200
-              ${activeQuiz 
-                ? "bg-white p-4" 
-                : "bg-black aspect-video flex items-center justify-center shadow-lg"
-              }
-            `}
-          >
-            {activeQuiz ? (
-              <div className="w-full">
-                <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <Trophy size={16} className="text-amber-500" />
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900">Assessment</h3>
-                      <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">Knowledge Check</p>
-                    </div>
-                  </div>
+        {/* VIDEO / QUIZ AREA */}
 
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => {
-                        const qid = activeQuiz?.id;
-                        if (qid && typeof window !== "undefined") {
-                          window.open(`/student/quiz/${qid}`, "_blank");
-                        }
-                      }}
-                      className="hidden sm:flex items-center gap-1.5 px-3 py-1 text-[10px] font-bold text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-lg border border-slate-200 transition-colors"
-                    >
-                      <Maximize2 size={12} /> Fullscreen
-                    </button>
-                    <button
-                      onClick={onCloseQuiz}
-                      className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-all"
-                    >
-                      <X size={18} />
-                    </button>
-                  </div>
+        <div className="rounded-xl overflow-hidden border">
+
+          {activeQuiz ? (
+
+            <div className="bg-white p-4">
+
+              <div className="flex justify-between mb-4">
+
+                <div className="flex items-center gap-2">
+                  <Trophy size={16} className="text-amber-500" />
+                  <h3 className="text-sm font-bold">Assessment</h3>
                 </div>
 
-                <div className="w-full text-sm">
-                  <QuizPanel quiz={activeQuiz} onClose={onCloseQuiz} />
-                </div>
+                <button
+                  onClick={onCloseQuiz}
+                  className="p-1 text-slate-400 hover:text-slate-600"
+                >
+                  <X size={18} />
+                </button>
+
               </div>
-            ) : activeVideoUrl ? (
-              <div className="w-full h-full relative">
-                {(activeVideoUrl as string).match(/\.(mp4|webm|ogg)$/i) ? (
-                  <video ref={videoRef} controls className="w-full h-full bg-black">
-                    <source src={activeVideoUrl} />
-                  </video>
-                ) : (
-                  <iframe
-                    src={activeVideoUrl}
-                    className="w-full h-full"
-                    allowFullScreen
-                    title={activeSubmoduleTitle ?? "Embedded video"}
-                  />
-                )}
-                <div className="absolute top-4 left-4 pointer-events-none">
-                   <div className="px-2 py-0.5 bg-black/50 backdrop-blur-sm rounded border border-white/10 flex items-center gap-1.5">
-                     <span className="w-1 h-1 rounded-full bg-indigo-400" />
-                     <span className="text-[9px] font-bold text-white uppercase tracking-widest">Active Lesson</span>
-                   </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center p-8">
-                <div className="w-12 h-12 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-700 text-slate-500">
-                  <Play size={20} className="ml-0.5" />
-                </div>
-                <h3 className="text-white text-sm font-bold">Ready to learn?</h3>
-                <p className="text-slate-500 text-[11px] mt-1">Select a module or quiz to begin your session.</p>
-              </div>
-            )}
-          </div>
+
+              {/* Pass handleQuizSubmit to QuizPanel so it can call it when the user submits */}
+              <QuizPanel quiz={activeQuiz} onClose={onCloseQuiz} onSubmit={handleQuizSubmit} />
+
+            </div>
+
+          ) : activeVideoUrl ? (
+
+            <div className="bg-black aspect-video">
+
+              {(activeVideoUrl as string).match(/\.(mp4|webm|ogg)$/i) ? (
+
+                <video
+                  ref={videoRef}
+                  controls
+                  autoPlay
+                  className="w-full h-full"
+                >
+                  <source src={activeVideoUrl} />
+                </video>
+
+              ) : (
+
+                <iframe
+                  src={activeVideoUrl}
+                  className="w-full h-full"
+                  allowFullScreen
+                  title="Course video"
+                />
+
+              )}
+
+            </div>
+
+          ) : (
+
+            <div className="text-center p-10 bg-black text-white">
+
+              <Play size={24} className="mx-auto mb-4" />
+
+              <h3 className="font-bold">
+                Ready to learn?
+              </h3>
+
+              <p className="text-sm text-gray-400">
+                Select a lesson to start
+              </p>
+
+            </div>
+
+          )}
+
         </div>
 
-        {/* MINIMAL INFO GRID */}
+        {/* flash message */}
+        {flashMessage && (
+          <div className="max-w-4xl mx-auto mt-2">
+            <div className="p-3 rounded-md bg-emerald-50 border border-emerald-100 text-emerald-800 text-sm">
+              {flashMessage}
+            </div>
+          </div>
+        )}
+
+        {/* MODULE INFO */}
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          
-          {/* MODULE SUMMARY */}
-          <div className="bg-white rounded-xl p-5 border border-slate-200 shadow-sm flex flex-col">
+
+          <div className="bg-white rounded-xl p-5 border">
+
             <div className="flex items-center gap-2 mb-3">
               <Layers size={14} className="text-indigo-600" />
-              <h3 className="font-bold text-sm text-slate-900 tracking-tight">
+              <h3 className="font-bold text-sm">
                 {activeModule?.name ?? "Module Summary"}
               </h3>
             </div>
-            <p className="text-[11px] text-slate-500 leading-normal font-medium flex-1">
-              {activeModule?.description ?? "Select a curriculum module to view details and objectives."}
+
+            <p className="text-xs text-slate-500">
+              {activeModule?.description ??
+                "Select a module to see details"}
             </p>
-            {activeSubmoduleTitle && (
-              <div className="mt-4 pt-3 border-t border-slate-50 flex items-center gap-2">
-                <Play size={10} className="text-indigo-600" fill="currentColor" />
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Current:</span>
-                <span className="text-[11px] font-bold text-slate-700 truncate">{activeSubmoduleTitle}</span>
-              </div>
-            )}
+
           </div>
 
-          {/* COMPACT DETAILS */}
-          <div className="space-y-4">
-            <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
-              <div className="flex items-center gap-2 mb-3 text-slate-400">
-                <User size={14} />
-                <span className="text-[9px] font-bold uppercase tracking-widest">Student Info</span>
-              </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-                <div>
-                  <label className="block text-[9px] text-slate-400 font-bold uppercase">Name</label>
-                  <p className="text-[11px] font-bold text-slate-800">{student.name}</p>
-                </div>
-                <div>
-                  <label className="block text-[9px] text-slate-400 font-bold uppercase">Batch</label>
-                  <p className="text-[11px] font-bold text-slate-800">#{student.batch_id ?? "N/A"}</p>
-                </div>
-                <div className="col-span-2">
-                  <label className="block text-[9px] text-slate-400 font-bold uppercase">Email</label>
-                  <p className="text-[11px] font-bold text-slate-800 truncate">{student.email}</p>
-                </div>
-              </div>
+          <div className="bg-white rounded-xl p-4 border">
+
+            <div className="flex items-center gap-2 mb-3 text-slate-400">
+              <User size={14} />
+              <span className="text-xs font-bold">
+                Student Info
+              </span>
             </div>
 
-            <div className="bg-slate-900 rounded-xl p-4 text-white">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Info size={14} className="text-indigo-400" />
-                  <span className="text-[10px] font-bold uppercase tracking-tight">Stats</span>
-                </div>
-                <span className="text-[8px] font-bold text-indigo-400 bg-white/5 px-1.5 py-0.5 rounded">Live</span>
-              </div>
-              
-              <div className="space-y-1.5 text-[10px]">
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Modules</span>
-                  <span className="font-bold">{course?.modules?.length ?? 0}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Lessons</span>
-                  <span className="font-bold">
-                    {course?.modules?.flatMap((m) => m.submodules ?? [])?.flatMap((s) => s.videos ?? [])?.length ?? 0}
-                  </span>
-                </div>
-              </div>
-            </div>
+            <p className="text-sm font-bold">{student.name}</p>
+            <p className="text-xs text-gray-500">{student.email}</p>
+
+            <p className="text-xs mt-2">
+              Batch: #{student.batch_id ?? "N/A"}
+            </p>
+
           </div>
 
         </div>
+
       </div>
+
     </div>
   );
 }
