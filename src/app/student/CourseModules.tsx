@@ -374,6 +374,36 @@ export default function CourseModules({
   }, [progress, flatVideos, videoKeyToGlobalIndex, guestProgress, course.modules, serverProgress]);
 
   const isVideoFreePreview = (globalIndex: number) => globalIndex >= 0 && globalIndex < FREE_PREVIEW_COUNT;
+
+  // New helper: find first uncompleted global index within a module
+  const firstUncompletedIndexInModule = useMemo(() => {
+    const map = new Map<number, number | null>(); // moduleIndex -> globalIndex (first not completed) or null if all completed
+    const modules = course.modules ?? [];
+    modules.forEach((m, moduleIdx) => {
+      const vids = flatVideos.filter((fv) => fv.moduleIndex === moduleIdx);
+      let firstNot = null;
+      for (let i = 0; i < vids.length; i++) {
+        const gIdx = flatVideos.findIndex((fv) => fv.key === vids[i].key);
+        if (gIdx >= 0 && !completedSet.has(gIdx)) {
+          firstNot = gIdx;
+          break;
+        }
+      }
+      map.set(moduleIdx, firstNot);
+    });
+    return map;
+  }, [course.modules, flatVideos, completedSet]);
+
+  // Used to determine whether a submodule's quiz should be unlocked.
+  // Here we unlock quiz after the first video of submodule is completed.
+  const isQuizUnlockedForSubmodule = (moduleIdx: number, subIdx: number) => {
+    const vids = flatVideos.filter((fv) => fv.moduleIndex === moduleIdx && fv.subIndex === subIdx);
+    if (vids.length === 0) return false;
+    const firstGlobal = vids.length > 0 ? flatVideos.findIndex((fv) => fv.key === vids[0].key) : -1;
+    if (firstGlobal < 0) return false;
+    return completedSet.has(firstGlobal);
+  };
+
   const areAllPreviousCompleted = (globalIndex: number) => {
     if (globalIndex <= 0) return true;
     for (let i = 0; i < globalIndex; i++) {
@@ -437,8 +467,6 @@ export default function CourseModules({
 
   /* =========================
       Build mergedMap from course data (no admin API)
-      Note: this map is just taken from course JSON.
-      We no longer hide videos based on batch; we show all videos.
       ========================= */
   useEffect(() => {
     if (!course?.modules) {
@@ -459,8 +487,6 @@ export default function CourseModules({
             videoId: v.id ?? v.videoId ?? null,
             thumb: v.thumb ?? null,
             duration: typeof v.duration === "number" ? v.duration : undefined,
-            // visible is a simple flag here (existence of url). UI will LIST videos even when visible===false,
-            // but Play button will be disabled if no url is present.
             visible: Boolean(v.url),
           });
         });
@@ -588,7 +614,7 @@ export default function CourseModules({
 
     reportProgress(globalIndex, resumeForSave, true);
 
-    // autoplay next uncompleted video
+    // autoplay next uncompleted video and open corresponding module/submodule
     let nextIndex = -1;
     for (let i = globalIndex + 1; i < flatVideos.length; i++) {
       if (!completedSet.has(i)) {
@@ -608,6 +634,10 @@ export default function CourseModules({
       );
 
       if (nextModuleUnlocked || isVideoFreePreview(nextIndex)) {
+        // ensure UI opens the module + submodule containing the next video
+        setOpenModuleId(nextModuleKey);
+        setOpenSubKey(`${nextModuleKey}-sub-${nextFlat.subIndex}`);
+
         setTimeout(() => {
           playGlobalIndex(nextIndex, true);
         }, 300);
@@ -697,12 +727,12 @@ export default function CourseModules({
 
         <div className="flex flex-col justify-start gap-4 mt-3">
           <div className="flex flex-row gap-4 items-center">
-          <span className="text-[14px] font-medium text-gray-500 flex items-center gap-1">
-            <BookOpen size={14} className="text-blue-400"/> {course.modules.length} Modules
-          </span>
-          <span className="text-[14px] font-medium text-gray-500 flex items-center gap-1">
-            <Video size={14} className="text-blue-400"/> Video Lessons
-          </span>
+            <span className="text-[14px] font-medium text-gray-500 flex items-center gap-1">
+              <BookOpen size={14} className="text-blue-400" /> {course.modules.length} Modules
+            </span>
+            <span className="text-[14px] font-medium text-gray-500 flex items-center gap-1">
+              <Video size={14} className="text-blue-400" /> Video Lessons
+            </span>
           </div>
           {Boolean(allowedModules && allowedModules.length > 0) && (
             <div className="">
@@ -743,12 +773,16 @@ export default function CourseModules({
                   (!module.moduleId && unlockedModulesSet.has(moduleKey))
               );
 
+          // first uncompleted video global index within this module (or null)
+          const firstNotCompletedGlobal = firstUncompletedIndexInModule.get(moduleIndex) ?? null;
+
           return (
-            <div key={moduleKey} className={`group transition-all duration-300 rounded-2xl border ${
-                    isOpen 
-                      ? "bg-white border-indigo-100 shadow-md ring-1 ring-indigo-50" 
-                      : "bg-white border-slate-100 hover:border-slate-200"
-                  }`}>
+            <div
+              key={moduleKey}
+              className={`group transition-all duration-300 rounded-2xl border ${
+                isOpen ? "bg-white border-indigo-100 shadow-md ring-1 ring-indigo-50" : "bg-white border-slate-100 hover:border-slate-200"
+              }`}
+            >
               {/* Module header */}
               <div
                 onClick={() => {
@@ -763,7 +797,9 @@ export default function CourseModules({
                     setActiveVideoKey(null);
                   }
                 }}
-                className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors cursor-pointer ${isOpen ? "bg-gray-50" : "hover:bg-gray-50"} ${!moduleUnlocked ? "cursor-not-allowed opacity-70" : ""}`}
+                className={`w-full flex items-center justify-between px-4 py-3 text-left transition-colors cursor-pointer ${isOpen ? "bg-gray-50" : "hover:bg-gray-50"} ${
+                  !moduleUnlocked ? "cursor-not-allowed opacity-70" : ""
+                }`}
               >
                 <div className="flex items-center gap-3">
                   <span className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm transition-colors bg-indigo-600 text-white shadow-lg shadow-indigo-100">{(moduleIndex + 1).toString().padStart(2, "0")}</span>
@@ -776,18 +812,7 @@ export default function CourseModules({
                 </div>
 
                 <div className="flex items-center gap-2">
-                  {moduleUnlocked ? (
-                    isOpen ? (
-                      <ChevronUp size={16} className="text-gray-400" />
-                    ) : (
-                      <ChevronDown size={16} className="text-gray-400" />
-                    )
-                  ) : (
-                    <div className="group relative p-1">
-                      <Lock size={18} className="text-gray-400" />
-                      <div className="hidden group-hover:block absolute -top-10 right-0 bg-black text-white text-xs px-2 py-1 rounded">Upgrade to Access</div>
-                    </div>
-                  )}
+                  {moduleUnlocked ? isOpen ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" /> : <div className="group relative p-1"><Lock size={18} className="text-gray-400" /><div className="hidden group-hover:block absolute -top-10 right-0 bg-black text-white text-xs px-2 py-1 rounded">Upgrade to Access</div></div>}
                 </div>
               </div>
 
@@ -797,11 +822,11 @@ export default function CourseModules({
                   {module.submodules && module.submodules.length > 0 ? (
                     module.submodules.map((sub, subIndex) => {
                       const moduleKeyPart = module.moduleId ?? `module-${moduleIndex}`;
-                      const originalVideos = (sub.videos || []);
-                      
+                      const originalVideos = sub.videos || [];
+
                       // Interleaving Logic Preparation
                       const quizzes = quizzesBySubmodule[String(sub.submoduleId ?? "")] || [];
-                      
+
                       const subKey = `${moduleKey}-sub-${subIndex}`;
                       const subIsOpen = openSubKey === subKey;
 
@@ -827,11 +852,9 @@ export default function CourseModules({
                                 <p className="text-[10px] text-gray-400">{sub.description}</p>
                               </div>
                               <div className="flex items-center gap-3">
-                              <CheckCircle2 size={14} className={subIsOpen ? "text-indigo-400" : "text-gray-200"} />
-                            </div>
+                                <CheckCircle2 size={14} className={subIsOpen ? "text-indigo-400" : "text-gray-200"} />
+                              </div>
                             </button>
-
-                            
                           </div>
 
                           {/* INTERLEAVED CONTENT list */}
@@ -852,41 +875,56 @@ export default function CourseModules({
                                   const visible = Boolean(mergedUrl ?? vv.url);
                                   const urlToPlay = mergedUrl ?? vv.url;
 
+                                  // New: determine unlocked state per module-first-uncompleted rule
+                                  const isThisFirstUncompletedInModule = firstNotCompletedGlobal === globalIndex;
+                                  const unlockedBecauseAllowedModule = module.moduleId ? allowedSet.has(module.moduleId) : false;
+                                  const unlockedBecauseCompleted = alreadyCompleted;
+                                  const unlockedBecauseFreePreview = freePreview && !module.moduleId; // preserve free preview but avoid overriding module lock
+                                  const unlocked = Boolean(
+                                    moduleUnlocked &&
+                                      (unlockedBecauseCompleted || unlockedBecauseAllowedModule || unlockedBecauseFreePreview || isThisFirstUncompletedInModule)
+                                  );
+
                                   return (
                                     <React.Fragment key={videoKey}>
                                       {/* Video Row */}
                                       <div className={`flex items-center justify-between gap-3 p-2 rounded-md transition ${isVideoActive ? "" : "hover:bg-gray-50"}`}>
-                                         
                                         <div className="flex w-full items-center gap-2">
                                           {urlToPlay ? (
                                             <button
                                               type="button"
                                               onClick={() => {
-                                                if (!visible) return;
+                                                if (!visible || !unlocked) return;
                                                 setActiveVideoKey(videoKey);
                                                 const resume = getResumeSecondsForGlobalIndex(globalIndex);
                                                 onPlayVideo(urlToPlay, vv.title, module.moduleId ?? "", idx, { resumeSeconds: resume });
                                                 if (!moduleUnlocked && freePreview && globalIndex >= 0) markGuestCompleted(globalIndex);
                                               }}
-                                              className="group/item w-full flex justify-between items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all bg-white border-slate-100 hover:border-indigo-100 text-slate-600 hover:text-indigo-600 "
-                                              disabled={!visible}
+                                              className={`group/item w-full flex justify-between items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all bg-white border-slate-100 hover:border-indigo-100 text-slate-600 hover:text-indigo-600 ${!unlocked ? "opacity-70 cursor-not-allowed" : ""}`}
+                                              disabled={!visible || !unlocked}
                                             >
-                                                  <div className="flex justify-between items-center gap-3">
-                                        <MdDisplaySettings size={16} className="text-indigo-600" />
-                                        <p className="text-xs font-semibold flex items-center gap-2">
-                                          {vv.title}
-                                          {/* Completed indicator: shown when video is already completed */}
-                                          {alreadyCompleted && (
-                                            <span className="inline-flex items-center ml-2 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 border border-emerald-100">
-                                              <CheckCircle2 size={12} className="text-emerald-500" />
-                                              <span className="ml-1 text-emerald-700">Completed</span>
-                                            </span>
-                                          )}
-                                        </p>
-                                      </div>
-                                      <p className="px-3 py-1 bg-indigo-600 text-white text-[10px] font-bold rounded">
-                                              Play
-                                              </p>
+                                              <div className="flex justify-between items-center gap-3">
+                                                <MdDisplaySettings size={16} className="text-indigo-600" />
+                                                <p className="text-xs font-semibold flex items-center gap-2">
+                                                  {vv.title}
+                                                  {/* Completed indicator: shown when video is already completed */}
+                                                  {alreadyCompleted && (
+                                                    <span className="inline-flex items-center ml-2 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 border border-emerald-100">
+                                                      <CheckCircle2 size={12} className="text-emerald-500" />
+                                                      <span className="ml-1 text-emerald-700">Completed</span>
+                                                    </span>
+                                                  )}
+                                                </p>
+                                              </div>
+
+                                              <div className="flex items-center gap-2">
+                                                {!unlocked && (
+                                                  <span className="text-[11px] px-2 py-1 rounded bg-gray-50 border text-gray-400 flex items-center gap-1"><Lock size={12} /> Locked</span>
+                                                )}
+                                                {unlocked && (
+                                                  <p className="px-3 py-1 bg-indigo-600 text-white text-[10px] font-bold rounded">Play</p>
+                                                )}
+                                              </div>
                                             </button>
                                           ) : (
                                             <span className="text-xs text-gray-300">No URL</span>
@@ -894,24 +932,30 @@ export default function CourseModules({
                                         </div>
                                       </div>
 
-                                      {/* Quiz Button placement: Interleave quiz after specific videos if applicable, 
-                                          or show all quizzes after the first video in this simple implementation */}
+                                      {/* Quiz Button placement: show quiz after first video, quizzes disabled until first video completed */}
                                       {idx === 0 && quizzes.length > 0 && (
                                         <div className="flex items-center gap-3 p-3 rounded-xl border border-dashed border-amber-200 bg-amber-50/30 hover:bg-amber-50 cursor-pointer transition-all group/quiz">
-                                          {quizzes.map((q) => (
-                                            <button
-                                              key={q.id}
-                                              onClick={() => onOpenQuiz && onOpenQuiz(q)}
-                                              className="flex w-full items-center justify-between"
-                                            >
-                                             
-                                              <div className="flex items-center gap-3">
-                                        <FileText size={16} className="text-indigo-600" />
-                                        <p className="text-xs font-semibold">{q.name }</p>
-                                      </div>
-                                      <button onClick={() => onOpenQuiz && onOpenQuiz(q)} className="px-3 py-1 bg-indigo-600 text-white text-[10px] font-bold rounded">TAKE QUIZ</button>
-                                            </button>
-                                          ))}
+                                          {quizzes.map((q) => {
+                                            const quizUnlocked = isQuizUnlockedForSubmodule(moduleIndex, subIndex);
+                                            return (
+                                              <button
+                                                key={q.id}
+                                                onClick={() => onOpenQuiz && onOpenQuiz(q)}
+                                                disabled={!quizUnlocked}
+                                                className={`flex w-full items-center justify-between p-2 rounded ${!quizUnlocked ? "opacity-60 cursor-not-allowed" : ""}`}
+                                              >
+                                                <div className="flex items-center gap-3">
+                                                  <FileText size={16} className="text-indigo-600" />
+                                                  <p className="text-xs font-semibold">{q.name}</p>
+                                                </div>
+                                                <div>
+                                                  <button onClick={() => onOpenQuiz && onOpenQuiz(q)} className={`px-3 py-1 text-[10px] font-bold rounded ${quizUnlocked ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-400"}`} disabled={!quizUnlocked}>
+                                                    {quizUnlocked ? "TAKE QUIZ" : "LOCKED"}
+                                                  </button>
+                                                </div>
+                                              </button>
+                                            );
+                                          })}
                                         </div>
                                       )}
                                     </React.Fragment>

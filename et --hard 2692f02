@@ -1,0 +1,28 @@
+[33m7e37a5a[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m HEAD@{0}: reset: moving to origin/main
+[33m2692f02[m HEAD@{1}: commit: lms new design
+[33m7e37a5a[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m HEAD@{2}: commit: quiz fatched
+[33mb3606a4[m HEAD@{3}: commit: fixed
+[33mb4fb8c2[m HEAD@{4}: commit: progress fatched
+[33m41ad453[m HEAD@{5}: reset: moving to origin/main
+[33m41ad453[m HEAD@{6}: reset: moving to origin/main
+[33m41ad453[m HEAD@{7}: commit: admin penal almost done
+[33mb03ad12[m HEAD@{8}: commit: video playing now
+[33m17a6b95[m HEAD@{9}: commit: video fatched according module and batch fixed
+[33m32945c9[m HEAD@{10}: commit: commit
+[33m74ba0b6[m HEAD@{11}: commit: admin penal more like set
+[33m3418455[m HEAD@{12}: commit: course save in db
+[33m81a4c1c[m HEAD@{13}: commit: batch pages create
+[33m996e935[m HEAD@{14}: commit: payment done
+[33m9430b5f[m HEAD@{15}: commit: some edit in payment page
+[33m9d20bd9[m HEAD@{16}: commit: payment page done
+[33m0260f5f[m HEAD@{17}: commit: enroll set normaly
+[33m4bcda6d[m HEAD@{18}: commit: login button and free login working
+[33mbe3173d[m HEAD@{19}: commit: progress updated
+[33mbe1b2e9[m HEAD@{20}: reset: moving to origin/main
+[33mbe1b2e9[m HEAD@{21}: checkout: moving from main to main
+[33mbe1b2e9[m HEAD@{22}: commit: video playing setting
+[33m46871d5[m HEAD@{23}: commit: lock unlock video done
+[33m0352a1d[m HEAD@{24}: commit: ftch json in lms
+[33m4eacc70[m HEAD@{25}: Branch: renamed refs/heads/main to refs/heads/main
+[33m4eacc70[m HEAD@{27}: Branch: renamed refs/heads/main to refs/heads/main
+[33m4eacc70[m HEAD@{29}: commit (initial): Initial commit

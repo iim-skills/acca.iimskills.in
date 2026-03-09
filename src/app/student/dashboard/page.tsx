@@ -108,7 +108,7 @@ export default function StudentDashboardLMS(): React.ReactElement | null {
     async function fetchCourse() {
       setLoadingCourse(true);
       try {
-        const res = await fetch("/api/student/course", { headers: { "x-user-email": student.email } });
+        const res = await fetch("/api/student/course", { headers: { "x-user-email": student?.email ?? "" } });
         if (!res.ok) throw new Error("Failed to fetch course");
         const list = await res.json();
         const courseData: CourseFile | null = list?.[0] ?? null;
