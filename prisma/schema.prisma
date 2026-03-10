@@ -1,0 +1,23 @@
+// prisma/schema.prisma
+datasource db {
+  provider = "postgresql" // or "mysql" / "sqlite" — set to your DB provider
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Coupon {
+  id           String   @id @default(uuid())
+  code         String   @unique
+  type         String
+  value        Float
+  expiry       DateTime
+  applicability String?    // "all" | "single" | "min_modules"
+  moduleId     String?    // when applicability === "single"
+  minModules   Int?       // when applicability === "min_modules"
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}

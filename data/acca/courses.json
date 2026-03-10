@@ -1,0 +1,129 @@
+[
+  {
+    "courseId": "COURSE_ACCA_SKILLS_001",
+    "slug": "acca-skills-level",
+    "name": "ACCA Skills Level Program",
+    "description": "Complete ACCA skills level program with advanced modules, lesson points, and video content.",
+    "modules": [
+      {
+        "moduleId": "MOD_CBL_001",
+        "slug": "cbl-global-law-module",
+        "name": "CBL – Corporate & Business Law (Global)",
+        "description": "Global corporate law, company formation, contracts, insolvency, and compliance.",
+        "submodules": [
+          {
+            "submoduleId": "SUB_CBL_001",
+            "title": "CBL Company Formation & Legal Personality",
+            "description": "Company types, incorporation process, and corporate legal identity.",
+            "videos": [
+    { "id": "da_mod_1", "title": "Foundations of Excel for Analytics", "url": "/CourseVideo/demo.mp4" },
+    { "id": "da_mod_2", "title": "Master formulas for real-world analytics", "url": "/CourseVideo/demo1.mp4" },
+    { "id": "da_mod_3", "title": "Foundations of Excel for Analytics", "url": "/CourseVideo/demo2.mp4" },
+    { "id": "da_mod_4", "title": "Advanced Excel Functions", "url": "/CourseVideo/demo3.mp4" },
+    { "id": "da_mod_5", "title": "Data Visualization in Excel", "url": "/CourseVideo/demo4.mp4" }
+            ]
+          },
+
+          {
+            "submoduleId": "SUB_CBL_002",
+            "title": "CBL Company Formation & Legal Personality",
+            "description": "Company types, incorporation process, and corporate legal identity.",
+            "videos": [
+    { "id": "da_mod_1", "title": "Foundations of Excel for Analytics", "url": "/CourseVideo/demo.mp4" },
+    { "id": "da_mod_2", "title": "Master formulas for real-world analytics", "url": "/CourseVideo/demo1.mp4" },
+    { "id": "da_mod_3", "title": "Foundations of Excel for Analytics", "url": "/CourseVideo/demo2.mp4" },
+    { "id": "da_mod_4", "title": "Advanced Excel Functions", "url": "/CourseVideo/demo3.mp4" },
+    { "id": "da_mod_5", "title": "Data Visualization in Excel", "url": "/CourseVideo/demo4.mp4" }
+            ]
+          }
+          
+        ]
+      },
+      {
+        "moduleId": "MOD_SBR_001",
+        "slug": "sbr-financial-reporting-module",
+        "name": "SBR – Strategic Business Reporting",
+        "description": "Advanced IFRS reporting standards and professional judgment in reporting.",
+        "submodules": [
+          {
+            "submoduleId": "SUB_SBR_001",
+            "title": "SBR IFRS Conceptual Framework",
+            "description": "IFRS framework, recognition, measurement, and presentation principles.",
+           "videos": [
+    { "id": "da_mod_1", "title": "Foundations of Excel for Analytics", "url": "/FreeCourseVideo/demo.mp4" },
+    { "id": "da_mod_2", "title": "Master formulas for real-world analytics", "url": "/FreeCourseVideo/demo1.mp4" }
+            ]
+          }
+        ]
+      },
+      {
+        "moduleId": "MOD_SBL_001",
+        "slug": "sbl-leadership-strategy-module",
+        "name": "SBL – Strategic Business Leadership",
+        "description": "Case-based leadership, governance, risk management, and strategic decisions.",
+        "submodules": [
+          {
+            "submoduleId": "SUB_SBL_001",
+            "title": "SBL Strategic Analysis & Positioning",
+            "description": "Strategic tools including PESTEL, SWOT, Porter’s Forces, and scenario planning.",
+           "videos": [
+    { "id": "da_mod_1", "title": "Foundations of Excel for Analytics", "url": "/FreeCourseVideo/demo.mp4" },
+    { "id": "da_mod_2", "title": "Master formulas for real-world analytics", "url": "/FreeCourseVideo/demo1.mp4" }
+            ]
+          }
+        ]
+      },
+      {
+        "moduleId": "MOD_AFM_001",
+        "slug": "afm-corporate-finance-module",
+        "name": "AFM – Advanced Financial Management",
+        "description": "Advanced valuation, derivatives, risk management, and finance decisions.",
+        "submodules": [
+          {
+            "submoduleId": "SUB_AFM_001",
+            "title": "AFM Advanced Valuation Models",
+            "description": "DCF, APV, relative valuation, and assumption analysis.",
+            "videos": [
+    { "id": "da_mod_1", "title": "Foundations of Excel for Analytics", "url": "/FreeCourseVideo/demo.mp4" },
+    { "id": "da_mod_2", "title": "Master formulas for real-world analytics", "url": "/FreeCourseVideo/demo1.mp4" }
+            ]
+          }
+        ]
+      },
+      {
+        "moduleId": "MOD_AAA_001",
+        "slug": "aaa-audit-assurance-module",
+        "name": "AAA – Advanced Audit & Assurance",
+        "description": "Advanced auditing standards, assurance engagements, and audit reporting.",
+        "submodules": [
+          {
+            "submoduleId": "SUB_AAA_001",
+            "title": "AAA Audit Planning & Risk Assessment",
+            "description": "Audit strategy, materiality determination, and significant risk identification.",
+           "videos": [
+    { "id": "da_mod_1", "title": "Foundations of Excel for Analytics", "url": "/FreeCourseVideo/demo.mp4" },
+    { "id": "da_mod_2", "title": "Master formulas for real-world analytics", "url": "/FreeCourseVideo/demo1.mp4" }
+            ]
+          }
+        ]
+      },
+      {
+        "moduleId": "MOD_APM_001",
+        "slug": "apm-performance-management-module",
+        "name": "APM – Advanced Performance Management",
+        "description": "Strategic performance measurement and decision-making frameworks.",
+        "submodules": [
+          {
+            "submoduleId": "SUB_APM_001",
+            "title": "APM Strategic Performance Frameworks",
+            "description": "KPI design, performance frameworks, and strategy alignment.",
+            "videos": [
+    { "id": "da_mod_1", "title": "Foundations of Excel for Analytics", "url": "/FreeCourseVideo/demo.mp4" },
+    { "id": "da_mod_2", "title": "Master formulas for real-world analytics", "url": "/FreeCourseVideo/demo1.mp4" }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]
