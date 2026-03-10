@@ -199,7 +199,6 @@ export default function BatchManagement() {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-
           <button
             onClick={openCreateModal}
             className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-all active:scale-95 text-sm"

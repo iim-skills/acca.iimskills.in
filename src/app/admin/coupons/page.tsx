@@ -270,7 +270,6 @@ export default function CouponPage() {
                   >
                     Edit
                   </button>
-
                   <button
                     onClick={() => handleDelete(coupon.code)}
                     className="text-red-600"
@@ -303,13 +302,11 @@ export default function CouponPage() {
             transition={{ duration: 0.28 }}
             className="fixed top-0 right-0 h-full w-[420px] bg-white shadow-xl z-50 p-6 overflow-y-auto rounded-l-xl"
           >
-
             <h3 className="text-lg font-bold mb-4">
               {editingCoupon ? "Edit Coupon" : "Create Coupon"}
             </h3>
 
             <form onSubmit={handleSubmit} className="space-y-4">
-
               <input
                 required
                 value={form.code}
@@ -346,7 +343,6 @@ export default function CouponPage() {
                   placeholder="Value"
                   className="w-28 border p-2 rounded"
                 />
-
               </div>
 
               <input

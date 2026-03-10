@@ -333,7 +333,6 @@ function StatCard({
   return (
     <div className="bg-white p-5 rounded-xl shadow flex items-center gap-4">
       <div className="text-blue-600 text-2xl">{icon}</div>
-
       <div>
         <p className="text-sm text-gray-500">{title}</p>
         <p className="text-2xl font-bold">{value}</p>
