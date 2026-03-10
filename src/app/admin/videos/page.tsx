@@ -91,6 +91,10 @@ export default function VideoAdmin(): React.ReactElement {
   const [videos, setVideos] = useState<Video[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
 
+  // PAGINATION STATE
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 10; // show 10 entries per page
+
   // UI State
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -217,124 +221,124 @@ export default function VideoAdmin(): React.ReactElement {
     }
   };
 
-const handleUpload = async () => {
-  if (!videoName.trim()) return showMsg("Provide a video name.");
-  if (!file) return showMsg("Select a video file.");
-  if (!selectedModule) return showMsg("Select a module.");
-  if (selectedBatches.length === 0) return showMsg("Select at least one batch.");
+  const handleUpload = async () => {
+    if (!videoName.trim()) return showMsg("Provide a video name.");
+    if (!file) return showMsg("Select a video file.");
+    if (!selectedModule) return showMsg("Select a module.");
+    if (selectedBatches.length === 0) return showMsg("Select at least one batch.");
 
-  try {
-    setUploading(true);
-    setProgress(0);
+    try {
+      setUploading(true);
+      setProgress(0);
 
-    /* ================================
-       1️⃣ UPLOAD VIDEO TO CLOUDINARY
-    ================================= */
-    const formData = new FormData();
-    const clientFilename = `${generateId()}_${file.name.replace(/\s+/g, "_")}`;
-    formData.append("file", file, clientFilename);
+      /* ================================
+         1️⃣ UPLOAD VIDEO TO CLOUDINARY
+      ================================= */
+      const formData = new FormData();
+      const clientFilename = `${generateId()}_${file.name.replace(/\s+/g, "_")}`;
+      formData.append("file", file, clientFilename);
 
-    const uploadResult = await new Promise<any>((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", "/api/admin/videos/upload", true);
+      const uploadResult = await new Promise<any>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/api/admin/videos/upload", true);
 
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) {
-          setProgress(Math.round((e.loaded / e.total) * 100));
-        }
-      };
-
-      xhr.onload = () => {
-        try {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve(JSON.parse(xhr.responseText));
-          } else {
-            reject(new Error(`Upload failed: ${xhr.status}`));
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            setProgress(Math.round((e.loaded / e.total) * 100));
           }
-        } catch (e) {
-          reject(e);
-        }
-      };
+        };
 
-      xhr.onerror = () => reject(new Error("Network error"));
-      xhr.send(formData);
-    });
+        xhr.onload = () => {
+          try {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              resolve(JSON.parse(xhr.responseText));
+            } else {
+              reject(new Error(`Upload failed: ${xhr.status}`));
+            }
+          } catch (e) {
+            reject(e);
+          }
+        };
 
-    console.log("UPLOAD RESULT:", uploadResult);
+        xhr.onerror = () => reject(new Error("Network error"));
+        xhr.send(formData);
+      });
 
-    /* ================================
-       2️⃣ EXTRACT CLOUDINARY DATA
-    ================================= */
-    const publicId = uploadResult?.public_id ?? null;
-    const secureUrl = uploadResult?.secure_url ?? null;
-    const thumbUrl = uploadResult?.thumb_url ?? null;
-    const duration = uploadResult?.duration ?? null;
+      console.log("UPLOAD RESULT:", uploadResult);
 
-    if (!publicId || !secureUrl) {
-      throw new Error("Upload response missing public_id or secure_url");
+      /* ================================
+         2️⃣ EXTRACT CLOUDINARY DATA
+      ================================= */
+      const publicId = uploadResult?.public_id ?? null;
+      const secureUrl = uploadResult?.secure_url ?? null;
+      const thumbUrl = uploadResult?.thumb_url ?? null;
+      const duration = uploadResult?.duration ?? null;
+
+      if (!publicId || !secureUrl) {
+        throw new Error("Upload response missing public_id or secure_url");
+      }
+
+      /* ================================
+         3️⃣ GET SUBMODULE TITLE
+      ================================= */
+      let submoduleTitle = "";
+
+      const currentC = courses.find((c) => c.slug === selectedCourse);
+      if (currentC && selectedSubmodule) {
+        const mods = normalizeCourseModules(currentC);
+        const targetM = mods.find((m) => m.id === selectedModule);
+        submoduleTitle =
+          targetM?.submodules?.find((s) => s.id === selectedSubmodule)?.title || "";
+      }
+
+      /* ================================
+         4️⃣ SAVE VIDEO TO DATABASE
+      ================================= */
+      const saveRes = await fetch("/api/admin/videos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: videoName,
+
+          // ⭐ IMPORTANT (matches backend)
+          public_id: publicId,
+          secure_url: secureUrl,
+          thumb_url: thumbUrl,
+          duration: duration,
+
+          course_slug: selectedCourse,
+          module_id: selectedModule,
+          submodule_id: selectedSubmodule || null,
+          submodule_title: submoduleTitle || null,
+          batch_ids: selectedBatches,
+          uploaded_by: "admin",
+        }),
+      });
+
+      if (!saveRes.ok) {
+        throw new Error("Metadata save failed");
+      }
+
+      /* ================================
+         5️⃣ SUCCESS RESET UI
+      ================================= */
+      showMsg("Video uploaded successfully!", "success");
+
+      setVideoName("");
+      setFile(null);
+      setSelectedBatches([]);
+      setSelectAllBatches(false);
+      setIsDrawerOpen(false);
+
+      await loadVideos();
+    } catch (err: any) {
+      console.error(err);
+      showMsg(err?.message || "Upload failed");
+    } finally {
+      setUploading(false);
+      setProgress(0);
     }
-
-    /* ================================
-       3️⃣ GET SUBMODULE TITLE
-    ================================= */
-    let submoduleTitle = "";
-
-    const currentC = courses.find((c) => c.slug === selectedCourse);
-    if (currentC && selectedSubmodule) {
-      const mods = normalizeCourseModules(currentC);
-      const targetM = mods.find((m) => m.id === selectedModule);
-      submoduleTitle =
-        targetM?.submodules?.find((s) => s.id === selectedSubmodule)?.title || "";
-    }
-
-    /* ================================
-       4️⃣ SAVE VIDEO TO DATABASE
-    ================================= */
-    const saveRes = await fetch("/api/admin/videos", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: videoName,
-
-        // ⭐ IMPORTANT (matches backend)
-        public_id: publicId,
-        secure_url: secureUrl,
-        thumb_url: thumbUrl,
-        duration: duration,
-
-        course_slug: selectedCourse,
-        module_id: selectedModule,
-        submodule_id: selectedSubmodule || null,
-        submodule_title: submoduleTitle || null,
-        batch_ids: selectedBatches,
-        uploaded_by: "admin",
-      }),
-    });
-
-    if (!saveRes.ok) {
-      throw new Error("Metadata save failed");
-    }
-
-    /* ================================
-       5️⃣ SUCCESS RESET UI
-    ================================= */
-    showMsg("Video uploaded successfully!", "success");
-
-    setVideoName("");
-    setFile(null);
-    setSelectedBatches([]);
-    setSelectAllBatches(false);
-    setIsDrawerOpen(false);
-
-    await loadVideos();
-  } catch (err: any) {
-    console.error(err);
-    showMsg(err?.message || "Upload failed");
-  } finally {
-    setUploading(false);
-    setProgress(0);
-  }
-};
+  };
 
   const removeVideo = async (id?: string | number) => {
     // eslint-disable-next-line no-alert
@@ -344,6 +348,11 @@ const handleUpload = async () => {
       if (!res.ok) throw new Error("Delete failed");
       showMsg("Video deleted", "success");
       await loadVideos();
+
+      // if last item on the last page was removed, move one page back if needed
+      setTimeout(() => {
+        setCurrentPage((p) => Math.max(1, p - 1));
+      }, 50);
     } catch (err: unknown) {
       showMsg((err as Error)?.message ?? String(err));
     }
@@ -359,6 +368,24 @@ const handleUpload = async () => {
     if (!q) return true;
     return name.includes(q) || courseSlug.includes(q);
   });
+
+  // Reset current page when filter/search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedCourse]);
+
+  // Pagination calculations
+  const totalItems = filteredVideos.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+
+  // ensure currentPage is in bounds
+  useEffect(() => {
+    setCurrentPage((p) => Math.min(Math.max(1, p), totalPages));
+  }, [totalPages]);
+
+  const startIndex = (currentPage - 1) * PAGE_SIZE;
+  const endIndex = startIndex + PAGE_SIZE;
+  const pagedVideos = filteredVideos.slice(startIndex, endIndex);
 
   const safeDate = (d?: string | null) => {
     if (!d) return "-";
@@ -376,7 +403,7 @@ const handleUpload = async () => {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
       {/* HEADER */}
-      <header className="bg-white border-b sticky top-0 z-30">
+      <header className="bg-white border-b z-30">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="bg-blue-600 p-2 rounded-lg text-white">
@@ -449,7 +476,7 @@ const handleUpload = async () => {
 
         {/* VIDEOS GRID */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-          {filteredVideos.length === 0 ? (
+          {pagedVideos.length === 0 ? (
             <div className="p-20 text-center">
               <div className="bg-slate-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-400">
                 <Film size={32} />
@@ -470,7 +497,7 @@ const handleUpload = async () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {filteredVideos.map((v) => {
+                  {pagedVideos.map((v) => {
                     const id = v?.id ?? v?._id ?? generateId();
                     const name = v?.name ?? v?.title ?? "Untitled";
                     const courseSlug = v?.course_slug ?? v?.courseSlug ?? "-";
@@ -543,10 +570,64 @@ const handleUpload = async () => {
               </table>
             </div>
           )}
+
+          {/* Pagination Controls */}
+          <div className="px-6 py-4 flex items-center justify-between border-t bg-slate-50">
+            <div className="text-sm text-slate-600">Showing {Math.min(totalItems, startIndex + 1)} - {Math.min(totalItems, endIndex)} of {totalItems}</div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                className="px-3 py-1 rounded-md text-sm font-semibold disabled:opacity-40 hover:bg-slate-100"
+              >
+                First
+              </button>
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1 rounded-md text-sm font-semibold disabled:opacity-40 hover:bg-slate-100"
+              >
+                Prev
+              </button>
+
+              {/* page numbers - show a limited window */}
+              <div className="inline-flex items-center gap-1">
+                {Array.from({ length: totalPages }).map((_, idx) => {
+                  const page = idx + 1;
+                  // show only nearby pages if many pages exist
+                  if (totalPages > 7 && Math.abs(page - currentPage) > 3 && page !== 1 && page !== totalPages) return null;
+                  return (
+                    <button
+                      key={page}
+                      onClick={() => setCurrentPage(page)}
+                      className={`px-3 py-1 rounded-md text-sm font-semibold ${currentPage === page ? "bg-blue-600 text-white" : "hover:bg-slate-100"}`}
+                    >
+                      {page}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1 rounded-md text-sm font-semibold disabled:opacity-40 hover:bg-slate-100"
+              >
+                Next
+              </button>
+              <button
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1 rounded-md text-sm font-semibold disabled:opacity-40 hover:bg-slate-100"
+              >
+                Last
+              </button>
+            </div>
+          </div>
         </div>
       </main>
 
-      {/* RIGHT SIDE SLIDE-OVER DRAWER */}
+      {/* RIGHT SIDE SLIDE-OVER DRAWER (unchanged) */}
       <AnimatePresence>
         {isDrawerOpen && (
           <>
