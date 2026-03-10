@@ -13,10 +13,10 @@ const pool = mysql.createPool({
 /* ================= EDIT SESSION ================= */
 export async function PATCH(
   req: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const id = params.id;
+    const { id } = await context.params;
     const body = await req.json();
 
     const { mentorName, mentorEmail, meetingUrl, notes, isActive } = body;
@@ -52,10 +52,10 @@ export async function PATCH(
 /* ================= DELETE SESSION ================= */
 export async function DELETE(
   req: Request,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const id = params.id;
+    const { id } = await context.params;
 
     await pool.query(`DELETE FROM mentor_slots WHERE id = ?`, [id]);
 

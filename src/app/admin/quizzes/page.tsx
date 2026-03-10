@@ -280,7 +280,7 @@ export default function QuizAdmin(): React.ReactElement {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
       {/* HEADER */}
-      <header className="bg-white border-b sticky top-0 z-30">
+      <header className="bg-white border-b z-30">
         <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="bg-blue-600 p-2 rounded-lg text-white">

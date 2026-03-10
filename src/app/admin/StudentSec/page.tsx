@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { FaUserGraduate, FaBook } from "react-icons/fa";
-import { Calendar, Mail, Pencil, Plus, Trash2 } from "lucide-react";
+import { Calendar, Mail, Pencil, Plus, Trash2, Search } from "lucide-react";
 import EnrolModal from "@/admin/StudentSec/EnrolModal";
 import EditEnrolPanel from "./enrol/edit/page";
 import { motion, AnimatePresence } from "framer-motion";
@@ -26,6 +26,8 @@ export default function LMSPage() {
 
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [editStudentId, setEditStudentId] = useState<number | null>(null);
+
+  const [search, setSearch] = useState("");
 
   /* -------- FETCH STUDENTS -------- */
   const fetchStudents = async () => {
@@ -59,54 +61,94 @@ export default function LMSPage() {
   const enrolledCount = students.length;
   const completedCount = students.filter((s) => s.status === "completed").length;
 
+  /* -------- SEARCH FILTER -------- */
+  const filteredStudents = students.filter(
+    (s) =>
+      s.name.toLowerCase().includes(search.toLowerCase()) ||
+      s.email.toLowerCase().includes(search.toLowerCase())
+  );
+
   return (
     <div className="space-y-6 p-6">
       {/* ---------- HEADER STATS ---------- */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard title="Enrolled Students" value={enrolledCount} icon={<FaUserGraduate />} />
         <StatCard title="Completed Courses" value={completedCount} icon={<FaBook />} />
-        <StatCard title="Active Students" value={enrolledCount - completedCount} icon={<FaUserGraduate />} />
+        <StatCard
+          title="Active Students"
+          value={enrolledCount - completedCount}
+          icon={<FaUserGraduate />}
+        />
       </div>
 
       {/* ---------- ACTION BAR ---------- */}
-      <div className="flex justify-between items-center">
-        <h2 className="text-xl font-bold">Student Management</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-bold">Student Management Hello </h2>
 
-        <button
-          onClick={() => setIsDrawerOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold"
-        >
-          <Plus size={16} /> Enroll Student
-        </button>
+        <div className="flex items-center gap-3">
+          {/* SEARCH BAR */}
+          <div className="relative">
+            <Search
+              size={16}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+            /> 
+            <input
+              type="text"
+              placeholder="Search name or email..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 pr-3 py-2 border rounded-lg w-72 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+
+          <button
+            onClick={() => setIsDrawerOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold"
+          >
+            <Plus size={16} /> Enroll Student
+          </button>
+        </div>
       </div>
 
       {/* ---------- TABLE ---------- */}
       <div className="bg-white rounded-xl shadow overflow-x-auto">
         {loading ? (
           <p className="p-6 text-center text-gray-500">Loading students…</p>
-        ) : students.length === 0 ? (
-          <p className="p-6 text-center text-gray-500">No students enrolled yet.</p>
+        ) : filteredStudents.length === 0 ? (
+          <p className="p-6 text-center text-gray-500">No students found.</p>
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-slate-50/50 border-b border-slate-200">
               <tr>
-                <th className="px-6 py-4 text-[11px] font-bold uppercase text-slate-400">Student Info</th>
-                <th className="px-6 py-4 text-[11px] font-bold uppercase text-slate-400">Course Details</th>
-                <th className="px-6 py-4 text-[11px] font-bold uppercase text-slate-400">Status</th>
-                <th className="px-6 py-4 text-[11px] font-bold uppercase text-slate-400 text-right">Actions</th>
+                <th className="px-6 py-4 text-[11px] font-bold uppercase text-slate-400">
+                  Student Info
+                </th>
+                <th className="px-6 py-4 text-[11px] font-bold uppercase text-slate-400">
+                  Course Details
+                </th>
+                <th className="px-6 py-4 text-[11px] font-bold uppercase text-slate-400">
+                  Status
+                </th>
+                <th className="px-6 py-4 text-[11px] font-bold uppercase text-slate-400 text-right">
+                  Actions
+                </th>
               </tr>
             </thead>
 
             <tbody>
-              {students.map((s) => (
+              {filteredStudents.map((s) => (
                 <tr key={s.id} className="border-t">
                   <td className="px-6 py-5">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold text-sm">
                         {s.name.charAt(0)}
                       </div>
+
                       <div>
-                        <div className="font-bold text-slate-800 text-sm">{s.name}</div>
+                        <div className="font-bold text-slate-800 text-sm">
+                          {s.name}
+                        </div>
+
                         <div className="flex items-center gap-1 text-slate-400 text-xs">
                           <Mail size={12} /> {s.email}
                         </div>
@@ -115,10 +157,15 @@ export default function LMSPage() {
                   </td>
 
                   <td className="px-6 py-5">
-                    <div className="text-sm font-semibold text-slate-700">{s.course}</div>
+                    <div className="text-sm font-semibold text-slate-700">
+                      {s.course}
+                    </div>
+
                     <div className="flex items-center gap-1 text-slate-400 text-[11px] mt-0.5">
                       <Calendar size={12} /> Joined{" "}
-                      {s.enrolledAt ? new Date(s.enrolledAt).toLocaleDateString() : "—"}
+                      {s.enrolledAt
+                        ? new Date(s.enrolledAt).toLocaleDateString()
+                        : "—"}
                     </div>
                   </td>
 
@@ -136,7 +183,6 @@ export default function LMSPage() {
 
                   <td className="px-6 py-5">
                     <div className="flex justify-end gap-2">
-                      {/* EDIT BUTTON: open right-side edit panel */}
                       <button
                         onClick={() => setEditStudentId(s.id)}
                         className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg"
@@ -190,7 +236,7 @@ export default function LMSPage() {
         )}
       </AnimatePresence>
 
-      {/* ---------- EDIT PANEL (right-side) ---------- */}
+      {/* ---------- EDIT PANEL ---------- */}
       <AnimatePresence>
         {editStudentId !== null && (
           <EditEnrolPanel

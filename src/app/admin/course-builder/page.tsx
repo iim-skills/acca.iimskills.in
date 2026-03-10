@@ -11,7 +11,9 @@ import {
   ChevronDown,
   LayoutGrid,
   Plus,
-  Pencil
+  Pencil,
+  Search,
+  Users,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -120,17 +122,20 @@ export default function App() {
   const [listsLoading, setListsLoading] = useState(false);
   const [listsError, setListsError] = useState<string | null>(null);
 
-  // UI state for per-submodule add forms
-  // keyed by `${moduleId}_${submoduleId}`
-  // NOTE: now we open only the clicked form (we replace state instead of merging)
+  // Modal state for adding (single modal for submodule)
+  // key format: `${moduleId}_${submoduleId}`
+  const [addModalKey, setAddModalKey] = useState<string | null>(null);
+  const [tempAddType, setTempAddType] = useState<"Session Recording" | "Quiz" | "Doubt Solving session">("Session Recording");
+  const [tempAddName, setTempAddName] = useState<string>("");
+  const [tempAddSelect, setTempAddSelect] = useState<string | number>("");
+  const [tempAddFile, setTempAddFile] = useState<File | null>(null);
+
+  // UI state kept for backward compatibility but not used for inline forms
   const [addSessionOpen, setAddSessionOpen] = useState<Record<string, boolean>>({});
   const [addQuizOpen, setAddQuizOpen] = useState<Record<string, boolean>>({});
 
-  // Temporary values for the add forms
-  const [tempSessionName, setTempSessionName] = useState<Record<string, string>>({});
-  const [tempSessionVideo, setTempSessionVideo] = useState<Record<string, string>>({});
-  const [tempQuizName, setTempQuizName] = useState<Record<string, string>>({});
-  const [tempQuizSelect, setTempQuizSelect] = useState<Record<string, string>>({});
+  // NEW: students count for status cards
+  const [studentsCount, setStudentsCount] = useState<number>(0);
 
   /* ======================================================
      DATA FETCHING
@@ -155,6 +160,15 @@ export default function App() {
       });
       setSelectedModuleMap(initialMap);
 
+      // NEW: fetch students count (no change to other logic)
+      try {
+        const sRes = await fetch("/api/lms/students");
+        const sData = await sRes.json();
+        setStudentsCount(Array.isArray(sData) ? sData.length : (sData?.length || 0));
+      } catch {
+        setStudentsCount(0);
+      }
+
     } catch (err) {
       // Mock data for preview
       const mockData: CourseType[] = [
@@ -172,6 +186,9 @@ export default function App() {
       const initialMap: Record<number, string> = {};
       mockData.forEach(c => initialMap[c.id] = c.courseData?.modules?.[0]?.moduleId || "");
       setSelectedModuleMap(initialMap);
+
+      // fallback students count
+      setStudentsCount(0);
     } finally {
       setLoading(false);
     }
@@ -180,7 +197,6 @@ export default function App() {
   // load videos + quizzes when drawer opens / editingCourse changes
   useEffect(() => {
     if (!isDrawerOpen) return;
-    // fetch if we don't already have lists
     if (videos.length === 0 || quizzes.length === 0) {
       fetchVideosAndQuizzes();
     }
@@ -190,18 +206,13 @@ export default function App() {
     setListsLoading(true);
     setListsError(null);
     try {
-      // Adjust endpoints if your API paths differ
       const [vRes, qRes] = await Promise.all([
         fetch("/api/admin/videos"),
         fetch("/api/admin/quizzes")
       ]);
-      if (!vRes.ok && !qRes.ok) {
-        throw new Error("failed to fetch lists");
-      }
       const vData = vRes.ok ? await vRes.json() : [];
       const qData = qRes.ok ? await qRes.json() : [];
 
-      // Expecting arrays like [{id, title}, ...]
       setVideos(Array.isArray(vData) ? vData : []);
       setQuizzes(Array.isArray(qData) ? qData : []);
     } catch (e) {
@@ -216,7 +227,6 @@ export default function App() {
   };
 
   const ensureListsLoaded = async () => {
-    // if lists already loaded and not empty, do nothing
     if (listsLoading) return;
     if (videos.length > 0 && quizzes.length > 0) return;
     await fetchVideosAndQuizzes();
@@ -281,10 +291,10 @@ export default function App() {
     // reset per-submodule UI state
     setAddSessionOpen({});
     setAddQuizOpen({});
-    setTempSessionName({});
-    setTempSessionVideo({});
-    setTempQuizName({});
-    setTempQuizSelect({});
+    setTempAddName("");
+    setTempAddSelect("");
+    setTempAddFile(null);
+    setAddModalKey(null);
     setIsDrawerOpen(true);
   };
 
@@ -339,111 +349,98 @@ export default function App() {
   };
 
   /* ======================================================
-     Add Session / Quiz functionality (fixed)
+     NEW: delete session / delete quiz
+  ====================================================== */
+
+  const deleteSession = (mIndex: number, sIndex: number, sessionId: string) => {
+    if (!editingCourse) return;
+    const updated = [...(editingCourse.courseData?.modules || [])];
+    const sessions = updated[mIndex].submodules![sIndex].sessions || [];
+    updated[mIndex].submodules![sIndex].sessions = sessions.filter(s => s.sessionId !== sessionId);
+    setEditingCourse({ ...editingCourse, courseData: { ...editingCourse.courseData, modules: updated } });
+    showMsg("Session removed");
+  };
+
+  const deleteQuizRef = (mIndex: number, sIndex: number, quizRefId: string) => {
+    if (!editingCourse) return;
+    const updated = [...(editingCourse.courseData?.modules || [])];
+    const quizzesArr = updated[mIndex].submodules![sIndex].quizzes || [];
+    updated[mIndex].submodules![sIndex].quizzes = quizzesArr.filter(q => q.quizRefId !== quizRefId);
+    setEditingCourse({ ...editingCourse, courseData: { ...editingCourse.courseData, modules: updated } });
+    showMsg("Quiz removed");
+  };
+
+  /* ======================================================
+     Add via modal (single flow)
   ====================================================== */
 
   const keyFor = (moduleId: string, submoduleId: string) => `${moduleId}_${submoduleId}`;
 
-  // open Add Session: ensure lists loaded, open only this submodule's form, init temp fields
-  const openAddSession = async (moduleId: string, submoduleId: string) => {
+  const openAddModal = async (moduleId: string, submoduleId: string) => {
     const k = keyFor(moduleId, submoduleId);
     try {
       await ensureListsLoaded();
     } catch {
-      // ensureListsLoaded already shows message on failure
+      // error handled in ensureListsLoaded
     }
-    // open only this key (close others)
-    setAddSessionOpen({ [k]: true });
-    // init temp values for this key
-    setTempSessionName(prev => ({ ...prev, [k]: prev[k] ?? "" }));
-    setTempSessionVideo(prev => ({ ...prev, [k]: prev[k] ?? "" }));
-    // close quiz form if open for same submodule
-    setAddQuizOpen(prev => {
-      const copy = { ...prev };
-      delete copy[k];
-      return copy;
-    });
+    setTempAddType("Session Recording");
+    setTempAddName("");
+    setTempAddSelect("");
+    setTempAddFile(null);
+    setAddModalKey(k);
   };
 
-  const closeAddSession = (moduleId: string, submoduleId: string) => {
-    const k = keyFor(moduleId, submoduleId);
-    setAddSessionOpen({}); // close all to make default closed
-    setTempSessionName(prev => ({ ...prev, [k]: "" }));
-    setTempSessionVideo(prev => ({ ...prev, [k]: "" }));
+  const closeAddModal = () => {
+    setAddModalKey(null);
+    setTempAddName("");
+    setTempAddSelect("");
+    setTempAddFile(null);
   };
 
-  // open Add Quiz: ensure lists loaded, open only this submodule's form, init temp fields
-  const openAddQuiz = async (moduleId: string, submoduleId: string) => {
-    const k = keyFor(moduleId, submoduleId);
-    try {
-      await ensureListsLoaded();
-    } catch {
-      // handled already
-    }
-    setAddQuizOpen({ [k]: true });
-    setTempQuizName(prev => ({ ...prev, [k]: prev[k] ?? "" }));
-    setTempQuizSelect(prev => ({ ...prev, [k]: prev[k] ?? "" }));
-    // close session form for same submodule
-    setAddSessionOpen(prev => {
-      const copy = { ...prev };
-      delete copy[k];
-      return copy;
-    });
-  };
-
-  const closeAddQuiz = (moduleId: string, submoduleId: string) => {
-    const k = keyFor(moduleId, submoduleId);
-    setAddQuizOpen({});
-    setTempQuizName(prev => ({ ...prev, [k]: "" }));
-    setTempQuizSelect(prev => ({ ...prev, [k]: "" }));
-  };
-
-  const saveNewSession = (mIndex: number, sIndex: number) => {
+  // Save an item from modal: if Quiz -> create QuizRefType, else create SessionType
+  const saveAddItem = (mIndex: number, sIndex: number) => {
     if (!editingCourse) return;
     const module = editingCourse.courseData!.modules![mIndex];
     const sub = module.submodules![sIndex];
     const k = keyFor(module.moduleId, sub.submoduleId);
-    const name = (tempSessionName[k] || "").trim();
-    const videoId = tempSessionVideo[k];
+
+    const name = tempAddName?.trim();
     if (!name) {
-      showMsg("Session name required", "error");
+      showMsg("Name is required", "error");
       return;
     }
+
+    if (tempAddType === "Quiz") {
+      const quizId = tempAddSelect || undefined;
+      const newQuizRef: QuizRefType = {
+        quizRefId: generateQuizRefId(sub.submoduleId, sub.quizzes || []),
+        name,
+        quizId: quizId || undefined,
+        quizTitle: quizzes.find(q => String(q.id) === String(quizId))?.title,
+      };
+      const updated = [...(editingCourse.courseData?.modules || [])];
+      updated[mIndex].submodules![sIndex].quizzes = [...(updated[mIndex].submodules![sIndex].quizzes || []), newQuizRef];
+      setEditingCourse({ ...editingCourse, courseData: { ...editingCourse.courseData, modules: updated } });
+      showMsg("Quiz added");
+      closeAddModal();
+      return;
+    }
+
+    // Session / Doubt Solving session
+    const videoId = tempAddSelect || undefined;
+    // If user uploaded a file (tempAddFile) you might want to upload it to server here.
+    // For now we treat upload as optional and just use selected videoId if present.
     const newSession: SessionType = {
       sessionId: generateSessionId(sub.submoduleId, sub.sessions || []),
       name,
       videoId: videoId || undefined,
-      videoTitle: videos.find(v => String(v.id) === String(videoId))?.title,
+      videoTitle: videoId ? videos.find(v => String(v.id) === String(videoId))?.title : (tempAddFile ? tempAddFile.name : undefined),
     };
     const updated = [...(editingCourse.courseData?.modules || [])];
     updated[mIndex].submodules![sIndex].sessions = [...(updated[mIndex].submodules![sIndex].sessions || []), newSession];
     setEditingCourse({ ...editingCourse, courseData: { ...editingCourse.courseData, modules: updated } });
     showMsg("Session added");
-    closeAddSession(module.moduleId, sub.submoduleId);
-  };
-
-  const saveNewQuiz = (mIndex: number, sIndex: number) => {
-    if (!editingCourse) return;
-    const module = editingCourse.courseData!.modules![mIndex];
-    const sub = module.submodules![sIndex];
-    const k = keyFor(module.moduleId, sub.submoduleId);
-    const name = (tempQuizName[k] || "").trim();
-    const quizId = tempQuizSelect[k];
-    if (!name) {
-      showMsg("Quiz name required", "error");
-      return;
-    }
-    const newQuizRef: QuizRefType = {
-      quizRefId: generateQuizRefId(sub.submoduleId, sub.quizzes || []),
-      name,
-      quizId: quizId || undefined,
-      quizTitle: quizzes.find(q => String(q.id) === String(quizId))?.title,
-    };
-    const updated = [...(editingCourse.courseData?.modules || [])];
-    updated[mIndex].submodules![sIndex].quizzes = [...(updated[mIndex].submodules![sIndex].quizzes || []), newQuizRef];
-    setEditingCourse({ ...editingCourse, courseData: { ...editingCourse.courseData, modules: updated } });
-    showMsg("Quiz added");
-    closeAddQuiz(module.moduleId, sub.submoduleId);
+    closeAddModal();
   };
 
   /* ======================================================
@@ -470,13 +467,34 @@ export default function App() {
   };
 
   /* ======================================================
+     SEARCH (NEW)
+  ====================================================== */
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const q = searchQuery.trim().toLowerCase();
+  const filteredCourses = q
+    ? courses.filter(
+        (c) =>
+          c.name.toLowerCase().includes(q) ||
+          c.slug.toLowerCase().includes(q)
+      )
+    : courses;
+
+  /* ======================================================
+     STATS (NEW)
+  ====================================================== */
+
+  const totalCourses = courses.length;
+  const activeCourses = courses.filter((c) => (c.courseData?.modules || c.modules || []).length > 0).length;
+
+  /* ======================================================
      RENDER
   ====================================================== */
 
   return (
     <div className="min-h-screen bg-[#f8fafc] text-slate-900 font-sans pb-20 selection:bg-indigo-100 selection:text-indigo-700">
       {/* HEADER */}
-      <header className="bg-white/80 backdrop-blur-md border-b sticky top-0 z-30 shadow-sm">
+      <header className="bg-white/80 backdrop-blur-md border-b z-30 shadow-sm">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="bg-gradient-to-br from-indigo-500 to-violet-600 p-2 rounded-xl text-white">
@@ -493,16 +511,39 @@ export default function App() {
                 {message.text}
               </motion.div>
             )}
-            <button
-              onClick={() => setIsCreateModalOpen(true)}
-              className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-indigo-100 flex items-center gap-2 hover:bg-indigo-700 transition-all"
-            >
-              <Plus size={18} />
-              Create New Course
-            </button>
+
+            {/* SEARCH + CREATE GROUP */}
+            <div className="flex items-center gap-3">
+              <label className="relative hidden sm:block">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search courses..."
+                  className="pl-9 pr-3 py-2 border rounded-lg w-64 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                />
+              </label>
+
+              <button
+                onClick={() => setIsCreateModalOpen(true)}
+                className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-indigo-100 flex items-center gap-2 hover:bg-indigo-700 transition-all"
+              >
+                <Plus size={18} />
+                Create New Course
+              </button>
+            </div>
           </div>
         </div>
       </header>
+
+      {/* NEW: STATUS CARDS (no other changes) */}
+      <div className="max-w-7xl mx-auto px-6 mt-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <StatCard title="Total Courses" value={totalCourses} icon={<BookOpen />} />
+          <StatCard title="Active Courses" value={activeCourses} icon={<LayoutGrid />} />
+          <StatCard title="Total Students" value={studentsCount} icon={<Users />} />
+        </div>
+      </div>
 
       <main className="max-w-7xl mx-auto px-6 py-8">
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
@@ -521,8 +562,12 @@ export default function App() {
                   <tr>
                     <td colSpan={4} className="px-6 py-12 text-center text-slate-400 italic">No courses available.</td>
                   </tr>
+                ) : filteredCourses.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-6 py-12 text-center text-slate-400 italic">No courses match your search.</td>
+                  </tr>
                 ) : (
-                  courses.map((course) => {
+                  filteredCourses.map((course) => {
                     const modules = course.courseData?.modules || course.modules || [];
                     const selectedModuleId = selectedModuleMap[course.id];
                     const activeModule = modules.find(m => m.moduleId === selectedModuleId);
@@ -635,195 +680,127 @@ export default function App() {
               </div>
 
               <div className="flex-1 overflow-y-auto p-6 space-y-4">
-{(editingCourse.courseData?.modules || []).map((module, mIndex) => {
-  const isExpanded = activeEditModuleId === module.moduleId;
+                {(editingCourse.courseData?.modules || []).map((module, mIndex) => {
+                  const isExpanded = activeEditModuleId === module.moduleId;
 
-  return (
-    <div
-      key={module.moduleId}
-      className={`border rounded-2xl overflow-hidden ${isExpanded ? "border-indigo-200 bg-indigo-50/10" : "border-slate-200"}`}
-    >
-      {/* MODULE HEADER */}
-      <div className="p-4 flex items-center justify-between gap-4">
-        <div className="flex-1 flex items-center gap-3">
-          <LayoutGrid size={16} className={isExpanded ? "text-indigo-500" : "text-slate-400"} />
+                  return (
+                    <div
+                      key={module.moduleId}
+                      className={`border rounded-2xl overflow-hidden ${isExpanded ? "border-indigo-200 bg-indigo-50/10" : "border-slate-200"}`}
+                    >
+                      {/* MODULE HEADER */}
+                      <div className="p-4 flex items-center justify-between gap-4">
+                        <div className="flex-1 flex items-center gap-3">
+                          <LayoutGrid size={16} className={isExpanded ? "text-indigo-500" : "text-slate-400"} />
 
-          {isExpanded ? (
-            <input
-              value={module.name}
-              onChange={(e) => updateModule(mIndex, "name", e.target.value)}
-              className="bg-transparent border-none focus:ring-0 text-sm font-bold text-slate-700 w-full p-0"
-              autoFocus
-            />
-          ) : (
-            <span className="text-sm font-bold text-slate-700">
-              {module.name}
-            </span>
-          )}
-        </div>
+                          {isExpanded ? (
+                            <input
+                              value={module.name}
+                              onChange={(e) => updateModule(mIndex, "name", e.target.value)}
+                              className="bg-transparent border-none focus:ring-0 text-sm font-bold text-slate-700 w-full p-0"
+                              autoFocus
+                            />
+                          ) : (
+                            <span className="text-sm font-bold text-slate-700">
+                              {module.name}
+                            </span>
+                          )}
+                        </div>
 
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setActiveEditModuleId(isExpanded ? null : module.moduleId)}
-            className="p-2 text-slate-400 hover:text-indigo-600 rounded-lg"
-          >
-            {isExpanded ? (
-              <ChevronDown className="rotate-180" size={16} />
-            ) : (
-              <Pencil size={16} />
-            )}
-          </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => setActiveEditModuleId(isExpanded ? null : module.moduleId)}
+                            className="p-2 text-slate-400 hover:text-indigo-600 rounded-lg"
+                          >
+                            {isExpanded ? (
+                              <ChevronDown className="rotate-180" size={16} />
+                            ) : (
+                              <Pencil size={16} />
+                            )}
+                          </button>
 
-          <button onClick={() => deleteModule(mIndex)} className="p-2 text-slate-300 hover:text-red-500 rounded-lg">
-            <Trash2 size={16} />
-          </button>
-        </div>
-      </div>
-
-      {/* MODULE BODY */}
-      {isExpanded && (
-        <div className="p-4 pt-0 space-y-3">
-          <div className="space-y-2">
-            {module.submodules?.map((sub, sIndex) => {
-              const k = keyFor(module.moduleId, sub.submoduleId);
-
-              return (
-                <div key={sub.submoduleId} className="border rounded-lg p-3 bg-white">
-                  {/* SUBMODULE HEADER */}
-                  <div className="flex items-center justify-between gap-3 mb-2">
-                    <input
-                      value={sub.title}
-                      onChange={(e) => updateSubmodule(mIndex, sIndex, "title", e.target.value)}
-                      className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-semibold text-slate-700"
-                    />
-
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => openAddSession(module.moduleId, sub.submoduleId)}
-                        className="px-2 py-1 text-[11px] bg-indigo-600 text-white rounded"
-                      >
-                        Add Session
-                      </button>
-
-                      <button
-                        onClick={() => openAddQuiz(module.moduleId, sub.submoduleId)}
-                        className="px-2 py-1 text-[11px] bg-emerald-600 text-white rounded"
-                      >
-                        Add Quiz
-                      </button>
-
-                      <button onClick={() => deleteSubmodule(mIndex, sIndex)} className="text-red-400">
-                        <X size={16} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Sessions */}
-                  <div className="flex flex-wrap gap-2">
-                    {(sub.sessions || []).map((sess) => (
-                      <div key={sess.sessionId} className="px-2 py-1 bg-slate-50 border rounded text-xs">
-                        {sess.name}
+                          <button onClick={() => deleteModule(mIndex)} className="p-2 text-slate-300 hover:text-red-500 rounded-lg">
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
                       </div>
-                    ))}
-                  </div>
 
-                  {/* Quizzes */}
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {(sub.quizzes || []).map((q) => (
-                      <div key={q.quizRefId} className="px-2 py-1 bg-slate-50 border rounded text-xs">
-                        {q.name}
-                      </div>
-                    ))}
-                  </div>
+                      {/* MODULE BODY */}
+                      {isExpanded && (
+                        <div className="p-4 pt-0 space-y-3">
+                          <div className="space-y-2">
+                            {module.submodules?.map((sub, sIndex) => {
+                              const k = keyFor(module.moduleId, sub.submoduleId);
 
-                  {/* ---- ADD SESSION FORM (rendered only when explicitly opened) ---- */}
-                  {addSessionOpen[k] && (
-                    <div className="mt-3 p-3 border rounded bg-slate-50">
-                      <label className="text-[12px] font-medium text-slate-700">Session name</label>
-                      <input
-                        value={tempSessionName[k] || ""}
-                        onChange={(e) => setTempSessionName({ ...tempSessionName, [k]: e.target.value })}
-                        className="w-full mt-1 mb-2 p-2 rounded border bg-white text-sm"
-                        placeholder="e.g. Session 1: Intro"
-                      />
+                              return (
+                                <div key={sub.submoduleId} className="border rounded-lg p-3 bg-white">
+                                  {/* SUBMODULE HEADER */}
+                                  <div className="flex items-center justify-between gap-3 mb-2">
+                                    <input
+                                      value={sub.title}
+                                      onChange={(e) => updateSubmodule(mIndex, sIndex, "title", e.target.value)}
+                                      className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-semibold text-slate-700"
+                                    />
 
-                      <label className="text-[12px] font-medium text-slate-700">Recording (select from videos)</label>
-                      {listsLoading ? (
-                        <div className="text-xs text-slate-500 mt-2 flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Loading videos...</div>
-                      ) : listsError ? (
-                        <div className="text-xs text-red-500 mt-2">{listsError}</div>
-                      ) : (
-                        <select
-                          value={tempSessionVideo[k] || ""}
-                          onChange={(e) => setTempSessionVideo({ ...tempSessionVideo, [k]: e.target.value })}
-                          className="w-full mt-1 mb-3 p-2 rounded border bg-white text-sm"
-                        >
-                          <option value="">-- choose a recording (optional) --</option>
-                          {videos.map(v => (
-                            <option key={v.id} value={v.id}>{v.title}</option>
-                          ))}
-                        </select>
+                                    <div className="flex gap-2">
+                                      {/* single + button to open modal */}
+                                      <button
+                                        onClick={() => openAddModal(module.moduleId, sub.submoduleId)}
+                                        className="px-2 py-1 text-[11px] bg-indigo-600 text-white rounded inline-flex items-center gap-2"
+                                        title="Add session / quiz / doubt session"
+                                      >
+                                        <Plus size={12} />
+                                        Add
+                                      </button>
+
+                                      <button onClick={() => deleteSubmodule(mIndex, sIndex)} className="text-red-400">
+                                        <X size={16} />
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* Sessions */}
+                                  <div className="flex flex-wrap gap-2">
+                                    {(sub.sessions || []).map((sess) => (
+                                      <div key={sess.sessionId} className="px-2 py-1 bg-slate-50 border rounded text-xs flex items-center gap-2">
+                                        <span>{sess.name}</span>
+                                        <button onClick={() => deleteSession(mIndex, sIndex, sess.sessionId)} className="p-1 text-red-400" title="Delete session">
+                                          <Trash2 size={12} />
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+
+                                  {/* Quizzes */}
+                                  <div className="flex flex-wrap gap-2 mt-2">
+                                    {(sub.quizzes || []).map((q) => (
+                                      <div key={q.quizRefId} className="px-2 py-1 bg-slate-50 border rounded text-xs flex items-center gap-2">
+                                        <span>{q.name}</span>
+                                        <button onClick={() => deleteQuizRef(mIndex, sIndex, q.quizRefId)} className="p-1 text-red-400" title="Delete quiz">
+                                          <Trash2 size={12} />
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+
+                                  {/* NOTE: Inline add forms removed — replaced by modal */}
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* ADD SUBMODULE */}
+                          <button
+                            onClick={() => addSubmodule(mIndex)}
+                            className="w-full py-3 border-2 border-dashed border-slate-200 rounded-xl text-sm font-bold text-slate-400 hover:border-indigo-300 hover:text-indigo-500"
+                          >
+                            + Add New Submodule
+                          </button>
+                        </div>
                       )}
-
-                      <div className="flex gap-2 justify-end">
-                        <button onClick={() => closeAddSession(module.moduleId, sub.submoduleId)} className="px-3 py-1 rounded text-sm bg-white border">Cancel</button>
-                        <button onClick={() => saveNewSession(mIndex, sIndex)} className="px-3 py-1 rounded text-sm bg-indigo-600 text-white">Save Session</button>
-                      </div>
                     </div>
-                  )}
-
-                  {/* ---- ADD QUIZ FORM (rendered only when explicitly opened) ---- */}
-                  {addQuizOpen[k] && (
-                    <div className="mt-3 p-3 border rounded bg-slate-50">
-                      <label className="text-[12px] font-medium text-slate-700">Quiz name</label>
-                      <input
-                        value={tempQuizName[k] || ""}
-                        onChange={(e) => setTempQuizName({ ...tempQuizName, [k]: e.target.value })}
-                        className="w-full mt-1 mb-2 p-2 rounded border bg-white text-sm"
-                        placeholder="e.g. Quiz 1: Basics"
-                      />
-
-                      <label className="text-[12px] font-medium text-slate-700">Select existing quiz</label>
-                      {listsLoading ? (
-                        <div className="text-xs text-slate-500 mt-2 flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Loading quizzes...</div>
-                      ) : listsError ? (
-                        <div className="text-xs text-red-500 mt-2">{listsError}</div>
-                      ) : (
-                        <select
-                          value={tempQuizSelect[k] || ""}
-                          onChange={(e) => setTempQuizSelect({ ...tempQuizSelect, [k]: e.target.value })}
-                          className="w-full mt-1 mb-3 p-2 rounded border bg-white text-sm"
-                        >
-                          <option value="">-- choose a quiz (optional) --</option>
-                          {quizzes.map(q => (
-                            <option key={q.id} value={q.id}>{q.title}</option>
-                          ))}
-                        </select>
-                      )}
-
-                      <div className="flex gap-2 justify-end">
-                        <button onClick={() => closeAddQuiz(module.moduleId, sub.submoduleId)} className="px-3 py-1 rounded text-sm bg-white border">Cancel</button>
-                        <button onClick={() => saveNewQuiz(mIndex, sIndex)} className="px-3 py-1 rounded text-sm bg-emerald-600 text-white">Save Quiz</button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {/* ADD SUBMODULE */}
-          <button
-            onClick={() => addSubmodule(mIndex)}
-            className="w-full py-3 border-2 border-dashed border-slate-200 rounded-xl text-sm font-bold text-slate-400 hover:border-indigo-300 hover:text-indigo-500"
-          >
-            + Add New Submodule
-          </button>
-        </div>
-      )}
-    </div>
-  );
-})}
+                  );
+                })}
                 <button onClick={addModule} className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl flex items-center justify-center gap-2 text-slate-400 hover:text-indigo-500 hover:border-indigo-200 font-bold text-sm">
                   <Plus size={18} /> Add New Module
                 </button>
@@ -839,6 +816,124 @@ export default function App() {
           </>
         )}
       </AnimatePresence>
+
+      {/* ADD ITEM MODAL (single shared modal) */}
+      <AnimatePresence>
+        {addModalKey && editingCourse && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-6">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={closeAddModal} />
+            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="relative bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden p-6 z-70">
+              <h4 className="text-lg font-bold mb-3">Add to submodule</h4>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Type</label>
+                  <select value={tempAddType} onChange={(e) => setTempAddType(e.target.value as any)} className="w-full p-2 border rounded">
+                    <option>Session Recording</option>
+                    <option>Quiz</option>
+                    <option>Doubt Solving session</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Name</label>
+                  <input value={tempAddName} onChange={(e) => setTempAddName(e.target.value)} className="w-full p-2 border rounded" placeholder="e.g. Session 1: Intro" />
+                </div>
+
+                {/* conditional select depending on type */}
+                {listsLoading ? (
+                  <div className="text-xs text-slate-500 mt-2 flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Loading lists...</div>
+                ) : listsError ? (
+                  <div className="text-xs text-red-500 mt-2">{listsError}</div>
+                ) : tempAddType === "Quiz" ? (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Choose existing quiz (optional)</label>
+                    <select value={String(tempAddSelect)} onChange={(e) => setTempAddSelect(e.target.value)} className="w-full p-2 border rounded">
+                      <option value="">-- pick a quiz --</option>
+                      {quizzes.map(q => <option key={q.id} value={q.id}>{q.title}</option>)}
+                    </select>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Choose existing video (optional)</label>
+                    <select value={String(tempAddSelect)} onChange={(e) => setTempAddSelect(e.target.value)} className="w-full p-2 border rounded mb-2">
+                      <option value="">-- pick a video --</option>
+                      {videos.map(v => <option key={v.id} value={v.id}>{v.title}</option>)}
+                    </select>
+
+                    <label className="block text-xs font-medium text-slate-500 mb-1">Or upload file (optional)</label>
+                    <input type="file" onChange={(e) => setTempAddFile(e.target.files?.[0] ?? null)} className="w-full" />
+                    {tempAddFile && <div className="text-xs mt-1 text-slate-500">Selected: {tempAddFile.name}</div>}
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-6 flex justify-end gap-2">
+                <button onClick={closeAddModal} className="px-4 py-2 bg-white border rounded">Cancel</button>
+                {/* figure out module/submodule indices from key */}
+                <button
+                  onClick={() => {
+                    // resolve indices
+                    const [moduleId, submoduleId] = addModalKey.split("_SUB_").length > 1
+                      ? [addModalKey.split("_SUB_")[0], `MOD_${addModalKey.split("_SUB_")[1] ? addModalKey.split("_SUB_")[1] : ""}`]
+                      : addModalKey.split("_").slice(0, 2);
+                    // find module index & sub index by id (safer)
+                    const modules = editingCourse.courseData?.modules || [];
+                    const mIndex = modules.findIndex(m => m.moduleId === addModalKey.split("_").slice(0, 2).join("_"));
+                    // fallback: search by moduleId that prefix matches
+                    const foundMIndex = modules.findIndex(m => addModalKey.startsWith(m.moduleId));
+                    const useMIndex = mIndex !== -1 ? mIndex : foundMIndex;
+                    const sIndex = modules[useMIndex]?.submodules?.findIndex(s => keyFor(modules[useMIndex].moduleId, s.submoduleId) === addModalKey) ?? -1;
+                    if (useMIndex === -1 || sIndex === -1) {
+                      // fallback search: linear
+                      let mm = -1, ss = -1;
+                      modules.forEach((mod, mi) => {
+                        mod.submodules?.forEach((sub, si) => {
+                          if (keyFor(mod.moduleId, sub.submoduleId) === addModalKey) {
+                            mm = mi; ss = si;
+                          }
+                        });
+                      });
+                      if (mm === -1 || ss === -1) {
+                        showMsg("Unable to find target submodule", "error");
+                        return;
+                      }
+                      saveAddItem(mm, ss);
+                    } else {
+                      saveAddItem(useMIndex, sIndex);
+                    }
+                  }}
+                  className="px-4 py-2 bg-indigo-600 text-white rounded"
+                >
+                  Save
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/* ================= STAT CARD (ADDED) ================= */
+
+function StatCard({
+  title,
+  value,
+  icon,
+}: {
+  title: string;
+  value: number;
+  icon: React.ReactNode;
+}) {
+  return (
+    <div className="bg-white p-5 rounded-xl shadow flex items-center gap-4">
+      <div className="text-blue-600 text-2xl">{icon}</div>
+      <div>
+        <p className="text-sm text-gray-500">{title}</p>
+        <p className="text-2xl font-bold">{value}</p>
+      </div>
     </div>
   );
 }

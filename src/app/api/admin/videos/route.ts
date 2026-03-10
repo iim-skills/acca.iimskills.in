@@ -135,3 +135,44 @@ export async function POST(req: Request) {
     );
   }
 }
+
+/* ============================
+   DELETE VIDEO
+============================ */
+
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "Video ID required" },
+        { status: 400 }
+      );
+    }
+
+    const [result]: any = await pool.query(
+      `DELETE FROM videos WHERE id = ?`,
+      [id]
+    );
+
+    if (result.affectedRows === 0) {
+      return NextResponse.json(
+        { error: "Video not found" },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: "Video deleted successfully",
+    });
+  } catch (err) {
+    console.error("DELETE VIDEO ERROR:", err);
+    return NextResponse.json(
+      { error: "Failed to delete video" },
+      { status: 500 }
+    );
+  }
+}
