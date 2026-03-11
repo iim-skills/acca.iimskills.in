@@ -329,6 +329,7 @@ export default function App({
                   quiz={activeQuiz}
                   onClose={() => { setQuizResult(null); setAdvanceCountdown(0); onCloseQuiz(); }}
                   onSubmitted={handleQuizSubmit}
+                  email={student.email}              /* <<<< ADDED: pass student email so API can save results */
                 />
               )}
             </div>

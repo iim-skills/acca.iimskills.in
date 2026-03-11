@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ChevronRight, ChevronLeft } from "lucide-react";
 
 type Option = {
@@ -24,20 +24,24 @@ type Quiz = {
 
 type Props = {
   quiz: Quiz;
+  email: string; // 👈 added email from LMS
   onClose?: () => void;
   onSubmitted?: (result: any) => void;
 };
 
 const QUESTIONS_PER_PAGE = 4;
 
-export default function QuizPanel({ quiz, onClose, onSubmitted }: Props) {
+export default function QuizPanel({ quiz, email, onClose, onSubmitted }: Props) {
   const [answers, setAnswers] = useState<Record<number, string | number>>({});
   const [page, setPage] = useState(0);
   const [timeLeft, setTimeLeft] = useState((quiz.time_minutes ?? 30) * 60);
 
-  const totalPages = Math.ceil((quiz.questions?.length ?? 0) / QUESTIONS_PER_PAGE);
+  const totalPages = Math.ceil(
+    (quiz.questions?.length ?? 0) / QUESTIONS_PER_PAGE
+  );
 
   /* ================= TIMER ================= */
+
   useEffect(() => {
     const interval = setInterval(() => {
       setTimeLeft((prev) => {
@@ -60,6 +64,7 @@ export default function QuizPanel({ quiz, onClose, onSubmitted }: Props) {
   };
 
   const startIndex = page * QUESTIONS_PER_PAGE;
+
   const visibleQuestions = quiz.questions.slice(
     startIndex,
     startIndex + QUESTIONS_PER_PAGE
@@ -72,31 +77,110 @@ export default function QuizPanel({ quiz, onClose, onSubmitted }: Props) {
     }));
   };
 
-  const handleSubmit = () => {
+  /* ================= SUBMIT ================= */
+
+  const handleSubmit = async () => {
+    // Build detailed answers array: [{ q: 1, a: 1, correct: true }, ...]
+    const results: Array<{ q: number; a: number | null; correct: boolean }> = [];
     let score = 0;
+    let attempted = 0;
 
     quiz.questions.forEach((q, index) => {
-      if (answers[index] === q.correctOption) score++;
+      const qNo = index + 1;
+      const selectedId = answers[index];
+      let selectedOptionNumber: number | null = null;
+
+      if (selectedId !== undefined && selectedId !== null && String(selectedId) !== "") {
+        const match = String(selectedId).match(/opt-(\d+)/);
+        if (match && match[1]) {
+          selectedOptionNumber = parseInt(match[1], 10);
+        } else if (!Number.isNaN(Number(selectedId))) {
+          // if option stored as numeric
+          selectedOptionNumber = Number(selectedId);
+        } else {
+          // try to map option id to its index+1 if options exist
+          if (Array.isArray(q.options)) {
+            const foundIdx = q.options.findIndex((o) => o.id === selectedId);
+            if (foundIdx !== -1) selectedOptionNumber = foundIdx + 1;
+          }
+        }
+      }
+
+      // determine correct option number
+      let correctOptionNumber: number | null = null;
+      if (q.correctOption !== undefined && q.correctOption !== null && String(q.correctOption) !== "") {
+        const co = String(q.correctOption);
+        const m = co.match(/opt-(\d+)/);
+        if (m && m[1]) {
+          correctOptionNumber = parseInt(m[1], 10);
+        } else if (!Number.isNaN(Number(co))) {
+          correctOptionNumber = Number(co);
+        } else {
+          // try to match by option id to find index
+          if (Array.isArray(q.options)) {
+            const foundIdx = q.options.findIndex((o) => String(o.id) === co);
+            if (foundIdx !== -1) correctOptionNumber = foundIdx + 1;
+          }
+        }
+      }
+
+      const correct = selectedOptionNumber !== null && correctOptionNumber !== null && selectedOptionNumber === correctOptionNumber;
+
+      if (selectedOptionNumber !== null) attempted++;
+      if (correct) score++;
+
+      results.push({
+        q: qNo,
+        a: selectedOptionNumber,
+        correct,
+      });
     });
 
-    const result = {
-      score,
-      total: quiz.questions.length,
-      percentage: Math.round((score / quiz.questions.length) * 100),
-    };
+    const total = quiz.questions.length;
+    const percentage = total > 0 ? Math.round((score / total) * 100) : 0;
 
-    onSubmitted?.(result);
+    try {
+      const res = await fetch("/api/admin/quizzes/submit", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          quizId: quiz.id,
+          email, // email from LMS
+          totalQuestions: total,
+          attemptedQuestions: attempted,
+          score,
+          answers: results, // send structured detailed results
+          submittedAt: Date.now(),
+        }),
+      });
+
+      const data = await res.json();
+
+      onSubmitted?.({
+        score,
+        total,
+        percentage,
+        rawResponse: data,
+      });
+
+    } catch (error) {
+      // intentionally no console logs per request
+    }
   };
 
   return (
     <div className="w-full h-full flex flex-col bg-gradient-to-br from-indigo-50 to-white p-8 overflow-y-auto">
 
       {/* HEADER */}
+
       <div className="flex justify-between items-center mb-8">
         <div>
           <h2 className="text-2xl font-bold text-indigo-800">
             {quiz.name ?? "Quiz"}
           </h2>
+
           <p className="text-sm text-gray-500">
             Questions: {quiz.questions.length}
           </p>
@@ -106,6 +190,7 @@ export default function QuizPanel({ quiz, onClose, onSubmitted }: Props) {
           <div className="text-lg font-semibold text-rose-600">
             ⏱ {formatTime(timeLeft)}
           </div>
+
           {onClose && (
             <button
               onClick={onClose}
@@ -118,9 +203,11 @@ export default function QuizPanel({ quiz, onClose, onSubmitted }: Props) {
       </div>
 
       {/* QUESTIONS */}
+
       <div className="space-y-6 flex-1">
         {visibleQuestions.map((q, i) => {
           const actualIndex = startIndex + i;
+
           return (
             <div
               key={actualIndex}
@@ -149,6 +236,7 @@ export default function QuizPanel({ quiz, onClose, onSubmitted }: Props) {
                         handleSelect(actualIndex, opt.id ?? idx)
                       }
                     />
+
                     <span>{opt.text}</span>
                   </label>
                 ))}
@@ -159,6 +247,7 @@ export default function QuizPanel({ quiz, onClose, onSubmitted }: Props) {
       </div>
 
       {/* FOOTER NAVIGATION */}
+
       <div className="mt-8 flex justify-between items-center">
         <button
           disabled={page === 0}
