@@ -434,22 +434,73 @@ export default function CourseModules({
     setQuizzesBySubmodule(map);
   }, [course]);
 
-  /* ── videoToNextQuizzes: gi → Quiz[] immediately following that video ── */
+  /* ══════════════════════════════════════════════════════════════════
+    videoToNextQuizzes: gi → Quiz[] that must be completed before the
+    NEXT video after that gi is allowed to play.
+
+    FIX: When a submodule uses sub.items[], we walk the items in their
+    DB-stored order (the same order the admin set) to correctly assign
+    which quiz gates which video. Previously this used buildOrderedSubItems
+    with the `order` field, but quiz items in items[] never have an explicit
+    `order` field, causing ALL quizzes to be placed after the last video
+    and therefore never blocking any intermediate video.
+  ══════════════════════════════════════════════════════════════════ */
   const videoToNextQuizzes = useMemo(() => {
     const map = new Map<number, Quiz[]>();
+
     course?.modules?.forEach((m, mi) => {
       const mkp = m.moduleId ?? `module-${mi}`;
+
       m.submodules?.forEach((s, si) => {
-        // derive videos/quizzes for buildOrderedSubItems (prefer items if present)
-        const videos = Array.isArray(s.videos)
-          ? s.videos
-          : (Array.isArray((s as any).items) ? (s as any).items.filter((it:any)=>it?.type==="video").map((it:any)=>({
-              id: it.sessionId ?? it.videoId ?? it.id,
-              title: it.name ?? it.videoTitle,
-              url: it.url ?? it.s3_url ?? null,
-            })) : []);
+
+        /* ── PATH A: sub.items[] exists — walk in DB order ──
+           This is the critical fix. Items are already in the correct
+           sequence as the admin arranged them. We track the last video
+           gi seen, so any quiz item immediately following a video gets
+           assigned to that video's gi as a gate for the next video.
+        ── */
+        if (Array.isArray((s as any).items) && (s as any).items.length > 0) {
+          let lastVideoGi = -1;
+          let videoCounter = 0;
+
+          (s as any).items.forEach((it: any) => {
+            if (it.type === "video") {
+              const key = `${mkp}-sub-${si}-vid-${videoCounter}`;
+              const gi  = videoKeyToGlobalIndex.get(key) ?? -1;
+              lastVideoGi = gi;
+              videoCounter++;
+
+            } else if (it.type === "quiz") {
+              // Only gate if there is a preceding video in this submodule
+              if (lastVideoGi < 0) return;
+
+              const qid = String(it.quizId ?? it.id ?? it.quizRefId ?? Math.random());
+              const q: Quiz = {
+                id:           qid,
+                name:         it.name ?? it.quizTitle ?? "Quiz",
+                submodule_id: String(s.submoduleId ?? ""),
+                course_slug:  course?.slug ?? "",
+                time_minutes: it.quiz?.time_minutes ?? it.time_minutes,
+                questions:    it.quiz?.questions ?? it.questions ?? [],
+                order:        it.order ?? null,
+              };
+
+              const arr = map.get(lastVideoGi) ?? [];
+              arr.push(q);
+              map.set(lastVideoGi, arr);
+            }
+          });
+
+          return; // done with this submodule
+        }
+
+        /* ── PATH B: legacy sub.videos + sub.quizzes (or quizzesBySubmodule)
+           Fall back to buildOrderedSubItems which respects the `order` field.
+        ── */
+        const videos  = Array.isArray(s.videos) ? s.videos : [];
         const quizzes = quizzesBySubmodule[String(s.submoduleId ?? "")] ?? [];
-        const items = buildOrderedSubItems(videos, quizzes, mkp, si, videoKeyToGlobalIndex);
+        const items   = buildOrderedSubItems(videos, quizzes, mkp, si, videoKeyToGlobalIndex);
+
         items.forEach(item => {
           if (item.type === "quiz" && item.prevVideoGi >= 0) {
             const arr = map.get(item.prevVideoGi) ?? [];
@@ -459,6 +510,7 @@ export default function CourseModules({
         });
       });
     });
+
     return map;
   }, [course, quizzesBySubmodule, videoKeyToGlobalIndex]);
 
@@ -582,110 +634,105 @@ export default function CourseModules({
   };
 
   /* ── handleVideoCompleted ── */
- // add near your component state/hooks:
-const [pendingNextIndex, setPendingNextIndex] = useState<number | null>(null);
+  const [pendingNextIndex, setPendingNextIndex] = useState<number | null>(null);
 
-// ...existing code...
+  const handleVideoCompleted = (globalIndex: number) => {
+    const live = new Set<number>(completedSetRef.current);
+    live.add(globalIndex);
+    markGuestCompleted(globalIndex);
 
-const handleVideoCompleted = (globalIndex: number) => {
-  const live = new Set<number>(completedSetRef.current);
-  live.add(globalIndex);
-  markGuestCompleted(globalIndex);
+    const fv = flatVideos[globalIndex];
+    if (!fv) return;
 
-  const fv = flatVideos[globalIndex];
-  if (!fv) return;
+    const merg = getMergedForKey(fv.key);
+    const dur = merg?.duration ? Math.floor(merg.duration) : 0;
 
-  const merg = getMergedForKey(fv.key);
-  const dur = merg?.duration ? Math.floor(merg.duration) : 0;
+    const pos =
+      dur > 0
+        ? dur
+        : serverProgressRef.current.get(globalIndex)?.positionSeconds ?? 0;
 
-  const pos =
-    dur > 0
-      ? dur
-      : serverProgressRef.current.get(globalIndex)?.positionSeconds ?? 0;
+    reportProgress(globalIndex, pos, true);
 
-  reportProgress(globalIndex, pos, true);
+    /* =====================================
+       CHECK IF QUIZ EXISTS AFTER THIS VIDEO
+    ====================================== */
 
-  /* =====================================
-     CHECK IF QUIZ EXISTS AFTER THIS VIDEO
-  ====================================== */
+    const nextQuizzes = videoToNextQuizzes.get(globalIndex) ?? [];
 
-  const nextQuizzes = videoToNextQuizzes.get(globalIndex) ?? [];
+    if (nextQuizzes.length > 0) {
+      const allCompleted = nextQuizzes.every((q) =>
+        completedQuizzesRef.current.has(q.id)
+      );
 
-  if (nextQuizzes.length > 0) {
-    const allCompleted = nextQuizzes.every((q) =>
-      completedQuizzesRef.current.has(q.id)
-    );
+      /* 🚫 QUIZ NOT COMPLETED → STOP AUTO PLAY
+         and trigger existing pending / UI flow for quiz
+      */
+      if (!allCompleted) {
+        console.log("Quiz required before next video");
+        computePendingNextVideo(globalIndex, live); // keep existing behaviour
+        setPendingNextIndex(null); // no automatic next-video activation
+        return;
+      }
+    }
 
-    /* 🚫 QUIZ NOT COMPLETED → STOP AUTO PLAY
-       and trigger existing pending / UI flow for quiz
-    */
-    if (!allCompleted) {
-      console.log("Quiz required before next video");
-      computePendingNextVideo(globalIndex, live); // keep existing behaviour
-      setPendingNextIndex(null); // no automatic next-video activation
+    /* =====================================
+       ENABLE (BUT DO NOT AUTOPLAY) NEXT ITEM
+    ====================================== */
+
+    let nextIdx = -1;
+    for (let i = globalIndex + 1; i < flatVideos.length; i++) {
+      if (!live.has(i)) {
+        nextIdx = i;
+        break;
+      }
+    }
+
+    if (nextIdx === -1) {
+      // no next item
+      setPendingNextIndex(null);
       return;
     }
-  }
 
-  /* =====================================
-     ENABLE (BUT DO NOT AUTOPLAY) NEXT ITEM
-  ====================================== */
+    const nfv = flatVideos[nextIdx];
+    const nmod = course?.modules?.[nfv.moduleIndex];
+    const nmKey = nmod?.moduleId ?? `module-${nfv.moduleIndex}`;
 
-  let nextIdx = -1;
-  for (let i = globalIndex + 1; i < flatVideos.length; i++) {
-    if (!live.has(i)) {
-      nextIdx = i;
-      break;
+    // check previous-module completion
+    let prevModDone = nfv.moduleIndex === 0;
+    if (!prevModDone) {
+      const prevVids = flatVideos.filter(
+        (v) => v.moduleIndex === nfv.moduleIndex - 1
+      );
+      prevModDone =
+        prevVids.length === 0 ||
+        prevVids.every((v) => {
+          const gi = videoKeyToGlobalIndex.get(v.key);
+          return typeof gi === "number" && live.has(gi);
+        });
     }
-  }
 
-  if (nextIdx === -1) {
-    // no next item
-    setPendingNextIndex(null);
-    return;
-  }
-
-  const nfv = flatVideos[nextIdx];
-  const nmod = course?.modules?.[nfv.moduleIndex];
-  const nmKey = nmod?.moduleId ?? `module-${nfv.moduleIndex}`;
-
-  // check previous-module completion
-  let prevModDone = nfv.moduleIndex === 0;
-  if (!prevModDone) {
-    const prevVids = flatVideos.filter(
-      (v) => v.moduleIndex === nfv.moduleIndex - 1
+    const nextAllowed = Boolean(
+      (nmod?.moduleId &&
+        (unlockedModulesSet.has(nmod.moduleId) ||
+          allowedSet.has(nmod.moduleId))) ||
+      (!nmod?.moduleId && unlockedModulesSet.has(nmKey))
     );
-    prevModDone =
-      prevVids.length === 0 ||
-      prevVids.every((v) => {
-        const gi = videoKeyToGlobalIndex.get(v.key);
-        return typeof gi === "number" && live.has(gi);
-      });
-  }
 
-  const nextAllowed = Boolean(
-    (nmod?.moduleId &&
-      (unlockedModulesSet.has(nmod.moduleId) ||
-        allowedSet.has(nmod.moduleId))) ||
-    (!nmod?.moduleId && unlockedModulesSet.has(nmKey))
-  );
+    // Instead of autoplaying, open the module/sub and *mark the next item as pending*
+    if (nextAllowed || prevModDone || nextIdx < FREE_PREVIEW_COUNT) {
+      setOpenModuleId(nmKey);
+      setOpenSubKey(`${nmKey}-sub-${nfv.subIndex}`);
 
-  // Instead of autoplaying, open the module/sub and *mark the next item as pending*
-  if (nextAllowed || prevModDone || nextIdx < FREE_PREVIEW_COUNT) {
-    setOpenModuleId(nmKey);
-    setOpenSubKey(`${nmKey}-sub-${nfv.subIndex}`);
+      // **Enable the next item but do not auto-play it**.
+      // UI should render a Play/Open button when pendingNextIndex === nextIdx
+      setPendingNextIndex(nextIdx);
 
-    // **Enable the next item but do not auto-play it**.
-    // UI should render a Play/Open button when pendingNextIndex === nextIdx
-    setPendingNextIndex(nextIdx);
-
-    // optional: scroll into view / highlight item (if you have a helper)
-    // scrollToItem(nextIdx);
-  } else {
-    // next item is not allowed — clear any pending flag
-    setPendingNextIndex(null);
-  }
-};
+    } else {
+      // next item is not allowed — clear any pending flag
+      setPendingNextIndex(null);
+    }
+  };
 
   /* ── event: video completed ── */
   useEffect(() => {
