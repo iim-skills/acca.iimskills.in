@@ -18,29 +18,32 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 
 /* ======================================================
-   TYPES
+   TYPES (updated: submodule uses items[])
 ====================================================== */
 
-type SessionType = {
+type VideoItem = {
+  type: "video";
   sessionId: string;
   name: string;
   videoId?: number | string;
   videoTitle?: string;
 };
 
-type QuizRefType = {
+type QuizItem = {
+  type: "quiz";
   quizRefId: string;
   name: string;
   quizId?: number | string;
   quizTitle?: string;
 };
 
+type ItemType = VideoItem | QuizItem;
+
 type SubmoduleType = {
   submoduleId: string;
   title: string;
   description?: string;
-  sessions?: SessionType[];
-  quizzes?: QuizRefType[];
+  items?: ItemType[]; // <-- changed
 };
 
 type ModuleType = {
@@ -62,40 +65,51 @@ type CourseType = {
 };
 
 /* ======================================================
-   HELPERS
+   HELPERS (ID generation now reads items[])
 ====================================================== */
 
 const generateModuleId = (modules: ModuleType[] = []) => {
   const numbers = modules
-    .map((m) => Number(m.moduleId?.replace("MOD_", "")))
+    .map((m) => Number(String(m.moduleId ?? "").replace("MOD_", "")))
     .filter((n) => !isNaN(n));
   const next = numbers.length ? Math.max(...numbers) + 1 : 1;
   return `MOD_${next}`;
 };
 
 const generateSubmoduleId = (moduleId: string, subs: SubmoduleType[] = []) => {
+  const prefix = `${moduleId}_SUB_`;
   const numbers = subs
-    .map((s) => Number(s.submoduleId?.replace(`${moduleId}_SUB_`, "")))
+    .map((s) => Number(String(s.submoduleId ?? "").replace(prefix, "")))
     .filter((n) => !isNaN(n));
   const next = numbers.length ? Math.max(...numbers) + 1 : 1;
   return `${moduleId}_SUB_${next}`;
 };
 
-const generateSessionId = (submoduleId: string, sessions: SessionType[] = []) => {
-  const numbers = sessions
-    .map((s) => Number(s.sessionId?.replace(`${submoduleId}_SES_`, "")))
+/* generate session id by scanning items for existing video ids */
+const generateSessionId = (submoduleId: string, items: ItemType[] = []) => {
+  const prefix = `${submoduleId}_SES_`;
+  const numbers = items
+    .filter((it) => it.type === "video")
+    .map((it) => Number(String((it as VideoItem).sessionId ?? "").replace(prefix, "")))
     .filter((n) => !isNaN(n));
   const next = numbers.length ? Math.max(...numbers) + 1 : 1;
   return `${submoduleId}_SES_${next}`;
 };
 
-const generateQuizRefId = (submoduleId: string, quizzes: QuizRefType[] = []) => {
-  const numbers = quizzes
-    .map((q) => Number(q.quizRefId?.replace(`${submoduleId}_QZ_`, "")))
+/* generate quiz id by scanning items for existing quiz ids */
+const generateQuizRefId = (submoduleId: string, items: ItemType[] = []) => {
+  const prefix = `${submoduleId}_QZ_`;
+  const numbers = items
+    .filter((it) => it.type === "quiz")
+    .map((it) => Number(String((it as QuizItem).quizRefId ?? "").replace(prefix, "")))
     .filter((n) => !isNaN(n));
   const next = numbers.length ? Math.max(...numbers) + 1 : 1;
   return `${submoduleId}_QZ_${next}`;
 };
+
+/* safer keyFor: uses a separator unlikely to appear in ids */
+const keyFor = (moduleId: string, submoduleId: string) =>
+  `${moduleId}__${submoduleId}`;
 
 export default function App() {
   const [courses, setCourses] = useState<CourseType[]>([]);
@@ -123,7 +137,7 @@ export default function App() {
   const [listsError, setListsError] = useState<string | null>(null);
 
   // Modal state for adding (single modal for submodule)
-  // key format: `${moduleId}_${submoduleId}`
+  // key format: `${moduleId}__${submoduleId}`
   const [addModalKey, setAddModalKey] = useState<string | null>(null);
   const [tempAddType, setTempAddType] = useState<"Session Recording" | "Quiz" | "Doubt Solving session">("Session Recording");
   const [tempAddName, setTempAddName] = useState<string>("");
@@ -176,8 +190,8 @@ export default function App() {
           id: 1, name: "Advanced React Mastery", slug: "react-mastery",
           courseData: {
             modules: [
-              { moduleId: "MOD_1", name: "Introduction", submodules: [{ submoduleId: "MOD_1_SUB_1", title: "Setup Environment" }, { submoduleId: "MOD_1_SUB_2", title: "Architecture Overview" }] },
-              { moduleId: "MOD_2", name: "Hooks Deep Dive", submodules: [{ submoduleId: "MOD_2_SUB_1", title: "Custom Hooks" }] }
+              { moduleId: "MOD_1", name: "Introduction", submodules: [{ submoduleId: "MOD_1_SUB_1", title: "Setup Environment", items: [] }, { submoduleId: "MOD_1_SUB_2", title: "Architecture Overview", items: [] }] },
+              { moduleId: "MOD_2", name: "Hooks Deep Dive", submodules: [{ submoduleId: "MOD_2_SUB_1", title: "Custom Hooks", items: [] }] }
             ]
           }
         }
@@ -278,7 +292,7 @@ export default function App() {
   };
 
   /* ======================================================
-     DRAWER ACTIONS
+     DRAWER ACTIONS (normalize to items[])
   ====================================================== */
 
   const openEditDrawer = (course: CourseType) => {
@@ -286,6 +300,18 @@ export default function App() {
       ...course,
       courseData: course.courseData || { modules: course.modules || [] },
     };
+    // make sure nested arrays exist to avoid runtime errors
+    prepared.courseData = {
+      ...prepared.courseData,
+      modules: (prepared.courseData?.modules || []).map((m: ModuleType) => ({
+        ...m,
+        submodules: (m.submodules || []).map((s: SubmoduleType) => ({
+          ...s,
+          items: s.items || [], // normalize items (previously sessions/quizzes)
+        })),
+      })),
+    };
+
     setEditingCourse(structuredClone(prepared));
     setActiveEditModuleId(null);
     // reset per-submodule UI state
@@ -321,8 +347,10 @@ export default function App() {
     if (!editingCourse) return;
     const modules = [...(editingCourse.courseData?.modules || [])];
     const module = modules[mIndex];
-    const newSubId = generateSubmoduleId(module.moduleId, module.submodules || []);
-    module.submodules = [...(module.submodules || []), { submoduleId: newSubId, title: "New Submodule", sessions: [], quizzes: [] }];
+    module.submodules = module.submodules || [];
+    const newSubId = generateSubmoduleId(module.moduleId, module.submodules);
+    // create with items array
+    module.submodules = [...module.submodules, { submoduleId: newSubId, title: "New Submodule", items: [] }];
     setEditingCourse({ ...editingCourse, courseData: { ...editingCourse.courseData, modules } });
   };
 
@@ -349,35 +377,36 @@ export default function App() {
   };
 
   /* ======================================================
-     NEW: delete session / delete quiz
+     deleteItem (single unified deletion for items[])
   ====================================================== */
 
-  const deleteSession = (mIndex: number, sIndex: number, sessionId: string) => {
+  const deleteItem = (mIndex: number, sIndex: number, id: string, type: "video" | "quiz") => {
     if (!editingCourse) return;
     const updated = [...(editingCourse.courseData?.modules || [])];
-    const sessions = updated[mIndex].submodules![sIndex].sessions || [];
-    updated[mIndex].submodules![sIndex].sessions = sessions.filter(s => s.sessionId !== sessionId);
+    const items = updated[mIndex].submodules![sIndex].items || [];
+    if (type === "video") {
+      updated[mIndex].submodules![sIndex].items = items.filter(i => !(i.type === "video" && (i as VideoItem).sessionId === id));
+    } else {
+      updated[mIndex].submodules![sIndex].items = items.filter(i => !(i.type === "quiz" && (i as QuizItem).quizRefId === id));
+    }
     setEditingCourse({ ...editingCourse, courseData: { ...editingCourse.courseData, modules: updated } });
-    showMsg("Session removed");
+    showMsg(type === "video" ? "Session removed" : "Quiz removed");
+  };
+
+  /* backward-compatible small wrappers (if used elsewhere) */
+  const deleteSession = (mIndex: number, sIndex: number, sessionId: string) => {
+    deleteItem(mIndex, sIndex, sessionId, "video");
   };
 
   const deleteQuizRef = (mIndex: number, sIndex: number, quizRefId: string) => {
-    if (!editingCourse) return;
-    const updated = [...(editingCourse.courseData?.modules || [])];
-    const quizzesArr = updated[mIndex].submodules![sIndex].quizzes || [];
-    updated[mIndex].submodules![sIndex].quizzes = quizzesArr.filter(q => q.quizRefId !== quizRefId);
-    setEditingCourse({ ...editingCourse, courseData: { ...editingCourse.courseData, modules: updated } });
-    showMsg("Quiz removed");
+    deleteItem(mIndex, sIndex, quizRefId, "quiz");
   };
 
   /* ======================================================
-     Add via modal (single flow)
+     Add via modal (single flow) - now pushes into items[]
   ====================================================== */
 
-  const keyFor = (moduleId: string, submoduleId: string) => `${moduleId}_${submoduleId}`;
-
   const openAddModal = async (moduleId: string, submoduleId: string) => {
-    const k = keyFor(moduleId, submoduleId);
     try {
       await ensureListsLoaded();
     } catch {
@@ -387,7 +416,7 @@ export default function App() {
     setTempAddName("");
     setTempAddSelect("");
     setTempAddFile(null);
-    setAddModalKey(k);
+    setAddModalKey(keyFor(moduleId, submoduleId));
   };
 
   const closeAddModal = () => {
@@ -397,12 +426,20 @@ export default function App() {
     setTempAddFile(null);
   };
 
-  // Save an item from modal: if Quiz -> create QuizRefType, else create SessionType
+  // Save an item from modal: if Quiz -> create QuizItem, else create VideoItem
   const saveAddItem = (mIndex: number, sIndex: number) => {
     if (!editingCourse) return;
-    const module = editingCourse.courseData!.modules![mIndex];
+    const modules = editingCourse.courseData!.modules || [];
+    if (mIndex < 0 || mIndex >= modules.length) {
+      showMsg("Invalid module", "error");
+      return;
+    }
+    const module = modules[mIndex];
     const sub = module.submodules![sIndex];
-    const k = keyFor(module.moduleId, sub.submoduleId);
+    if (!sub) {
+      showMsg("Invalid submodule", "error");
+      return;
+    }
 
     const name = tempAddName?.trim();
     if (!name) {
@@ -410,34 +447,39 @@ export default function App() {
       return;
     }
 
+    // ensure items array exists
+    if (!sub.items) sub.items = [];
+
     if (tempAddType === "Quiz") {
       const quizId = tempAddSelect || undefined;
-      const newQuizRef: QuizRefType = {
-        quizRefId: generateQuizRefId(sub.submoduleId, sub.quizzes || []),
+      const newQuizItem: QuizItem = {
+        type: "quiz",
+        quizRefId: generateQuizRefId(sub.submoduleId, sub.items || []),
         name,
         quizId: quizId || undefined,
         quizTitle: quizzes.find(q => String(q.id) === String(quizId))?.title,
       };
+
       const updated = [...(editingCourse.courseData?.modules || [])];
-      updated[mIndex].submodules![sIndex].quizzes = [...(updated[mIndex].submodules![sIndex].quizzes || []), newQuizRef];
+      updated[mIndex].submodules![sIndex].items = [...(updated[mIndex].submodules![sIndex].items || []), newQuizItem];
       setEditingCourse({ ...editingCourse, courseData: { ...editingCourse.courseData, modules: updated } });
       showMsg("Quiz added");
       closeAddModal();
       return;
     }
 
-    // Session / Doubt Solving session
+    // Session / Doubt Solving session (video)
     const videoId = tempAddSelect || undefined;
-    // If user uploaded a file (tempAddFile) you might want to upload it to server here.
-    // For now we treat upload as optional and just use selected videoId if present.
-    const newSession: SessionType = {
-      sessionId: generateSessionId(sub.submoduleId, sub.sessions || []),
+    const newVideoItem: VideoItem = {
+      type: "video",
+      sessionId: generateSessionId(sub.submoduleId, sub.items || []),
       name,
       videoId: videoId || undefined,
       videoTitle: videoId ? videos.find(v => String(v.id) === String(videoId))?.title : (tempAddFile ? tempAddFile.name : undefined),
     };
+
     const updated = [...(editingCourse.courseData?.modules || [])];
-    updated[mIndex].submodules![sIndex].sessions = [...(updated[mIndex].submodules![sIndex].sessions || []), newSession];
+    updated[mIndex].submodules![sIndex].items = [...(updated[mIndex].submodules![sIndex].items || []), newVideoItem];
     setEditingCourse({ ...editingCourse, courseData: { ...editingCourse.courseData, modules: updated } });
     showMsg("Session added");
     closeAddModal();
@@ -759,31 +801,29 @@ export default function App() {
                                     </div>
                                   </div>
 
-                                  {/* Sessions */}
+                                  {/* ITEMS (videos + quizzes) */}
                                   <div className="flex flex-wrap gap-2">
-                                    {(sub.sessions || []).map((sess) => (
-                                      <div key={sess.sessionId} className="px-2 py-1 bg-slate-50 border rounded text-xs flex items-center gap-2">
-                                        <span>{sess.name}</span>
-                                        <button onClick={() => deleteSession(mIndex, sIndex, sess.sessionId)} className="p-1 text-red-400" title="Delete session">
+                                    {(sub.items || []).map((it) => (
+                                      <div key={it.type === "video" ? (it as VideoItem).sessionId : (it as QuizItem).quizRefId} className="px-2 py-1 bg-slate-50 border rounded text-xs flex items-center gap-2">
+                                        <span>
+                                          {it.type === "video" ? "🎬 " : "📝 "}
+                                          {it.name}
+                                        </span>
+                                        <button
+                                          onClick={() => {
+                                            if (it.type === "video") deleteItem(mIndex, sIndex, (it as VideoItem).sessionId, "video");
+                                            else deleteItem(mIndex, sIndex, (it as QuizItem).quizRefId, "quiz");
+                                          }}
+                                          className="p-1 text-red-400"
+                                          title="Delete item"
+                                        >
                                           <Trash2 size={12} />
                                         </button>
                                       </div>
                                     ))}
                                   </div>
 
-                                  {/* Quizzes */}
-                                  <div className="flex flex-wrap gap-2 mt-2">
-                                    {(sub.quizzes || []).map((q) => (
-                                      <div key={q.quizRefId} className="px-2 py-1 bg-slate-50 border rounded text-xs flex items-center gap-2">
-                                        <span>{q.name}</span>
-                                        <button onClick={() => deleteQuizRef(mIndex, sIndex, q.quizRefId)} className="p-1 text-red-400" title="Delete quiz">
-                                          <Trash2 size={12} />
-                                        </button>
-                                      </div>
-                                    ))}
-                                  </div>
-
-                                  {/* NOTE: Inline add forms removed — replaced by modal */}
+                                  {/* NOTE: Inline add forms removed — replaced by modal */} 
                                 </div>
                               );
                             })}
@@ -870,25 +910,28 @@ export default function App() {
 
               <div className="mt-6 flex justify-end gap-2">
                 <button onClick={closeAddModal} className="px-4 py-2 bg-white border rounded">Cancel</button>
-                {/* figure out module/submodule indices from key */}
+                {/* resolve module/submodule indices from addModalKey */}
                 <button
                   onClick={() => {
-                    // resolve indices
-                    const [moduleId, submoduleId] = addModalKey.split("_SUB_").length > 1
-                      ? [addModalKey.split("_SUB_")[0], `MOD_${addModalKey.split("_SUB_")[1] ? addModalKey.split("_SUB_")[1] : ""}`]
-                      : addModalKey.split("_").slice(0, 2);
-                    // find module index & sub index by id (safer)
+                    if (!addModalKey || !editingCourse) {
+                      showMsg("Invalid target", "error");
+                      return;
+                    }
+
                     const modules = editingCourse.courseData?.modules || [];
-                    const mIndex = modules.findIndex(m => m.moduleId === addModalKey.split("_").slice(0, 2).join("_"));
-                    // fallback: search by moduleId that prefix matches
-                    const foundMIndex = modules.findIndex(m => addModalKey.startsWith(m.moduleId));
-                    const useMIndex = mIndex !== -1 ? mIndex : foundMIndex;
-                    const sIndex = modules[useMIndex]?.submodules?.findIndex(s => keyFor(modules[useMIndex].moduleId, s.submoduleId) === addModalKey) ?? -1;
-                    if (useMIndex === -1 || sIndex === -1) {
-                      // fallback search: linear
+                    // fast path: split by our safe separator
+                    const parts = addModalKey.split("__");
+                    let modId = parts[0] ?? "";
+                    let subId = parts[1] ?? "";
+
+                    let mIndex = modules.findIndex(m => m.moduleId === modId);
+                    let sIndex = mIndex !== -1 ? (modules[mIndex].submodules || []).findIndex(s => s.submoduleId === subId) : -1;
+
+                    // fallback: linear search
+                    if (mIndex === -1 || sIndex === -1) {
                       let mm = -1, ss = -1;
                       modules.forEach((mod, mi) => {
-                        mod.submodules?.forEach((sub, si) => {
+                        (mod.submodules || []).forEach((sub, si) => {
                           if (keyFor(mod.moduleId, sub.submoduleId) === addModalKey) {
                             mm = mi; ss = si;
                           }
@@ -898,10 +941,10 @@ export default function App() {
                         showMsg("Unable to find target submodule", "error");
                         return;
                       }
-                      saveAddItem(mm, ss);
-                    } else {
-                      saveAddItem(useMIndex, sIndex);
+                      mIndex = mm; sIndex = ss;
                     }
+
+                    saveAddItem(mIndex, sIndex);
                   }}
                   className="px-4 py-2 bg-indigo-600 text-white rounded"
                 >

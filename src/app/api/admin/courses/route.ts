@@ -1,45 +1,85 @@
-// app/api/admin/courses/route.ts
 import { NextResponse } from "next/server";
 import db from "../../../../lib/db";
 
-/* GET: list courses (parses courseData and returns modules) */
+/* ======================================================
+   HELPER: Ensure valid courseData structure
+====================================================== */
+
+function normalizeCourseData(data: any) {
+  if (!data || typeof data !== "object") {
+    return { modules: [] };
+  }
+
+  if (!Array.isArray(data.modules)) {
+    data.modules = [];
+  }
+
+  data.modules = data.modules.map((module: any) => ({
+    ...module,
+    submodules: Array.isArray(module.submodules)
+      ? module.submodules.map((sub: any) => ({
+          ...sub,
+          sessions: Array.isArray(sub.sessions) ? sub.sessions : [],
+          quizzes: Array.isArray(sub.quizzes) ? sub.quizzes : [],
+        }))
+      : [],
+  }));
+
+  return data;
+}
+
+/* ======================================================
+   GET: Fetch Courses
+====================================================== */
+
 export async function GET() {
   try {
-    const [rows]: any = await db.query("SELECT * FROM courses ORDER BY id DESC");
+    const [rows]: any = await db.query(
+      "SELECT * FROM courses ORDER BY id DESC"
+    );
 
-    const parsed = rows.map((c: any) => {
+    const courses = rows.map((course: any) => {
       let courseData;
+
       try {
         courseData =
-          typeof c.courseData === "string"
-            ? JSON.parse(c.courseData || '{"modules":[]}')
-            : c.courseData || { modules: [] };
+          typeof course.courseData === "string"
+            ? JSON.parse(course.courseData)
+            : course.courseData;
       } catch {
         courseData = { modules: [] };
       }
 
+      courseData = normalizeCourseData(courseData);
+
       return {
-        id: c.id,
-        courseId: c.courseId ?? null,
-        slug: c.slug,
-        name: c.name,
-        description: c.description,
-        // important for frontend: expose modules directly
-        modules: courseData.modules || [],
+        id: course.id,
+        courseId: course.courseId ?? null,
+        slug: course.slug,
+        name: course.name,
+        description: course.description,
+        modules: courseData.modules,
         courseData,
-        createdAt: c.createdAt,
-        updatedAt: c.updatedAt,
+        createdAt: course.createdAt,
+        updatedAt: course.updatedAt,
       };
     });
 
-    return NextResponse.json(parsed);
-  } catch (err) {
-    console.error("GET /api/admin/courses error:", err);
-    return NextResponse.json({ error: "Failed to fetch courses" }, { status: 500 });
+    return NextResponse.json(courses);
+  } catch (error) {
+    console.error("GET /api/admin/courses error:", error);
+
+    return NextResponse.json(
+      { error: "Failed to fetch courses" },
+      { status: 500 }
+    );
   }
 }
 
-/* POST: create a new course (keeps behaviour from your original) */
+/* ======================================================
+   POST: Create Course
+====================================================== */
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -48,21 +88,38 @@ export async function POST(req: Request) {
     const slug = body.slug?.trim();
     const description = body.description || "";
     const courseId = body.courseId || null;
-    const courseData = body.courseData || { modules: [] };
+
+    let courseData = body.courseData || { modules: [] };
 
     if (!name || !slug) {
-      return NextResponse.json({ error: "name and slug are required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "name and slug are required" },
+        { status: 400 }
+      );
     }
 
-    const [exists]: any = await db.execute("SELECT id FROM courses WHERE slug = ? LIMIT 1", [slug]);
+    /* normalize structure */
+    courseData = normalizeCourseData(courseData);
+
+    /* check slug duplicate */
+    const [exists]: any = await db.execute(
+      "SELECT id FROM courses WHERE slug = ? LIMIT 1",
+      [slug]
+    );
+
     if (exists.length > 0) {
-      return NextResponse.json({ error: "slug already exists" }, { status: 409 });
+      return NextResponse.json(
+        { error: "slug already exists" },
+        { status: 409 }
+      );
     }
 
     const jsonStr = JSON.stringify(courseData);
 
     const [result]: any = await db.execute(
-      `INSERT INTO courses (courseId, name, slug, description, courseData) VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO courses 
+      (courseId, name, slug, description, courseData) 
+      VALUES (?, ?, ?, ?, ?)`,
       [courseId, name, slug, description, jsonStr]
     );
 
@@ -72,13 +129,17 @@ export async function POST(req: Request) {
       name,
       slug,
       description,
-      modules: courseData.modules || [],
+      modules: courseData.modules,
       courseData,
     };
 
     return NextResponse.json(newCourse, { status: 201 });
-  } catch (err) {
-    console.error("POST /api/admin/courses error:", err);
-    return NextResponse.json({ error: "Failed to create course" }, { status: 500 });
+  } catch (error) {
+    console.error("POST /api/admin/courses error:", error);
+
+    return NextResponse.json(
+      { error: "Failed to create course" },
+      { status: 500 }
+    );
   }
 }

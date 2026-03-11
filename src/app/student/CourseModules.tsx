@@ -22,7 +22,7 @@ export type VideoItem = {
 };
 export type Submodule = {
   submoduleId?: string; title?: string; description?: string;
-  videos?: VideoItem[]; quizzes?: any[];
+  videos?: VideoItem[]; quizzes?: any[]; items?: any[];
 };
 export type Module = {
   moduleId?: string; slug?: string; name?: string;
@@ -55,16 +55,11 @@ export type QuizQuestion = {
 export type Quiz = {
   id: string; name?: string; submodule_id?: string; course_slug?: string;
   time_minutes?: number; questions: QuizQuestion[];
-  /**
-   * 1-indexed: quiz appears AFTER the N-th video.
-   * order = 1  → after video[0]   ← DEFAULT when not set (matches old behaviour)
-   * order = 2  → after video[1]
-   * null / undefined → treated as 1 (after first video, NOT the end).
-   */
+  /** admin-provided 1-based order (may be null/undefined) */
   order?: number | null;
 };
 
-type OrderedVideoItem = { type: "video"; vIndex: number; v: VideoItem; key: string; gi: number; };
+type OrderedVideoItem = { type: "video"; vIndex: number; v: VideoItem; key: string; gi?: number; };
 type OrderedQuizItem  = { type: "quiz";  q: Quiz; prevVideoGi: number; };
 type OrderedSubItem   = OrderedVideoItem | OrderedQuizItem;
 
@@ -74,17 +69,10 @@ const GUEST_PROGRESS_KEY = (cid: string) => `guest_progress_${cid || "unknown_co
 const QUIZ_PROGRESS_KEY  = (cid: string) => `quiz_progress_${cid || "unknown_course"}`;
 
 /* ─────────────────────────────────────────────────────────────────
-   buildOrderedSubItems
-   Merges videos[] + quizzes[] into one ordered list per the admin
-   panel configuration.
-
-   KEY FIX vs previous version:
-     A quiz with no explicit order field DEFAULTS TO 1 (after the
-     first video), NOT to the end of the submodule.
-     This restores the original behaviour (old file: idx === 0 check).
-
-   Only quizzes whose explicit order > videos.length are appended at
-   the end (edge-case safety net).
+  buildOrderedSubItems
+  - normalises order (strings -> numbers)
+  - treats missing/null/invalid order as "append to end"
+  - supports multiple quizzes after same video
 ───────────────────────────────────────────────────────────────── */
 function buildOrderedSubItems(
   videos: VideoItem[],
@@ -93,32 +81,47 @@ function buildOrderedSubItems(
   si: number,
   giMap: Map<string, number>
 ): OrderedSubItem[] {
+
   const result: OrderedSubItem[] = [];
   let lastVideoGi = -1;
+  const videosLen = videos.length;
 
-  // Resolved order: use quiz.order if explicitly set, otherwise 1
-  const resolvedOrder = (q: Quiz) => (q.order != null ? q.order : 1);
+  // parse admin order into a usable number:
+  // - if order is null/undefined/invalid/<=0 → we treat it as "append to end" (videosLen + 1)
+  // - otherwise floor(order)
+  const parseOrder = (o: any) => {
+    if (o == null) return videosLen + 1;
+    const n = Number(o);
+    if (!Number.isFinite(n) || n <= 0) return videosLen + 1;
+    return Math.floor(n);
+  };
+
+  // preserve original quizzes array order while adding parsedOrder
+  const normalized = quizzes.map(q => ({ q, parsedOrder: parseOrder((q as any).order) }));
 
   for (let vi = 0; vi < videos.length; vi++) {
     const key = `${mkp}-sub-${si}-vid-${vi}`;
     const gi  = giMap.get(key) ?? -1;
     lastVideoGi = gi;
-    result.push({ type: "video", vIndex: vi, v: videos[vi], key, gi });
 
-    // Place every quiz whose resolved order === vi + 1 right after this video
-    quizzes
-      .filter(q => resolvedOrder(q) === vi + 1)
-      .forEach(q => result.push({ type: "quiz", q, prevVideoGi: gi }));
+    result.push({
+      type: "video",
+      vIndex: vi,
+      v: videos[vi],
+      key,
+      gi
+    });
+
+    // place any quizzes whose parsedOrder === vi + 1 (1-based)
+    normalized
+      .filter(nq => nq.parsedOrder === vi + 1)
+      .forEach(nq => result.push({ type: "quiz", q: nq.q, prevVideoGi: gi }));
   }
 
-  // Quizzes with explicit order > videos.length go to the very end
-  quizzes
-    .filter(q => q.order != null && q.order > videos.length)
-    .forEach(q => {
-      const alreadyPlaced = result.some(i => i.type === "quiz" && i.q.id === q.id);
-      if (!alreadyPlaced)
-        result.push({ type: "quiz", q, prevVideoGi: lastVideoGi });
-    });
+  // append quizzes whose parsedOrder > videosLen (explicitly placed after last video or missing)
+  normalized
+    .filter(nq => nq.parsedOrder > videosLen)
+    .forEach(nq => result.push({ type: "quiz", q: nq.q, prevVideoGi: lastVideoGi }));
 
   return result;
 }
@@ -132,13 +135,22 @@ function flattenCourseVideos(course: Course | null) {
   if (!course?.modules) return out;
   course.modules.forEach((m, mi) => {
     m.submodules?.forEach((s, si) => {
-      s.videos?.forEach((v, vi) => {
+      // prefer sub.videos (legacy). If not present, look for sub.items video entries.
+      const videoItems: any[] = Array.isArray(s.videos)
+        ? s.videos
+        : (Array.isArray((s as any).items) ? (s as any).items.filter((it:any)=>it?.type==="video") : []);
+
+      videoItems.forEach((v: any, vi: number) => {
         const mkp = m.moduleId ?? `module-${mi}`;
+        // adapt shape if this came from items (different property names)
+        const idVal = v.id ?? v.videoId ?? v.sessionId;
+        const title = v.title ?? v.videoTitle ?? v.name;
+        const url   = v.url ?? v.s3_url ?? v.secure_url ?? null;
         out.push({
           moduleIndex: mi, subIndex: si, videoIndex: vi,
           moduleId: m.moduleId, submoduleId: s.submoduleId,
-          title: v.title, url: v.url,
-          videoId: (v.id ?? v.videoId) as string | undefined,
+          title, url,
+          videoId: idVal as string | undefined,
           key: `${mkp}-sub-${si}-vid-${vi}`,
         });
       });
@@ -148,7 +160,7 @@ function flattenCourseVideos(course: Course | null) {
 }
 
 /* ═══════════════════════════════════════════════
-   COMPONENT
+  COMPONENT
 ═══════════════════════════════════════════════ */
 export default function CourseModules({
   course, allowedModules = [], progress = {},
@@ -161,16 +173,6 @@ export default function CourseModules({
   const [meetModalOpen,  setMeetModalOpen]  = useState(false);
   const [isFreeLoggedIn, setIsFreeLoggedIn] = useState(false);
 
-  /*
-   * isEmailUser — true when localStorage["user"].email exists.
-   * Lazy-initialised synchronously so there is no flash.
-   *
-   * ★ When true, ALL progress is stored in the DB only.
-   *   localStorage is never written or read for progress.
-   *   This is what caused "DB cleared but UI still shows progress" —
-   *   guestProgress from localStorage was being merged in even for
-   *   logged-in users.
-   */
   const [isEmailUser] = useState<boolean>(() => {
     try {
       const raw = localStorage.getItem("user");
@@ -209,6 +211,13 @@ export default function CourseModules({
     return m;
   }, [flatVideos]);
 
+  // DEBUG: surface overall course + flattened info
+  useEffect(() => {
+    console.debug("[CURRICULUM_DEBUG] course payload:", course);
+    console.debug("[CURRICULUM_DEBUG] flatVideos:", flatVideos);
+    console.debug("[CURRICULUM_DEBUG] videoKeyToGlobalIndex:", Array.from(videoKeyToGlobalIndex.entries()));
+  }, [course, flatVideos, videoKeyToGlobalIndex]);
+
   /* getUserKey: returns email for logged-in users, UUID for guests */
   const getUserKey = (): string => {
     try {
@@ -243,11 +252,6 @@ export default function CourseModules({
     });
     // From DB (fetched on mount)
     serverProgress.forEach((e, i) => { if (e.completed) s.add(i); });
-    /*
-     * Guest localStorage progress — ONLY for users without an email.
-     * Email users rely entirely on serverProgress so stale localStorage
-     * is never mixed in, fixing the "still shows after DB clear" bug.
-     */
     if (!isEmailUser) {
       guestProgress.forEach(g => s.add(g));
     }
@@ -294,7 +298,7 @@ export default function CourseModules({
 
   /* ── guest quiz progress (localStorage — skipped for email users) ── */
   useEffect(() => {
-    if (isEmailUser) return; // email users load quiz completions from DB below
+    if (isEmailUser) return;
     if (!courseId) return;
     try {
       const raw = localStorage.getItem(QUIZ_PROGRESS_KEY(courseId));
@@ -326,16 +330,11 @@ export default function CourseModules({
         const quizFromDB  = new Set<string>();
 
         data.forEach((d) => {
-          /*
-           * Quiz completions are saved with key "quiz_QUIZID".
-           * Extract them separately so they populate completedQuizzes.
-           */
           if (typeof d.videoId === "string" && d.videoId.startsWith("quiz_")) {
-            if (d.completed) quizFromDB.add(d.videoId.slice(5)); // strip "quiz_" prefix
+            if (d.completed) quizFromDB.add(d.videoId.slice(5));
             return;
           }
 
-          /* Video progress */
           let gi = -1;
           if (typeof d.globalIndex  === "number") gi = d.globalIndex;
           else if (typeof d.global_index === "number") gi = d.global_index;
@@ -363,7 +362,9 @@ export default function CourseModules({
             });
           }
         }
-      } catch {}
+      } catch (err) {
+        console.debug("[CURRICULUM_DEBUG] course_progress fetch error:", err);
+      }
     })();
     return () => { mounted = false; };
   }, [courseId, course]);
@@ -374,12 +375,21 @@ export default function CourseModules({
     course?.modules?.forEach((mod, mi) => {
       const mkp = mod.moduleId ?? `module-${mi}`;
       mod.submodules?.forEach((s, si) => {
-        s.videos?.forEach((v, vi) => {
-          m.set(`${mkp}-sub-${si}-vid-${vi}`, {
-            url: v.url ?? null, videoId: v.id ?? v.videoId ?? null,
+        // prefer s.videos (legacy). If not present, look for s.items video entries.
+        const videoItems: any[] = Array.isArray(s.videos)
+          ? s.videos
+          : (Array.isArray((s as any).items) ? (s as any).items.filter((it:any)=>it?.type==="video") : []);
+
+        videoItems.forEach((v, vi) => {
+          const key = `${mkp}-sub-${si}-vid-${vi}`;
+          const idVal = v.id ?? v.videoId ?? v.sessionId;
+          const url = v.url ?? v.s3_url ?? v.secure_url ?? null;
+          m.set(key, {
+            url,
+            videoId: idVal ?? null,
             thumb: v.thumb ?? null,
             duration: typeof v.duration === "number" ? v.duration : undefined,
-            visible: Boolean(v.url),
+            visible: Boolean(url),
           });
         });
       });
@@ -387,45 +397,65 @@ export default function CourseModules({
     setMergedMap(m);
   }, [course]);
 
-  /* ── quizzesBySubmodule ── */
+  /* ── quizzesBySubmodule ──
+    keep order as number | null (we'll decide placement in buildOrderedSubItems)
+  ── */
   useEffect(() => {
     const map: Record<string, Quiz[]> = {};
     course?.modules?.forEach((m) => {
       m.submodules?.forEach((s) => {
         const subId = String(s.submoduleId ?? "");
-        const qs    = (s as any).quizzes ?? [];
-        if (!qs.length) return;
-        map[subId] = qs.map((q: any) => ({
-          id:           String(q.quizId ?? q.id ?? q.quizRefId ?? Math.random()),
-          name:         q.name ?? q.quizTitle ?? q.title ?? "Quiz",
-          submodule_id: subId,
-          course_slug:  course?.slug ?? "",
-          time_minutes: q.quiz?.time_minutes ?? q.time_minutes,
-          questions:    q.quiz?.questions ?? q.questions ?? [],
-          /*
-           * The admin-set position field.
-           * Common field names tried in order; null if none found.
-           * null → buildOrderedSubItems resolves to 1 (after first video).
-           */
-          order: q.order ?? q.sortOrder ?? q.position ?? null,
-        }));
+        // prefer s.quizzes (legacy), otherwise read quizzes from s.items
+        const rawQs: any[] = Array.isArray(s.quizzes)
+          ? s.quizzes
+          : (Array.isArray((s as any).items) ? (s as any).items.filter((it:any)=>it?.type==="quiz") : []);
+
+        if (!rawQs.length) return;
+
+        map[subId] = rawQs.map((q: any) => {
+          const rawOrder = q.order ?? q.sortOrder ?? q.position ?? q.quiz_order ?? null;
+          const normOrder = rawOrder == null ? null : (() => {
+            const n = Number(rawOrder);
+            return Number.isFinite(n) ? Math.floor(n) : null;
+          })();
+
+          return {
+            id:           String(q.quizId ?? q.id ?? q.quizRefId ?? Math.random()),
+            name:         q.name ?? q.quizTitle ?? q.title ?? "Quiz",
+            submodule_id: subId,
+            course_slug:  course?.slug ?? "",
+            time_minutes: q.quiz?.time_minutes ?? q.time_minutes,
+            questions:    q.quiz?.questions ?? q.questions ?? [],
+            order:        normOrder, // number | null
+          } as Quiz;
+        });
       });
     });
     setQuizzesBySubmodule(map);
   }, [course]);
 
-  /* ── videoToNextQuiz: gi → Quiz immediately following that video ── */
-  const videoToNextQuiz = useMemo(() => {
-    const map = new Map<number, Quiz>();
+  /* ── videoToNextQuizzes: gi → Quiz[] immediately following that video ── */
+  const videoToNextQuizzes = useMemo(() => {
+    const map = new Map<number, Quiz[]>();
     course?.modules?.forEach((m, mi) => {
       const mkp = m.moduleId ?? `module-${mi}`;
       m.submodules?.forEach((s, si) => {
-        const videos  = s.videos ?? [];
+        // derive videos/quizzes for buildOrderedSubItems (prefer items if present)
+        const videos = Array.isArray(s.videos)
+          ? s.videos
+          : (Array.isArray((s as any).items) ? (s as any).items.filter((it:any)=>it?.type==="video").map((it:any)=>({
+              id: it.sessionId ?? it.videoId ?? it.id,
+              title: it.name ?? it.videoTitle,
+              url: it.url ?? it.s3_url ?? null,
+            })) : []);
         const quizzes = quizzesBySubmodule[String(s.submoduleId ?? "")] ?? [];
-        const items   = buildOrderedSubItems(videos, quizzes, mkp, si, videoKeyToGlobalIndex);
+        const items = buildOrderedSubItems(videos, quizzes, mkp, si, videoKeyToGlobalIndex);
         items.forEach(item => {
-          if (item.type === "quiz" && item.prevVideoGi >= 0)
-            map.set(item.prevVideoGi, item.q);
+          if (item.type === "quiz" && item.prevVideoGi >= 0) {
+            const arr = map.get(item.prevVideoGi) ?? [];
+            arr.push(item.q);
+            map.set(item.prevVideoGi, arr);
+          }
         });
       });
     });
@@ -506,12 +536,6 @@ export default function CourseModules({
     }, 1200);
   };
 
-  /* ─────────────────────────────────────────────────────────────────
-     saveQuizToServer
-     Writes quiz completion to the DB as a "quiz_QUIZID" entry.
-     Called for email users when lms_quiz_submitted fires.
-     Guests use localStorage (QUIZ_PROGRESS_KEY) instead.
-  ───────────────────────────────────────────────────────────────── */
   const saveQuizToServer = (quizId: string) => {
     if (!courseId) return;
     fetch("/api/course_progress", {
@@ -558,56 +582,110 @@ export default function CourseModules({
   };
 
   /* ── handleVideoCompleted ── */
-  const handleVideoCompleted = (globalIndex: number) => {
-    const live = new Set<number>(completedSetRef.current);
-    live.add(globalIndex);
+ // add near your component state/hooks:
+const [pendingNextIndex, setPendingNextIndex] = useState<number | null>(null);
 
-    markGuestCompleted(globalIndex);
+// ...existing code...
 
-    const fv = flatVideos[globalIndex];
-    if (!fv) return;
-    const merg = getMergedForKey(fv.key);
-    const dur  = merg?.duration ? Math.floor(merg.duration) : 0;
-    const pos  = dur > 0 ? dur : (serverProgressRef.current.get(globalIndex)?.positionSeconds ?? 0);
-    reportProgress(globalIndex, pos, true);
+const handleVideoCompleted = (globalIndex: number) => {
+  const live = new Set<number>(completedSetRef.current);
+  live.add(globalIndex);
+  markGuestCompleted(globalIndex);
 
-    /* Quiz gate */
-    const nextQuiz = videoToNextQuiz.get(globalIndex);
-    if (nextQuiz && !completedQuizzesRef.current.has(nextQuiz.id)) {
-      computePendingNextVideo(globalIndex, live);
+  const fv = flatVideos[globalIndex];
+  if (!fv) return;
+
+  const merg = getMergedForKey(fv.key);
+  const dur = merg?.duration ? Math.floor(merg.duration) : 0;
+
+  const pos =
+    dur > 0
+      ? dur
+      : serverProgressRef.current.get(globalIndex)?.positionSeconds ?? 0;
+
+  reportProgress(globalIndex, pos, true);
+
+  /* =====================================
+     CHECK IF QUIZ EXISTS AFTER THIS VIDEO
+  ====================================== */
+
+  const nextQuizzes = videoToNextQuizzes.get(globalIndex) ?? [];
+
+  if (nextQuizzes.length > 0) {
+    const allCompleted = nextQuizzes.every((q) =>
+      completedQuizzesRef.current.has(q.id)
+    );
+
+    /* 🚫 QUIZ NOT COMPLETED → STOP AUTO PLAY
+       and trigger existing pending / UI flow for quiz
+    */
+    if (!allCompleted) {
+      console.log("Quiz required before next video");
+      computePendingNextVideo(globalIndex, live); // keep existing behaviour
+      setPendingNextIndex(null); // no automatic next-video activation
       return;
     }
+  }
 
-    /* Auto-advance */
-    let nextIdx = -1;
-    for (let i = globalIndex + 1; i < flatVideos.length; i++) {
-      if (!live.has(i)) { nextIdx = i; break; }
+  /* =====================================
+     ENABLE (BUT DO NOT AUTOPLAY) NEXT ITEM
+  ====================================== */
+
+  let nextIdx = -1;
+  for (let i = globalIndex + 1; i < flatVideos.length; i++) {
+    if (!live.has(i)) {
+      nextIdx = i;
+      break;
     }
-    if (nextIdx === -1) return;
+  }
 
-    const nfv   = flatVideos[nextIdx];
-    const nmod  = course?.modules?.[nfv.moduleIndex];
-    const nmKey = nmod?.moduleId ?? `module-${nfv.moduleIndex}`;
+  if (nextIdx === -1) {
+    // no next item
+    setPendingNextIndex(null);
+    return;
+  }
 
-    let prevModDone = nfv.moduleIndex === 0;
-    if (!prevModDone) {
-      const prevVids = flatVideos.filter(v => v.moduleIndex === nfv.moduleIndex - 1);
-      prevModDone = prevVids.length === 0 || prevVids.every(v => {
+  const nfv = flatVideos[nextIdx];
+  const nmod = course?.modules?.[nfv.moduleIndex];
+  const nmKey = nmod?.moduleId ?? `module-${nfv.moduleIndex}`;
+
+  // check previous-module completion
+  let prevModDone = nfv.moduleIndex === 0;
+  if (!prevModDone) {
+    const prevVids = flatVideos.filter(
+      (v) => v.moduleIndex === nfv.moduleIndex - 1
+    );
+    prevModDone =
+      prevVids.length === 0 ||
+      prevVids.every((v) => {
         const gi = videoKeyToGlobalIndex.get(v.key);
         return typeof gi === "number" && live.has(gi);
       });
-    }
-    const nextAllowed = Boolean(
-      (nmod?.moduleId && (unlockedModulesSet.has(nmod.moduleId) || allowedSet.has(nmod.moduleId))) ||
-      (!nmod?.moduleId && unlockedModulesSet.has(nmKey))
-    );
+  }
 
-    if (nextAllowed || prevModDone || nextIdx < FREE_PREVIEW_COUNT) {
-      setOpenModuleId(nmKey);
-      setOpenSubKey(`${nmKey}-sub-${nfv.subIndex}`);
-      setTimeout(() => playGlobalIndex(nextIdx, true), 400);
-    }
-  };
+  const nextAllowed = Boolean(
+    (nmod?.moduleId &&
+      (unlockedModulesSet.has(nmod.moduleId) ||
+        allowedSet.has(nmod.moduleId))) ||
+    (!nmod?.moduleId && unlockedModulesSet.has(nmKey))
+  );
+
+  // Instead of autoplaying, open the module/sub and *mark the next item as pending*
+  if (nextAllowed || prevModDone || nextIdx < FREE_PREVIEW_COUNT) {
+    setOpenModuleId(nmKey);
+    setOpenSubKey(`${nmKey}-sub-${nfv.subIndex}`);
+
+    // **Enable the next item but do not auto-play it**.
+    // UI should render a Play/Open button when pendingNextIndex === nextIdx
+    setPendingNextIndex(nextIdx);
+
+    // optional: scroll into view / highlight item (if you have a helper)
+    // scrollToItem(nextIdx);
+  } else {
+    // next item is not allowed — clear any pending flag
+    setPendingNextIndex(null);
+  }
+};
 
   /* ── event: video completed ── */
   useEffect(() => {
@@ -632,9 +710,9 @@ export default function CourseModules({
   }, [courseId]);
 
   /* ─────────────────────────────────────────────────────────────────
-     event: quiz submitted
-     • Email users → save to DB (quiz_ key) + update state
-     • Guest users → save to localStorage + update state
+    event: quiz submitted
+    • Email users → save to DB (quiz_ key) + update state
+    • Guest users → save to localStorage + update state
   ───────────────────────────────────────────────────────────────── */
   useEffect(() => {
     const h = (e: Event) => {
@@ -704,7 +782,7 @@ export default function CourseModules({
   }, [courseId, flatVideos, videoKeyToGlobalIndex]);
 
   /* ════════════════════════════════════════════════
-     RENDER
+    RENDER
   ════════════════════════════════════════════════ */
   if (!course?.modules?.length) {
     return (
@@ -810,23 +888,163 @@ export default function CourseModules({
                       const moduleKeyPart = module.moduleId ?? `module-${moduleIndex}`;
                       const subKey        = `${moduleKey}-sub-${subIndex}`;
                       const subIsOpen     = openSubKey === subKey;
-                      const videos        = sub.videos ?? [];
-                      const quizzes       = quizzesBySubmodule[String(sub.submoduleId ?? "")] ?? [];
 
-                      /*
-                       * ★ buildOrderedSubItems now defaults missing quiz.order to 1,
-                       *   so quizzes appear after the first video by default — exactly
-                       *   what the admin panel intends.
-                       */
-                      const orderedItems = buildOrderedSubItems(
-                        videos, quizzes, moduleKeyPart, subIndex, videoKeyToGlobalIndex
-                      );
+                      // DEBUG: log the submodule payload (will show items or videos/quizzes)
+                      console.debug("[CURRICULUM_DEBUG] module:", moduleKeyPart, "subIndex:", subIndex, "sub:", sub);
+
+                      // derive videos / quizzes, supporting `items[]`
+                      const videos: VideoItem[] = Array.isArray(sub.videos)
+                        ? sub.videos
+                        : (Array.isArray((sub as any).items)
+                            ? (sub as any).items.filter((it:any)=>it?.type==="video").map((it:any) => ({
+                                id: it.sessionId ?? it.videoId ?? it.id,
+                                title: it.videoTitle ?? it.name,
+                                url: it.url ?? it.s3_url ?? it.secure_url ?? null,
+                                thumb: it.thumb ?? undefined,
+                                duration: typeof it.duration === "number" ? it.duration : undefined,
+                              }))
+                            : []);
+
+                      // DEBUG: show derived videos and raw items
+                      if (Array.isArray((sub as any).items)) {
+                        console.debug("[CURRICULUM_DEBUG] sub.items:", (sub as any).items);
+                      }
+                      console.debug("[CURRICULUM_DEBUG] derived videos:", videos);
+
+                      const quizzes: Quiz[] = (quizzesBySubmodule[String(sub.submoduleId ?? "")] ?? [])
+                        .slice();
+
+                      // If there are no quizzes in quizzesBySubmodule, but sub.items contains quiz items, use those
+                      if ((!quizzes || quizzes.length === 0) && Array.isArray((sub as any).items)) {
+                        const qItems = (sub as any).items.filter((it:any)=>it?.type==="quiz");
+                        if (qItems.length) {
+                          const mapped = qItems.map((q:any) => {
+                            const rawOrder = q.order ?? q.sortOrder ?? q.position ?? q.quiz_order ?? null;
+                            const normOrder = rawOrder == null ? null : (() => {
+                              const n = Number(rawOrder);
+                              return Number.isFinite(n) ? Math.floor(n) : null;
+                            })();
+                            return {
+                              id: String(q.quizId ?? q.id ?? q.quizRefId ?? Math.random()),
+                              name: q.name ?? q.quizTitle ?? q.title ?? "Quiz",
+                              submodule_id: String(sub.submoduleId ?? ""),
+                              course_slug: course?.slug ?? "",
+                              time_minutes: q.quiz?.time_minutes ?? q.time_minutes,
+                              questions: q.quiz?.questions ?? q.questions ?? [],
+                              order: normOrder,
+                            } as Quiz;
+                          });
+                          (quizzes as any) = mapped;
+                          console.debug("[CURRICULUM_DEBUG] derived quizzes from items:", mapped);
+                        }
+                      }
+
+                      /* ---------------------------
+                         Build orderedItems:
+                         - If sub.items exists: use its order (DB order)
+                           • compute gi for videos via videoKeyToGlobalIndex
+                           • compute prevVideoGi for quizzes as the last seen video gi
+                         - Otherwise, fall back to buildOrderedSubItems
+                         --------------------------- */
+                      const orderedItems: OrderedSubItem[] = Array.isArray(sub.items)
+  ? (() => {
+
+      const arr: OrderedSubItem[] = [];
+
+      let lastVideoGi = -1;
+
+      /* IMPORTANT:
+         count videos separately from items
+         because global video index uses video order only
+      */
+      let videoCounter = 0;
+
+      (sub.items as any[]).forEach((it: any) => {
+
+        /* ================= VIDEO ================= */
+
+        if (it.type === "video") {
+
+          const vIndex = videoCounter;
+
+          const key = `${moduleKeyPart}-sub-${subIndex}-vid-${vIndex}`;
+
+          const gi = videoKeyToGlobalIndex.get(key) ?? -1;
+
+          lastVideoGi = gi;
+
+          arr.push({
+            type: "video",
+            vIndex,
+            v: {
+              id: it.videoId ?? it.sessionId ?? it.id,
+              title: it.videoTitle ?? it.name,
+              url:
+                getMergedForKey(key)?.url ??
+                it.url ??
+                it.s3_url ??
+                null,
+              thumb: getMergedForKey(key)?.thumb ?? it.thumb,
+              duration:
+                getMergedForKey(key)?.duration ??
+                (typeof it.duration === "number" ? it.duration : undefined),
+            },
+            key,
+            gi,
+          } as OrderedVideoItem);
+
+          videoCounter++;
+        }
+
+        /* ================= QUIZ ================= */
+
+        else if (it.type === "quiz") {
+
+          const qid = String(it.quizId ?? it.id ?? it.quizRefId ?? Math.random());
+
+          const q: Quiz = {
+            id: qid,
+            name: it.name ?? it.quizTitle ?? "Quiz",
+            submodule_id: String(sub.submoduleId ?? ""),
+            course_slug: course?.slug ?? "",
+            time_minutes: it.quiz?.time_minutes ?? it.time_minutes,
+            questions: it.quiz?.questions ?? it.questions ?? [],
+            order: it.order ?? null,
+          };
+
+          arr.push({
+            type: "quiz",
+            q,
+            prevVideoGi: lastVideoGi,
+          } as OrderedQuizItem);
+        }
+
+        else {
+          console.debug(
+            "[CURRICULUM_DEBUG] unknown sub.item type skipped:",
+            it
+          );
+        }
+      });
+
+      return arr;
+
+    })()
+  : buildOrderedSubItems(
+      videos,
+      quizzes,
+      moduleKeyPart,
+      subIndex,
+      videoKeyToGlobalIndex
+    );
+
+                      console.debug("[CURRICULUM_DEBUG] orderedItems:", orderedItems);
 
                       return (
                         <div key={subKey}
                           className={`p-3 transition-colors ${subIsOpen ? "bg-blue-50/20" : "hover:bg-gray-50"}`}>
 
-                          {/* submodule toggle */}
+                          {/* SUBMODULE TOGGLE */}
                           <button type="button"
                             onClick={() => { if (!moduleUnlocked) return; setOpenSubKey(subIsOpen ? null : subKey); }}
                             className={`w-full flex items-center justify-between p-3.5 rounded-xl transition-colors ${subIsOpen ? "bg-blue-100" : "hover:bg-slate-50"}`}>
@@ -842,20 +1060,28 @@ export default function CourseModules({
                           {subIsOpen && (
                             <div className="mt-3 space-y-2">
                               {orderedItems.length > 0 ? (
-                                orderedItems.map((item) => {
+                                orderedItems.map((item, itemIndex) => {
 
                                   /* ─── VIDEO ITEM ─── */
                                   if (item.type === "video") {
-                                    const { v: vv, key: videoKey, gi: globalIndex } = item;
+                                    const vidItem = item as OrderedVideoItem;
+                                    const { v: vv, key: videoKey, gi: globalIndex } = vidItem;
                                     const merged    = getMergedForKey(videoKey);
                                     const urlToPlay = merged?.url ?? vv.url;
                                     const visible   = Boolean(urlToPlay);
-                                    const done      = globalIndex >= 0 && completedSet.has(globalIndex);
+                                    const done      = typeof globalIndex === "number" && globalIndex >= 0 ? completedSet.has(globalIndex) : false;
 
-                                    const isFirst        = globalIndex === 0;
-                                    const prevGlobalDone = globalIndex > 0 && completedSet.has(globalIndex - 1);
-                                    const quizBetween    = globalIndex > 0 ? videoToNextQuiz.get(globalIndex - 1) : undefined;
-                                    const quizGatePassed = !quizBetween || completedQuizzes.has(quizBetween.id);
+                                    // compute previous video gi within same sub (look for previous index)
+                                    const prevIdx = vidItem.vIndex - 1;
+                                    const prevKey = `${moduleKeyPart}-sub-${subIndex}-vid-${prevIdx}`;
+                                    const prevGiLocal = videoKeyToGlobalIndex.get(prevKey) ?? -1;
+                                    const prevGlobalDone = prevGiLocal >= 0 ? completedSet.has(prevGiLocal) : true; // if unknown prevGi treat as passed
+
+                                    // quizzes placed after previous video in DB (if previous video mapped)
+                                    const quizBetweenArr = prevGiLocal >= 0 ? (videoToNextQuizzes.get(prevGiLocal) ?? []) : [];
+                                    const quizGatePassed = quizBetweenArr.length === 0 || quizBetweenArr.every(q => completedQuizzes.has(q.id));
+                                    const isFirst        = typeof globalIndex === "number" && globalIndex === 0;
+
                                     const unlocked       = Boolean(
                                       moduleUnlocked && (isFirst || done || (prevGlobalDone && quizGatePassed))
                                     );
@@ -867,7 +1093,16 @@ export default function CourseModules({
                                           {urlToPlay ? (
                                             <button type="button"
                                               disabled={!visible || !unlocked}
-                                              onClick={() => { if (visible && unlocked) playGlobalIndex(globalIndex); }}
+                                              onClick={() => {
+                                                if (!visible || !unlocked) return;
+                                                if (typeof globalIndex === "number" && globalIndex >= 0) {
+                                                  playGlobalIndex(globalIndex);
+                                                } else {
+                                                  // No global index mapping available — play directly
+                                                  onPlayVideo(urlToPlay, vv.title, module.moduleId ?? "", vidItem.vIndex, { resumeSeconds: undefined, autoplay: true });
+                                                  setActiveVideoKey(videoKey);
+                                                }
+                                              }}
                                               className={`w-full flex justify-between items-center gap-3 p-3 rounded-xl border transition-all bg-white
                                                 ${unlocked
                                                   ? "border-slate-100 hover:border-indigo-100 text-slate-600 hover:text-indigo-600 cursor-pointer"
@@ -904,7 +1139,8 @@ export default function CourseModules({
                                   }
 
                                   /* ─── QUIZ ITEM ─── */
-                                  const { q, prevVideoGi } = item;
+                                  const qItem = item as OrderedQuizItem;
+                                  const { q, prevVideoGi } = qItem;
                                   const quizDone     = completedQuizzes.has(q.id);
                                   const quizUnlocked = prevVideoGi >= 0 ? completedSet.has(prevVideoGi) : true;
 
