@@ -13,6 +13,7 @@ type StudentAPIResp = {
   id: number;
   name: string;
   email: string;
+  student_type: string;
   phone?: string;
   courseSlug?: string;
   courseTitle?: string;
@@ -140,7 +141,7 @@ export default function StudentDashboardLMS(): React.ReactElement | null {
     <div className="min-h-screen bg-slate-50">
       <DashboardHero
   studentName={s.name}
-  studentType={s.studentType}
+  Type={s.student_type}
   course={course}
   activeModules={studentModuleIds}
   onLogout={() => {
