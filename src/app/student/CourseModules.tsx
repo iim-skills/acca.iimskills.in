@@ -795,34 +795,53 @@ export default function CourseModules({
     <div className="w-full space-y-6">
 
       {/* Header */}
-      <div className="p-4 border-b border-gray-100 bg-white border-indigo-100 shadow-md ring-1 ring-indigo-50">
-        <h2 className="text-2xl font-black text-slate-900 leading-tight mb-2">{course.name}</h2>
-        <p className="text-xs text-gray-500 mt-1">{course.description}</p>
-        <div className="flex flex-col gap-4 mt-3">
-          <div className="flex flex-row gap-4 items-center">
-            <span className="text-[14px] font-medium text-gray-500 flex items-center gap-1">
-              <BookOpen size={14} className="text-blue-400" /> {course.modules.length} Modules
-            </span>
-            <span className="text-[14px] font-medium text-gray-500 flex items-center gap-1">
-              <Video size={14} className="text-blue-400" /> Video Lessons
-            </span>
-          </div>
-          {Boolean(allowedModules?.length) && (
-            <button onClick={() => setMeetModalOpen(true)} type="button"
-              className="w-full mt-6 py-3.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-sm transition-all shadow-lg shadow-indigo-100 flex items-center justify-center gap-2">
-              Book A meet with mentors
-            </button>
-          )}
-          {isFreeLoggedIn && !allowedModules?.length && (
-            <div className="ml-auto">
-              <button onClick={() => router.push("/enroll")} type="button"
-                className="px-3 py-2 bg-amber-500 text-white text-sm font-semibold rounded-md hover:bg-amber-600 focus:outline-none">
-                Upgrade your Access
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
+  <div className="p-4 border-b border-gray-100 bg-white border-indigo-100 shadow-md ring-1 ring-indigo-50">
+  <h2 className="text-2xl font-black text-slate-900 leading-tight mb-2">
+    {course.name}
+  </h2>
+
+  <p className="text-xs text-gray-500 mt-1">
+    {course.description}
+  </p>
+
+ <div className="flex flex-col gap-4 mt-3">
+
+  <div className="flex flex-row gap-4 items-center">
+    <span className="text-[14px] font-medium text-gray-500 flex items-center gap-1">
+      <BookOpen size={14} className="text-blue-400" /> {course.modules.length} Modules
+    </span>
+
+    <span className="text-[14px] font-medium text-gray-500 flex items-center gap-1">
+      <Video size={14} className="text-blue-400" /> Video Lessons
+    </span>
+  </div>
+
+  {allowedModules && allowedModules.length > 1 ? (
+
+    <button
+      onClick={() => setMeetModalOpen(true)}
+      type="button"
+      className="w-full mt-6 py-3.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-sm transition-all shadow-lg shadow-indigo-100 flex items-center justify-center gap-2"
+    >
+      Book A Meet with Mentors
+    </button>
+
+  ) : (
+
+    <div className="ml-auto">
+      <button
+        onClick={() => router.push("/enroll")}
+        type="button"
+        className="px-3 py-2 bg-amber-500 text-white text-sm font-semibold rounded-md hover:bg-amber-600"
+      >
+        Upgrade Your Access
+      </button>
+    </div>
+
+  )}
+
+</div>
+</div>
 
       {/* Modules */}
       <div className="space-y-2">

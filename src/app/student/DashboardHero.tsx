@@ -118,7 +118,7 @@ export default function DashboardHero({
                       : "border-blue-400/50 text-blue-300 bg-blue-400/10"
                   }`}
                 >
-                  {isPaid ? "Full Access" : "Trial Member"}
+                  {isPaid ? "Enrolled Student" : "Trial Student"}
                 </div>
               </div>
 

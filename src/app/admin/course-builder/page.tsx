@@ -263,23 +263,49 @@ export default function App() {
 
     setLoading(true);
     try {
-      const nextId = courses.length > 0 ? Math.max(...courses.map(c => c.id)) + 1 : 1;
+      // call server create API
+      const res = await fetch("/api/admin/createNewCourse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newCourse.name,
+          slug: newCourse.slug,
+          description: "",   // optional, send if you have a field for it
+          modules: [],       // start empty
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        // server returned an error
+        console.error("Create course failed:", data);
+        showMsg(data?.error || "Failed to create course", "error");
+        return;
+      }
+
+      // server should return { success: true, id, courseId } as per API
+      const newId = typeof data.id === "number" ? data.id : (courses.length > 0 ? Math.max(...courses.map(c => c.id)) + 1 : 1);
 
       const createdCourse: CourseType = {
-        id: nextId,
+        id: newId,
         name: newCourse.name,
         slug: newCourse.slug,
-        courseData: { modules: [] }
+        courseData: { modules: [] }, // normalized shape used by your editor
       };
 
-      setCourses([...courses, createdCourse]);
+      // append to UI list
+      setCourses(prev => [...prev, createdCourse]);
 
       showMsg("Course created!");
       setIsCreateModalOpen(false);
       setNewCourse({ name: "", slug: "" });
 
+      // open the edit drawer for the newly created course
       openEditDrawer(createdCourse);
-    } catch {
+
+    } catch (err) {
+      console.error("Create course error:", err);
       showMsg("Failed to create course", "error");
     } finally {
       setLoading(false);
@@ -699,7 +725,7 @@ export default function App() {
                   Cancel
                 </button>
                 <button onClick={handleCreateCourse} className="flex-[2] py-3 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all">
-                  Next: Edit Curriculum
+                  {loading ? <Loader2 size={16} className="animate-spin" /> : <>Next: Edit Curriculum</>}
                 </button>
               </div>
             </motion.div>
