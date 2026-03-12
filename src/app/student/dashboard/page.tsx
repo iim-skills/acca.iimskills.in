@@ -85,9 +85,11 @@ export default function StudentDashboardLMS(): React.ReactElement | null {
         const res = await fetch("/api/student/me", { headers: { "x-user-email": parsed.email } });
         if (!res.ok) throw new Error("Failed to fetch student");
         const data = await res.json();
+        console.log("🎯 API DATA RECEIVED:", data);
         setStudent(data);
       } catch (err) {
         console.error("fetchStudent error:", err);
+        
         router.push("/");
       } finally {
         setLoadingStudent(false);
@@ -141,8 +143,8 @@ export default function StudentDashboardLMS(): React.ReactElement | null {
       <div className="bg-white border-b border-slate-200">
         <div className="w-full mx-auto">
           <DashboardHero
-            studentName={s.name}
-            Type={s.student_type}
+            studentName={student.name}
+  Type={student.studentType}
             course={course}
             activeModules={studentModuleIds}
             onLogout={() => {

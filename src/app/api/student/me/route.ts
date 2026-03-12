@@ -5,13 +5,12 @@ export async function GET(req: Request) {
   try {
     const email = req.headers.get("x-user-email");
 
+    console.log("📩 Request Email:", email);
+
     if (!email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    /* ===============================
-       GET STUDENT
-    =============================== */
     const [rows]: any = await db.query(
       `
       SELECT 
@@ -21,6 +20,7 @@ export async function GET(req: Request) {
         phone,
         course_slug,
         course_title,
+        student_type,
         modules,
         progress,
         batch_id,
@@ -32,6 +32,8 @@ export async function GET(req: Request) {
       [email, email]
     );
 
+    console.log("📦 Raw DB Result:", rows);
+
     if (!rows?.length) {
       return NextResponse.json(
         { error: "Student not found" },
@@ -41,11 +43,11 @@ export async function GET(req: Request) {
 
     const student = rows[0];
 
-    /* ===============================
-       PARSE MODULES + PROGRESS (OLD)
-    =============================== */
+    console.log("👤 Student Row:", student);
+    console.log("🎓 Student Type:", student.student_type);
+
     let modules: string[] = [];
-    let progress: Record<string, number[]> = {};
+    let progress: Record<string, any> = {};
 
     try {
       modules =
@@ -61,39 +63,32 @@ export async function GET(req: Request) {
           : student.progress || {};
     } catch {}
 
-    /* ===============================
-       🔥 NEW: BUILD BATCH ARRAY
-       (LMS expects array of ids)
-    =============================== */
     let batchIds: string[] = [];
 
-    try {
-      if (student.batch_id) {
-        batchIds = [String(student.batch_id)];
-      }
-    } catch {}
+    if (student.batch_id) {
+      batchIds = [String(student.batch_id)];
+    }
 
-    /* ===============================
-       RESPONSE (OLD + NEW)
-    =============================== */
-    return NextResponse.json({
+    const responseData = {
       id: student.id,
       name: student.name,
       email: student.email,
       phone: student.phone,
       courseSlug: student.course_slug,
       courseTitle: student.course_title,
-
+      studentType: student.student_type,
       modules,
       progress,
-
-      // ⭐ NEW FIELD for LMS visibility logic
       batches: batchIds,
-
       role: "student",
-    });
+    };
+
+    console.log("🚀 API Response:", responseData);
+
+    return NextResponse.json(responseData);
+
   } catch (err) {
-    console.error("Student ME error:", err);
+    console.error("❌ Student ME error:", err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
