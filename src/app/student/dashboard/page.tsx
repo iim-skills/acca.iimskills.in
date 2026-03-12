@@ -1,14 +1,14 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import DashboardHero from "../DashboardHero";
 import CourseModules from "../CourseModules";
 import RightSidePanel from "../RightSidePanel";
-import { LogOut } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
-/* ================= TYPES (re-used / small edits) ================= */
+/* ================= TYPES ================= */
 type StudentAPIResp = {
   id: number;
   name: string;
@@ -18,7 +18,7 @@ type StudentAPIResp = {
   courseSlug?: string;
   courseTitle?: string;
   modules?: string[] | string;
-  progress?: Record<string, number[]>; // moduleId -> array of completed videoIds / indexes
+  progress?: Record<string, number[]>; 
   batch_id?: string | number;
   studentType?: "free" | "paid";
 };
@@ -36,17 +36,14 @@ export default function StudentDashboardLMS(): React.ReactElement | null {
 
   const [student, setStudent] = useState<StudentAPIResp | null>(null);
   const [loadingStudent, setLoadingStudent] = useState<boolean>(true);
-
   const [course, setCourse] = useState<CourseFile | null>(null);
   const [loadingCourse, setLoadingCourse] = useState<boolean>(false);
 
-  // Right-side state
   const [activeModuleId, setActiveModuleId] = useState<string | null>(null);
   const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
   const [activeSubmoduleTitle, setActiveSubmoduleTitle] = useState<string | null>(null);
   const [activeQuiz, setActiveQuiz] = useState<any | null>(null);
 
-  // stable callback for CourseModules -> play video
   const onPlayVideoInternal = useCallback((videoUrl: string | null, title?: string, moduleId?: string) => {
     setActiveQuiz(null);
     setActiveVideoUrl(videoUrl);
@@ -54,7 +51,6 @@ export default function StudentDashboardLMS(): React.ReactElement | null {
     setActiveModuleId(moduleId ? String(moduleId) : null);
   }, []);
 
-  // parse allowed module IDs from student
   const studentModuleIds: string[] = useMemo(() => {
     const rawModules = student?.modules ?? [];
     if (typeof rawModules === "string") return rawModules.split(",").map((x) => x.trim()).filter(Boolean);
@@ -99,7 +95,6 @@ export default function StudentDashboardLMS(): React.ReactElement | null {
     }
 
     fetchStudent();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
   /* ================= LOAD COURSE ================= */
@@ -128,8 +123,11 @@ export default function StudentDashboardLMS(): React.ReactElement | null {
 
   if (loadingStudent || loadingCourse) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-sm text-slate-500">Loading dashboard...</div>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50">
+        <Loader2 className="w-10 h-10 text-blue-600 animate-spin mb-4" />
+        <div className="text-sm font-bold text-slate-400 uppercase tracking-widest">
+          Securing Professional Dashboard...
+        </div>
       </div>
     );
   }
@@ -138,52 +136,79 @@ export default function StudentDashboardLMS(): React.ReactElement | null {
   const s = student;
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <DashboardHero
-  studentName={s.name}
-  Type={s.student_type}
-  course={course}
-  activeModules={studentModuleIds}
-  onLogout={() => {
-    if (typeof window !== "undefined") localStorage.removeItem("user");
-    router.push("/");
-  }}
-/>
-    
-
-      {/* MAIN GRID */}
-      <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-5 gap-6 px-4">
-        {/* LEFT (modules) */}
-        <aside className="lg:col-span-2">
-          <div className="rounded-2xl sticky top-6">
-            <CourseModules
-              course={course}
-              allowedModules={studentModuleIds}
-              progress={s.progress ?? {}}
-              onPlayVideo={(url, title, moduleId) => onPlayVideoInternal(url, title, moduleId)}
-              onOpenQuiz={(quiz) => {
-                setActiveVideoUrl(null);
-                setActiveQuiz(quiz);
-              }}
-            />
-          </div>
-        </aside>
-
-        {/* RIGHT (new component) */}
-        <section className="lg:col-span-3">
-          <RightSidePanel
+    <div className="min-h-screen bg-[#f8fafc]">
+      {/* 1. Header Area with Hero */}
+      <div className="bg-white border-b border-slate-200">
+        <div className="w-full mx-auto">
+          <DashboardHero
+            studentName={s.name}
+            Type={s.student_type}
             course={course}
-            student={s}
-            activeModuleId={activeModuleId}
-            activeVideoUrl={activeVideoUrl}
-            activeSubmoduleTitle={activeSubmoduleTitle}
-            activeQuiz={activeQuiz}
-            onCloseQuiz={() => setActiveQuiz(null)}
-            onPlayVideo={(url, title, moduleId) => onPlayVideoInternal(url, title, moduleId)}
-            QuizPanel={QuizPanel}
+            activeModules={studentModuleIds}
+            onLogout={() => {
+              if (typeof window !== "undefined") localStorage.removeItem("user");
+              router.push("/");
+            }}
           />
-        </section>
+        </div>
       </div>
+
+      {/* 2. Main Course Layout Grid */}
+      <main className="max-w-7xl mx-auto pb-12 px-4 lg:px-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          
+          {/* LEFT: Modules Navigation (40% width on large screens) */}
+          <aside className="lg:col-span-5 xl:col-span-4">
+            <div className="sticky top-8 space-y-6">
+              
+              
+              <div className="rounded-2xl overflow-hidden border border-slate-200 bg-white shadow-sm">
+                <CourseModules
+                  course={course}
+                  allowedModules={studentModuleIds}
+                  progress={s.progress ?? {}}
+                  onPlayVideo={(url, title, moduleId) => onPlayVideoInternal(url, title, moduleId)}
+                  onOpenQuiz={(quiz) => {
+                    setActiveVideoUrl(null);
+                    setActiveQuiz(quiz);
+                  }}
+                />
+              </div>
+            </div>
+          </aside>
+
+          {/* RIGHT: Content Player & Info (60% width on large screens) */}
+          <section className="lg:col-span-7 xl:col-span-8">
+            <div className="space-y-6">
+              <div className="flex items-center gap-2 mb-2 px-1">
+                <div className="w-1.5 h-6 bg-cyan-500 rounded-full" />
+                <h2 className="text-lg font-black text-slate-800 tracking-tight uppercase">
+                  Learning Workspace
+                </h2>
+              </div>
+
+              <RightSidePanel
+                course={course}
+                student={s}
+                activeModuleId={activeModuleId}
+                activeVideoUrl={activeVideoUrl}
+                activeSubmoduleTitle={activeSubmoduleTitle}
+                activeQuiz={activeQuiz}
+                onCloseQuiz={() => setActiveQuiz(null)}
+                onPlayVideo={(url, title, moduleId) => onPlayVideoInternal(url, title, moduleId)}
+                QuizPanel={QuizPanel}
+              />
+            </div>
+          </section>
+        </div>
+      </main>
+
+      {/* 3. Subtle Footer Branding */}
+      <footer className="py-8 text-center border-t border-slate-200 bg-white">
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.3em]">
+          Professional Learning Management System &bull; ACCA Verified
+        </p>
+      </footer>
     </div>
   );
 }
