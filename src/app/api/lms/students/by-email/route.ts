@@ -1,160 +1,138 @@
 import { NextResponse } from "next/server";
 import mysql from "mysql2/promise";
 
+/* ================= DB POOL ================= */
+
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
+  waitForConnections: true,
+  connectionLimit: 10,
 });
 
-/* ---------- SAFE JSON ---------- */
+/* ================= SAFE JSON ================= */
+
 function safeParse(value: any, fallback: any) {
   try {
     if (!value) return fallback;
     return typeof value === "string" ? JSON.parse(value) : value;
-  } catch {
+  } catch (err) {
+    console.error("JSON PARSE ERROR:", err);
     return fallback;
   }
 }
 
-/* ---------- GET STUDENT ---------- */
-export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const email = searchParams.get("email");
+/* ================= GET STUDENTS ================= */
 
-  if (!email) {
-    return NextResponse.json({ error: "Email required" }, { status: 400 });
-  }
+export async function GET() {
+  try {
 
-  const [rows]: any = await pool.query(
-    `SELECT
-      name,
-      email,
-      course_slug,
-      course_title,
-      batch_name,
-      batch_id,
-      modules,
-      status
-     FROM lms_students
-     WHERE email = ?
-     LIMIT 1`,
-    [email]
-  );
+    /* ---------- STUDENTS ---------- */
 
-  if (!rows.length) {
-    return NextResponse.json({ error: "Student not found" }, { status: 404 });
-  }
+    const [studentRows]: any = await pool.query(`
+      SELECT id,name,email,phone,courses,status,enrolled_at
+      FROM lms_students
+      ORDER BY id DESC
+    `);
 
-  const s = rows[0];
+    console.log("TOTAL STUDENTS:", studentRows.length);
 
-  return NextResponse.json({
-    name: s.name,
-    email: s.email,
-    courseSlug: s.course_slug,
-    course: s.course_title,
-    batchName: s.batch_name,
-    batchId: s.batch_id,
-    assignedModules: safeParse(s.modules, []),
-    status: s.status ?? "active",
-  });
-}
+    /* ---------- MODULES ---------- */
 
-/* ---------- UPDATE STUDENT ---------- */
-export async function PUT(req: Request) {
-  const body = await req.json();
+    const [moduleRows]: any = await pool.query(`
+      SELECT module_id,module_name
+      FROM lms_modules
+    `);
 
-  if (!body.email) {
-    return NextResponse.json({ error: "Email required" }, { status: 400 });
-  }
+    const moduleMap: Record<string, string> = {};
 
-  const email = body.email;
+    moduleRows.forEach((m: any) => {
+      moduleMap[String(m.module_id)] = m.module_name;
+    });
 
-  // Get existing student
-  const [rows]: any = await pool.query(
-    `SELECT modules, course_slug, course_title, batch_name, batch_id, status
-     FROM lms_students WHERE email=? LIMIT 1`,
-    [email]
-  );
+    console.log("MODULE MAP:", moduleMap);
 
-  if (!rows.length) {
-    return NextResponse.json({ error: "Student not found" }, { status: 404 });
-  }
+    /* ---------- FORMAT STUDENTS ---------- */
 
-  const current = rows[0];
+    const students = studentRows.map((r: any) => {
 
-  let modules = safeParse(current.modules, []);
+      console.log("RAW COURSES JSON:", r.courses);
 
-  /* ---------- MODULE ACTIONS ---------- */
+      const courses = safeParse(r.courses, []);
 
-  // Replace modules fully
-  if (Array.isArray(body.modules)) {
-    modules = body.modules;
-  }
+      const formattedCourses = courses.map((course: any) => {
 
-  // Add module
-  if (body.addModule) {
-    const exists = modules.find(
-      (m: any) => m.moduleId === body.addModule.moduleId
+        console.log("COURSE OBJECT:", course);
+
+        let modules: string[] = [];
+
+        if (Array.isArray(course.modules)) {
+
+          console.log("COURSE MODULE IDS:", course.modules);
+
+          modules = course.modules.map((m: any) => {
+
+            let moduleId = "";
+
+            if (typeof m === "string") {
+              moduleId = m.trim();
+            }
+
+            else if (typeof m === "number") {
+              moduleId = String(m);
+            }
+
+            else if (typeof m === "object" && m !== null) {
+              moduleId = m.module_id || m.id || "";
+            }
+
+            const moduleName = moduleMap[moduleId] || moduleId;
+
+            console.log(`MODULE MAP RESULT: ${moduleId} → ${moduleName}`);
+
+            return moduleName;
+
+          });
+
+        }
+
+        return {
+          course_slug: course.course_slug ?? "",
+          course_title: course.course_title ?? "",
+          modules,
+          progress: course.progress ?? {},
+          batch_id: course.batch_id ?? null,
+          batch_name: course.batch_name ?? "",
+          enrolled_at: course.enrolled_at ?? null,
+        };
+
+      });
+
+      return {
+        id: r.id,
+        name: r.name,
+        email: r.email,
+        phone: r.phone,
+        courses: formattedCourses,
+        status: r.status ?? "active",
+        enrolledAt: r.enrolled_at,
+      };
+
+    });
+
+    console.log("FINAL STUDENTS RESPONSE:", students);
+
+    return NextResponse.json(students);
+
+  } catch (error) {
+
+    console.error("LMS STUDENTS API ERROR:", error);
+
+    return NextResponse.json(
+      { error: "Failed to load students" },
+      { status: 500 }
     );
-    if (!exists) modules.push(body.addModule);
   }
-
-  // Remove module
-  if (body.removeModuleId) {
-    modules = modules.filter(
-      (m: any) => m.moduleId !== body.removeModuleId
-    );
-  }
-
-  /* ---------- COURSE CHANGE ---------- */
-  let courseSlug = current.course_slug;
-  let courseTitle = current.course_title;
-
-  if (body.course) {
-    courseSlug = body.course.slug ?? courseSlug;
-    courseTitle = body.course.title ?? courseTitle;
-  }
-
-  /* ---------- BATCH CHANGE ---------- */
-  const batchName = body.batchName ?? current.batch_name ?? null;
-  const batchId = body.batchId ?? current.batch_id ?? null;
-
-  /* ---------- STATUS ---------- */
-  const status = body.status ?? current.status ?? "active";
-
-  /* ---------- UPDATE QUERY ---------- */
-  await pool.query(
-    `UPDATE lms_students
-     SET
-       modules = ?,
-       course_slug = ?,
-       course_title = ?,
-       batch_name = ?,
-       batch_id = ?,
-       status = ?,
-       updated_at = NOW()
-     WHERE email = ?`,
-    [
-      JSON.stringify(modules),
-      courseSlug,
-      courseTitle,
-      batchName,
-      batchId,
-      status,
-      email,
-    ]
-  );
-
-  return NextResponse.json({
-    ok: true,
-    email,
-    courseSlug,
-    courseTitle,
-    batchName,
-    batchId,
-    assignedModules: modules,
-    status,
-  });
 }

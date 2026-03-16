@@ -1,121 +1,108 @@
 import { NextResponse } from "next/server";
-import db from "../../../../lib/db";
+import mysql from "mysql2/promise";
+
+const pool = mysql.createPool({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  port: Number(process.env.DB_PORT || 3306),
+});
 
 export async function POST(req: Request) {
+
   try {
+
     const { email, password } = await req.json();
 
-    if (!email || !password) {
-      return NextResponse.json(
-        { error: "Email and password required" },
-        { status: 400 }
-      );
-    }
+    console.log("📥 Login request:", { email });
 
-    /* ===============================
-       1️⃣ CHECK PAID STUDENTS
-    =============================== */
-
-    const [paidRows]: any = await db.query(
-      `
-      SELECT 
-        id,
-        name,
-        email,
-        phone,
-        login_id,
-        password,
-        course_slug,
-        course_title,
-        modules
-      FROM lms_students
-      WHERE LOWER(email) = LOWER(?) OR login_id = ?
-      LIMIT 1
-      `,
-      [email.toLowerCase(), email]
+    const [rows]: any = await pool.execute(
+      `SELECT id,name,email,phone,password,courses FROM lms_students WHERE email=? LIMIT 1`,
+      [email]
     );
 
-    if (paidRows.length > 0) {
-      const student = paidRows[0];
+    console.log("📦 DB Rows:", rows);
 
-      if (student.password.trim() !== password.trim()) {
-        return NextResponse.json(
-          { error: "Invalid credentials" },
-          { status: 401 }
-        );
-      }
+    if (!rows.length) {
 
-      let modules = [];
+      console.log("❌ User not found");
+
+      return NextResponse.json({
+        success: false,
+        message: "User not found"
+      });
+    }
+
+    const user = rows[0];
+
+    console.log("👤 DB User:", user);
+
+    if (user.password !== password) {
+
+      console.log("❌ Invalid password");
+
+      return NextResponse.json({
+        success: false,
+        message: "Invalid password"
+      });
+    }
+
+    /* ==========================
+       PARSE COURSES JSON
+    ========================== */
+
+    let courses: any[] = [];
+
+    if (user.courses) {
+
+      console.log("📚 Raw courses from DB:", user.courses);
 
       try {
-        modules =
-          typeof student.modules === "string"
-            ? JSON.parse(student.modules)
-            : student.modules || [];
-      } catch {
-        modules = [];
+
+        courses =
+          typeof user.courses === "string"
+            ? JSON.parse(user.courses)
+            : user.courses;
+
+      } catch (err) {
+
+        console.log("❌ Courses JSON parse error:", err);
+
+        courses = [];
       }
 
-      return NextResponse.json({
-        id: student.id,
-        name: student.name,
-        email: student.email,
-        phone: student.phone,
-        courseSlug: student.course_slug,
-        courseTitle: student.course_title,
-        modules,
-        type: "paid",
-        role: "student",
-      });
     }
 
-    /* ===============================
-       2️⃣ CHECK FREE STUDENTS
-    =============================== */
+    console.log("🎓 Parsed Courses:", courses);
 
-    const [freeRows]: any = await db.query(
-      `
-      SELECT 
-        id,
-        name,
-        email
-      FROM free_students
-      WHERE LOWER(email) = LOWER(?)
-      LIMIT 1
-      `,
-      [email.toLowerCase()]
-    );
+    const studentType = courses.length > 0 ? "Paid" : "Free";
 
-    if (freeRows.length > 0) {
-      const student = freeRows[0];
+    const responseData = {
+      success: true,
+      student: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        studentType,
+        courses
+      }
+    };
 
-      return NextResponse.json({
-        id: student.id,
-        name: student.name,
-        email: student.email,
-        courseSlug: "free-course",
-        courseTitle: "Free Course",
-        modules: [],
-        type: "free",
-        role: "student",
-      });
-    }
+    console.log("📤 API Response:", responseData);
 
-    /* ===============================
-       3️⃣ USER NOT FOUND
-    =============================== */
-
-    return NextResponse.json(
-      { error: "Student not found" },
-      { status: 404 }
-    );
+    return NextResponse.json(responseData);
 
   } catch (error) {
-    console.error("Login error:", error);
 
-    return NextResponse.json(
-      { error: "Server error" },
-      { status: 500 }
-    );
+    console.log("🚨 LOGIN ERROR:", error);
+
+    return NextResponse.json({
+      success: false,
+      message: "Server error"
+    });
+
   }
+
 }

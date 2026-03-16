@@ -5,6 +5,7 @@ import mysql from "mysql2/promise";
 ======================================== */
 
 function required(name: string): string {
+
   const value = process.env[name];
 
   if (!value) {
@@ -12,10 +13,11 @@ function required(name: string): string {
   }
 
   return value;
+
 }
 
 /* ========================================
-   GLOBAL DECLARATION (for Next.js dev)
+   GLOBAL DECLARATION
 ======================================== */
 
 declare global {
@@ -28,7 +30,9 @@ declare global {
 ======================================== */
 
 const createPool = () => {
-  const pool = mysql.createPool({
+
+  return mysql.createPool({
+
     host: required("DB_HOST"),
     user: required("DB_USER"),
     password: required("DB_PASSWORD"),
@@ -38,8 +42,8 @@ const createPool = () => {
 
     waitForConnections: true,
 
-    /* ⭐ IMPORTANT FOR SHARED HOSTING */
-    connectionLimit: 3,
+    /* Safe for shared hosting */
+    connectionLimit: 5,
 
     queueLimit: 0,
 
@@ -47,9 +51,9 @@ const createPool = () => {
 
     enableKeepAlive: true,
     keepAliveInitialDelay: 0,
+
   });
 
-  return pool;
 };
 
 /* ========================================
@@ -64,22 +68,30 @@ if (!global.__MYSQL_POOL__) {
 }
 
 /* ========================================
-   OPTIONAL: CONNECTION TEST
+   OPTIONAL CONNECTION TEST (DEV ONLY)
 ======================================== */
 
-async function testConnection() {
-  try {
-    const conn = await db.getConnection();
-    await conn.ping();
-    conn.release();
+if (process.env.NODE_ENV === "development") {
 
-    console.log("✅ MySQL Connected");
-  } catch (err) {
-    console.error("❌ MySQL Connection Failed:", err);
-  }
+  (async () => {
+
+    try {
+
+      const conn = await db.getConnection();
+      await conn.ping();
+      conn.release();
+
+      console.log("✅ MySQL Connected");
+
+    } catch (err) {
+
+      console.error("❌ MySQL Connection Failed:", err);
+
+    }
+
+  })();
+
 }
-
-testConnection();
 
 /* ========================================
    EXPORT

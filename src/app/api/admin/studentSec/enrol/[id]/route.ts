@@ -2,16 +2,24 @@ import { NextResponse } from "next/server";
 import mysql from "mysql2/promise";
 
 /* ================= DB CONNECTION ================= */
+
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
+  port: Number(process.env.DB_PORT || 3306),
+
+  waitForConnections: true,
+  connectionLimit: 10,
+  queueLimit: 0,
+  connectTimeout: 10000,
 });
 
 /* ==================================================
-   GET STUDENT BY ID
+   GET STUDENT (FOR EDIT PANEL)
 ================================================== */
+
 export async function GET(
   req: Request,
   context: { params: Promise<{ id: string }> }
@@ -21,24 +29,10 @@ export async function GET(
   try {
     const { id } = await context.params;
 
-    if (!id) {
-      return NextResponse.json({ error: "Missing id" }, { status: 400 });
-    }
-
     conn = await pool.getConnection();
 
     const [rows]: any = await conn.execute(
-      `SELECT 
-        id,
-        name,
-        email,
-        phone,
-        course_slug,
-        course_title,
-        modules,
-        batch_id,
-        batch_name,
-        student_type
+      `SELECT id,name,email,phone,courses
        FROM lms_students
        WHERE id = ?
        LIMIT 1`,
@@ -54,11 +48,13 @@ export async function GET(
 
     const student = rows[0];
 
-    // Safe JSON parse
     try {
-      student.modules = JSON.parse(student.modules || "[]");
+      student.courses =
+        typeof student.courses === "string"
+          ? JSON.parse(student.courses || "[]")
+          : student.courses || [];
     } catch {
-      student.modules = [];
+      student.courses = [];
     }
 
     return NextResponse.json({
@@ -68,6 +64,7 @@ export async function GET(
 
   } catch (error) {
     console.error("GET STUDENT ERROR:", error);
+
     return NextResponse.json(
       { error: "Server error" },
       { status: 500 }
@@ -78,8 +75,9 @@ export async function GET(
 }
 
 /* ==================================================
-   UPDATE STUDENT (ONLY EDITED FIELDS)
+   UPDATE STUDENT
 ================================================== */
+
 export async function PUT(
   req: Request,
   context: { params: Promise<{ id: string }> }
@@ -88,87 +86,117 @@ export async function PUT(
 
   try {
     const { id } = await context.params;
-
-    if (!id) {
-      return NextResponse.json({ error: "Missing id" }, { status: 400 });
-    }
-
     const body = await req.json();
 
-    // Map frontend keys -> DB columns
-    const allowedFields: Record<string, string> = {
-      name: "name",
-      email: "email",
-      phone: "phone",
-      courseSlug: "course_slug",
-      courseTitle: "course_title",
-      modules: "modules",
-      batchId: "batch_id",
-      batchName: "batch_name",
-      studentType: "student_type",
-    };
+    const name = body?.name ?? null;
+    const email = body?.email ?? null;
+    const phone = body?.phone ?? null;
 
-    const updates: string[] = [];
-    const values: any[] = [];
+    const courseSlugs: string[] = Array.isArray(body?.courseSlugs)
+      ? body.courseSlugs
+      : [];
 
-    for (const key in body) {
-      if (allowedFields[key]) {
-        let value = body[key];
+    const modulesMap: Record<string, string[]> =
+      body?.modulesMap ?? {};
 
-        // Special handling
-        if (key === "modules") {
-          value = JSON.stringify(
-            Array.isArray(value) ? value : []
-          );
-        }
+    const batchIds: string[] = Array.isArray(body?.batchIds)
+      ? body.batchIds
+      : [];
 
-        if (key === "batchId") {
-          value =
-            value === "" || value === undefined
-              ? null
-              : Number(value);
-        }
-
-        if (value === undefined) continue;
-
-        updates.push(`${allowedFields[key]} = ?`);
-        values.push(value);
-      }
-    }
-
-    if (updates.length === 0) {
-      return NextResponse.json(
-        { error: "No fields provided to update" },
-        { status: 400 }
-      );
-    }
+    const batchName = body?.batchName ?? "";
 
     conn = await pool.getConnection();
 
-    const sql = `
-      UPDATE lms_students
-      SET ${updates.join(", ")}
-      WHERE id = ?
-    `;
+    /* ================= LOAD EXISTING COURSES ================= */
 
-    values.push(id);
+    const [rows]: any = await conn.execute(
+      `SELECT courses FROM lms_students WHERE id = ? LIMIT 1`,
+      [id]
+    );
 
-    const [result]: any = await conn.execute(sql, values);
-
-    if (result.affectedRows === 0) {
+    if (!rows.length) {
       return NextResponse.json(
         { error: "Student not found" },
         { status: 404 }
       );
     }
 
+    let existingCourses: any[] = [];
+
+    try {
+      existingCourses =
+        typeof rows[0].courses === "string"
+          ? JSON.parse(rows[0].courses)
+          : rows[0].courses || [];
+    } catch {
+      existingCourses = [];
+    }
+
+    /* ================= BUILD UPDATED COURSES ================= */
+
+    const updatedCourses: any[] = [];
+
+    for (const slug of courseSlugs) {
+      const existing = existingCourses.find(
+        (c: any) => c.course_slug === slug
+      );
+
+      const modules = Array.isArray(modulesMap[slug])
+        ? modulesMap[slug]
+        : [];
+
+      const batchId = batchIds.length ? batchIds[0] : null;
+
+      if (existing) {
+        updatedCourses.push({
+          ...existing,
+          modules,
+          batch_id: batchId,
+          batch_name: batchName,
+        });
+      } else {
+        updatedCourses.push({
+          course_slug: slug,
+          course_title: slug,
+          modules,
+          progress: {},
+          batch_id: batchId,
+          batch_name: batchName,
+        });
+      }
+    }
+
+    /* ================= UPDATE STUDENT ================= */
+
+    await conn.execute(
+      `
+      UPDATE lms_students
+      SET 
+        name = COALESCE(?, name),
+        email = COALESCE(?, email),
+        phone = COALESCE(?, phone),
+        courses = ?,
+        updated_at = NOW()
+      WHERE id = ?
+      `,
+      [
+        name,
+        email,
+        phone,
+        JSON.stringify(updatedCourses),
+        id,
+      ]
+    );
+
     return NextResponse.json({
       ok: true,
       message: "Student updated successfully",
+      courses: updatedCourses,
     });
 
   } catch (error: any) {
     console.error("PUT STUDENT ERROR:", error);
+
     return NextResponse.json(
       { error: "Server error", detail: error.message },
       { status: 500 }

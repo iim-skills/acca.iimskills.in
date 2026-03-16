@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   X,
   Loader2,
@@ -12,7 +12,10 @@ import {
   ChevronDown,
   BookOpen,
   Users,
-  Phone
+  Phone,
+  Search as IconSearch,
+  ArrowLeft,
+  Sparkles,
 } from "lucide-react";
 
 type EnrolModalProps = {
@@ -37,74 +40,46 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
 
-  /* ================= COURSES ================= */
   const [courses, setCourses] = useState<any[]>([]);
-  const [selectedCourseSlug, setSelectedCourseSlug] = useState("");
-  const [modules, setModules] = useState<any[]>([]);
-  const [selectedModules, setSelectedModules] = useState<string[]>([]);
-  const [isModuleDropdownOpen, setIsModuleDropdownOpen] = useState(false);
-  const moduleDropdownRef = useRef<HTMLDivElement>(null);
+  const [selectedCourseSlugs, setSelectedCourseSlugs] = useState<string[]>([]);
+  const [selectedModulesMap, setSelectedModulesMap] = useState<Record<string, string[]>>({});
+  const [moduleDropdownOpenMap, setModuleDropdownOpenMap] = useState<Record<string, boolean>>({});
 
-  /* ================= BATCHES ================= */
+  const [courseDropdownOpen, setCourseDropdownOpen] = useState(false);
+  const courseDropdownRef = useRef<HTMLDivElement | null>(null);
+
   const [batches, setBatches] = useState<Batch[]>([]);
   const [selectedBatchId, setSelectedBatchId] = useState<string | number | "">("");
   const [batchesFetching, setBatchesFetching] = useState(true);
 
-  /* ================= FETCH COURSES ================= */
   useEffect(() => {
     const loadCourses = async () => {
       try {
         const res = await fetch("/api/admin/courses");
         if (!res.ok) throw new Error("Failed to fetch courses");
-
         const data = await res.json();
         if (!Array.isArray(data)) return;
-
         setCourses(data);
-
-        if (data.length > 0) {
-          setSelectedCourseSlug(data[0].slug);
-          setModules(data[0].modules || []);
+        if (data.length > 0 && selectedCourseSlugs.length === 0) {
+          const first = data[0];
+          setSelectedCourseSlugs([first.slug]);
+          setSelectedModulesMap((prev) => ({ ...prev, [first.slug]: [] }));
         }
       } catch (err) {
         console.error("Course load error:", err);
       }
     };
-
     loadCourses();
   }, []);
 
-  /* ================= UPDATE MODULES WHEN COURSE CHANGES ================= */
-  useEffect(() => {
-    if (!selectedCourseSlug) return;
-
-    const selectedCourse = courses.find(
-      (c) => c.slug === selectedCourseSlug
-    );
-
-    setModules(selectedCourse?.modules || []);
-    setSelectedModules([]);
-  }, [selectedCourseSlug, courses]);
-
-  /* ================= FETCH BATCHES ================= */
   useEffect(() => {
     const loadBatches = async () => {
       try {
         const res = await fetch("/api/admin/batches");
         if (!res.ok) throw new Error("Failed to fetch batches");
-
         const data: Batch[] = await res.json();
-
-        const available = data.filter(
-          (b) => Number(b.currentStudents) < Number(b.maxStudents)
-        );
-
-        available.sort(
-          (a, b) =>
-            new Date(a.startDate).getTime() -
-            new Date(b.startDate).getTime()
-        );
-
+        const available = data.filter((b) => Number(b.currentStudents) < Number(b.maxStudents));
+        available.sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
         setBatches(available);
         if (available.length > 0) setSelectedBatchId(available[0].id);
       } catch (err) {
@@ -113,307 +88,248 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
         setBatchesFetching(false);
       }
     };
-
     loadBatches();
   }, []);
 
-  /* ================= TOGGLE MODULE ================= */
-  const toggleModule = (moduleId: string) => {
-    setSelectedModules((prev) =>
-      prev.includes(moduleId)
-        ? prev.filter((x) => x !== moduleId)
-        : [...prev, moduleId]
-    );
-  };
-
-  /* ================= SUBMIT ================= */
-  const handleSubmit = async () => {
-    setError("");
-
-    const selectedCourse = courses.find(
-      (c) => c.slug === selectedCourseSlug
-    );
-
-    if (!selectedCourse) {
-      setError("Please select a course.");
-      return;
-    }
-
-    if (!selectedModules.length) {
-      setError("Please select at least one module.");
-      return;
-    }
-
-    if (!selectedBatchId) {
-      setError("Please select a batch.");
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const res = await fetch("/api/lms/enrol", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          email,
-          phone,
-          courseSlug: selectedCourse.slug,
-          courseTitle: selectedCourse.name,
-          modules: selectedModules,
-          enrolledBy: adminName || "Admin",
-          batchId: selectedBatchId,
-        }),
-      });
-
-      if (!res.ok) throw new Error("Enrollment failed");
-
-      onClose();
-    } catch (err: any) {
-      setError(err.message || "Something went wrong");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Close dropdown on click outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (moduleDropdownRef.current && !moduleDropdownRef.current.contains(event.target as Node)) {
-        setIsModuleDropdownOpen(false);
+      if (courseDropdownRef.current && !courseDropdownRef.current.contains(event.target as Node)) {
+        setCourseDropdownOpen(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  const getCourseBySlug = (slug: string) => courses.find((c) => c.slug === slug);
+  const getModulesForCourse = (course: any) => course?.modules || course?.courseData?.modules || [];
+
+  const toggleCourse = (slug: string) => {
+    setSelectedCourseSlugs((prev) => {
+      if (prev.includes(slug)) {
+        const next = prev.filter((s) => s !== slug);
+        setSelectedModulesMap((m) => {
+          const copy = { ...m };
+          delete copy[slug];
+          return copy;
+        });
+        return next;
+      } else {
+        setSelectedModulesMap((m) => ({ ...m, [slug]: [] }));
+        return [...prev, slug];
+      }
+    });
+  };
+
+  const toggleModuleForCourse = (courseSlug: string, moduleId: string) => {
+    setSelectedModulesMap((prev) => {
+      const arr = prev[courseSlug] || [];
+      if (arr.includes(moduleId)) {
+        return { ...prev, [courseSlug]: arr.filter((x) => x !== moduleId) };
+      } else {
+        return { ...prev, [courseSlug]: [...arr, moduleId] };
+      }
+    });
+  };
+
+  const isCourseSelected = (slug: string) => selectedCourseSlugs.includes(slug);
+  const isModuleSelected = (courseSlug: string, moduleId: string) => (selectedModulesMap[courseSlug] || []).includes(moduleId);
+
+  const goToStep2 = () => {
+    setError("");
+    if (!name || !email || !phone) {
+      setError("Please fill all student details.");
+      return;
+    }
+    setStep(2);
+  };
+
+  const handleSubmit = async () => {
+    setError("");
+    if (selectedCourseSlugs.length === 0) {
+      setError("Please select at least one course.");
+      return;
+    }
+    for (const slug of selectedCourseSlugs) {
+      if (!(selectedModulesMap[slug] || []).length) {
+        setError(`Please select modules for ${getCourseBySlug(slug)?.name}.`);
+        return;
+      }
+    }
+    if (!selectedBatchId) {
+      setError("Please select a batch.");
+      return;
+    }
+    setLoading(true);
+    try {
+      for (const slug of selectedCourseSlugs) {
+        const course = getCourseBySlug(slug);
+        const payload = {
+          name, email, phone,
+          courseSlug: course.slug,
+          courseTitle: course.name,
+          modules: selectedModulesMap[slug],
+          enrolledBy: adminName || "Admin",
+          batchId: selectedBatchId,
+        };
+        const res = await fetch("/api/lms/enrol", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) throw new Error(`Failed for ${course.name}`);
+      }
+      onClose();
+    } catch (err: any) {
+      setError(err.message || "Enrollment failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div className="h-full flex flex-col bg-slate-50 overflow-hidden font-sans">
-      
+    <div className="h-full flex flex-col bg-white overflow-hidden font-sans selection:bg-indigo-100">
       {/* HEADER */}
-      <div className="bg-indigo-900 text-white p-6 relative">
-        <button
-          onClick={onClose}
-          className="absolute right-4 top-4 p-2 hover:bg-white/10 rounded-full transition-colors"
-        >
+      <div className="bg-slate-950 p-8 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-600/20 blur-[100px] rounded-full -mr-20 -mt-20" />
+        <button onClick={onClose} className="absolute right-6 top-6 p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-all z-10">
           <X size={20} />
         </button>
-        <div className="space-y-1">
-          <h2 className="text-2xl font-bold tracking-tight">Student Enrollment</h2>
-          <p className="text-indigo-200 text-sm">Fill in the details to register a new student</p>
+        <div className="relative z-10">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-bold uppercase tracking-widest mb-4">
+            <Sparkles size={14} />
+            Registration
+          </div>
+          <h2 className="text-xl font-extrabold text-white tracking-tight">Student Enrollment</h2>
         </div>
-
-        {/* PROGRESS TRACKER */}
-        <div className="flex items-center mt-6 gap-2">
-            <div className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${step >= 1 ? 'bg-indigo-400' : 'bg-indigo-800'}`}></div>
-            <div className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${step >= 2 ? 'bg-indigo-400' : 'bg-indigo-800'}`}></div>
-        </div>
+       
       </div>
 
       {/* BODY */}
-      <div className="flex-1 overflow-y-auto p-8 space-y-6">
+      <div className="flex-1 overflow-y-auto px-8 py-10">
         {step === 1 && (
-          <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-300">
-            <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider ml-1">Full Name</label>
-                <div className="relative group">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={18} />
-                    <input
-                        placeholder="John Doe"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all shadow-sm"
-                    />
+          <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
+            <div className="grid gap-6">
+              <div className="group space-y-2">
+                <label className="text-sm font-bold text-slate-700 ml-1">Full Name</label>
+                <div className="relative">
+                  <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors" size={18} />
+                  <input placeholder="Enter student name" value={name} onChange={(e) => setName(e.target.value)}
+                    className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-indigo-600 outline-none transition-all placeholder:text-slate-400 font-medium" />
                 </div>
-            </div>
+              </div>
 
-            <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider ml-1">Email Address</label>
-                <div className="relative group">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={18} />
-                    <input
-                        placeholder="john@example.com"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all shadow-sm"
-                    />
+              <div className="group space-y-2">
+                <label className="text-sm font-bold text-slate-700 ml-1">Email Address</label>
+                <div className="relative">
+                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors" size={18} />
+                  <input placeholder="student@email.com" value={email} onChange={(e) => setEmail(e.target.value)}
+                    className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-indigo-600 outline-none transition-all placeholder:text-slate-400 font-medium" />
                 </div>
-            </div>
+              </div>
 
-            <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider ml-1">Phone Number</label>
-                <div className="relative group">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-2 border-r pr-2 border-slate-200">
-                        <Phone className="text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={18} />
-                        <span className="text-sm font-medium text-slate-500">+91</span>
-                    </div>
-                    <input
-                        type="tel"
-                        placeholder="98765 43210"
-                        value={phone}
-                        onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                        className="w-full pl-20 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all shadow-sm"
-                    />
+              <div className="group space-y-2">
+                <label className="text-sm font-bold text-slate-700 ml-1">Phone Number</label>
+                <div className="relative">
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2 border-r-2 pr-3 border-slate-200">
+                    <Phone className="text-slate-400" size={18} />
+                    <span className="text-sm font-bold text-slate-600">+91</span>
+                  </div>
+                  {/* FIXED: Changed setName to setPhone */}
+                  <input type="tel" placeholder="9876543210" value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                    className="w-full pl-24 pr-4 py-4 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-indigo-600 outline-none transition-all placeholder:text-slate-400 font-medium tracking-widest" />
                 </div>
+              </div>
             </div>
           </div>
         )}
 
         {step === 2 && (
-          <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-300">
-            {/* Course Dropdown */}
-            <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider ml-1">Select Course</label>
-                <div className="relative group">
-                    <BookOpen className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={18} />
-                    <select
-                        value={selectedCourseSlug}
-                        onChange={(e) => setSelectedCourseSlug(e.target.value)}
-                        className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none appearance-none transition-all shadow-sm cursor-pointer"
-                    >
-                        {courses.map((course) => (
-                        <option key={course.slug} value={course.slug}>
-                            {course.name}
-                        </option>
-                        ))}
-                    </select>
-                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18} />
+          <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
+            <div className="space-y-3" ref={courseDropdownRef}>
+              <label className="text-sm font-bold text-slate-700 ml-1">Academic Path</label>
+              <button type="button" onClick={() => setCourseDropdownOpen(!courseDropdownOpen)}
+                className={`w-full flex items-center justify-between px-5 py-4 bg-white border-2 rounded-2xl transition-all ${courseDropdownOpen ? "border-indigo-600 ring-4 ring-indigo-50" : "border-slate-100"}`}>
+                <div className="flex items-center gap-3 overflow-hidden text-left">
+                    <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0"><BookOpen size={20} /></div>
+                    <div className="truncate">
+                      <div className="text-sm font-bold text-slate-900 leading-none mb-1">{selectedCourseSlugs.length === 0 ? "Browse Courses" : `${selectedCourseSlugs.length} Selected`}</div>
+                      <div className="text-[11px] text-slate-500 truncate">{selectedCourseSlugs.length === 0 ? "Select programs" : selectedCourseSlugs.map(s => getCourseBySlug(s)?.name).join(", ")}</div>
+                    </div>
                 </div>
+                <ChevronDown size={20} className={`text-slate-400 transition-transform ${courseDropdownOpen ? "rotate-180" : ""}`} />
+              </button>
+
+              {courseDropdownOpen && (
+                <div className="absolute z-50 w-[calc(100%-64px)] mt-2 bg-white border border-slate-200 rounded-2xl shadow-2xl p-2 max-h-64 overflow-auto">
+                  {courses.map(c => (
+                    <div key={c.slug} onClick={() => toggleCourse(c.slug)} className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer ${isCourseSelected(c.slug) ? "bg-indigo-50" : "hover:bg-slate-50"}`}>
+                       <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${isCourseSelected(c.slug) ? "bg-indigo-600 border-indigo-600" : "border-slate-200"}`}>
+                        {isCourseSelected(c.slug) && <Check size={12} className="text-white" />}
+                       </div>
+                       <span className="text-sm font-bold text-slate-700">{c.name}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* Batch Dropdown */}
-            <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider ml-1">Assign Batch</label>
-                <div className="relative group">
-                    <Users className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" size={18} />
-                    <select
-                        value={selectedBatchId}
-                        onChange={(e) => setSelectedBatchId(e.target.value)}
-                        className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none appearance-none transition-all shadow-sm cursor-pointer"
-                    >
-                        {batchesFetching ? (
-                            <option>Loading batches...</option>
-                        ) : batches.length === 0 ? (
-                            <option>No available batches</option>
-                        ) : (
-                            batches.map((b) => (
-                                <option key={b.id} value={String(b.id)}>
-                                    {b.name} ({new Date(b.startDate).toLocaleDateString('en-GB')})
-                                </option>
-                            ))
-                        )}
-                    </select>
-                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={18} />
-                </div>
+            <div className="space-y-4">
+              {selectedCourseSlugs.map(slug => {
+                const c = getCourseBySlug(slug);
+                const modules = getModulesForCourse(c);
+                return (
+                  <div key={slug} className="border-2 border-slate-100 rounded-3xl p-5">
+                    <div className="flex justify-between items-center mb-4">
+                      <span className="text-xs font-black text-indigo-600 uppercase tracking-widest">{c?.name}</span>
+                      <button onClick={() => setSelectedModulesMap(m => ({...m, [slug]: []}))} className="text-[10px] font-bold text-slate-400 uppercase">Clear</button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {modules.map((m: any) => {
+                        const id = m.moduleId ?? m.id ?? String(m.name);
+                        const sel = isModuleSelected(slug, id);
+                        return (
+                          <div key={id} onClick={() => toggleModuleForCourse(slug, id)} className={`p-3 rounded-xl border-2 transition-all cursor-pointer ${sel ? "bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-100" : "bg-slate-50 border-transparent text-slate-600"}`}>
+                            <span className="text-xs font-bold truncate block">{m.name}</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
 
-            {/* Custom Multi-select Dropdown for Modules */}
-            <div className="space-y-1.5" ref={moduleDropdownRef}>
-                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wider ml-1">Select Modules</label>
-                <div className="relative">
-                    <button
-                        type="button"
-                        onClick={() => setIsModuleDropdownOpen(!isModuleDropdownOpen)}
-                        className={`w-full flex items-center justify-between pl-4 pr-3 py-3 bg-white border rounded-xl transition-all shadow-sm hover:border-indigo-400 ${
-                            isModuleDropdownOpen ? "ring-2 ring-indigo-500/20 border-indigo-500" : "border-slate-200"
-                        }`}
-                    >
-                        <div className="flex items-center gap-2 overflow-hidden">
-                            <Layers size={18} className="text-slate-400 shrink-0" />
-                            <span className={`truncate ${selectedModules.length === 0 ? 'text-slate-400' : 'text-slate-700'}`}>
-                                {selectedModules.length === 0 
-                                    ? "Choose modules..." 
-                                    : `${selectedModules.length} module(s) selected`}
-                            </span>
-                        </div>
-                        <ChevronDown size={18} className={`text-slate-400 transition-transform ${isModuleDropdownOpen ? 'rotate-180' : ''}`} />
-                    </button>
-
-                    {isModuleDropdownOpen && (
-                        <div className="absolute z-10 w-full mt-2 bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto animate-in fade-in zoom-in-95 duration-150 p-2 space-y-1">
-                            {modules.length === 0 ? (
-                                <p className="text-sm text-slate-500 p-4 text-center">No modules available for this course.</p>
-                            ) : (
-                                modules.map((m: any) => {
-                                    const id = m.moduleId ?? m.id ?? m.slug ?? String(m.name);
-                                    const isSelected = selectedModules.includes(id);
-
-                                    return (
-                                        <button
-                                            key={id}
-                                            type="button"
-                                            onClick={() => toggleModule(id)}
-                                            className={`w-full flex items-center gap-3 p-3 rounded-lg text-left transition-colors ${
-                                                isSelected 
-                                                    ? "bg-indigo-50 text-indigo-700" 
-                                                    : "hover:bg-slate-50 text-slate-700"
-                                            }`}
-                                        >
-                                            <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${
-                                                isSelected ? "bg-indigo-600 border-indigo-600" : "border-slate-300 bg-white"
-                                            }`}>
-                                                {isSelected && <Check size={14} className="text-white" />}
-                                            </div>
-                                            <span className="text-sm font-medium">{m.name}</span>
-                                        </button>
-                                    );
-                                })
-                            )}
-                        </div>
-                    )}
-                </div>
+            <div className="space-y-3">
+              <label className="text-sm font-bold text-slate-700 ml-1">Assign Batch</label>
+              <div className="relative">
+                <Users className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                <select value={selectedBatchId} onChange={(e) => setSelectedBatchId(e.target.value)}
+                  className="w-full pl-12 pr-10 py-4 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-indigo-600 outline-none appearance-none font-bold text-slate-700 cursor-pointer">
+                  {batchesFetching ? <option>Loading...</option> : batches.map(b => (
+                    <option key={b.id} value={b.id}>{b.name} ({new Date(b.startDate).toLocaleDateString()})</option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={20} />
+              </div>
             </div>
           </div>
         )}
       </div>
 
       {/* FOOTER */}
-      <div className="p-6 bg-white border-t border-slate-100">
-        {error && (
-          <div className="flex items-center gap-2 text-red-600 bg-red-50 p-3 rounded-lg mb-4 text-sm font-medium animate-in slide-in-from-top-1">
-            <X size={16} className="shrink-0" />
-            {error}
-          </div>
-        )}
-
-        <div className="flex gap-3">
-            {step === 2 && (
-                <button
-                    onClick={() => setStep(1)}
-                    className="flex-1 px-4 py-3 bg-slate-100 text-slate-700 font-semibold rounded-xl hover:bg-slate-200 transition-colors"
-                >
-                    Back
-                </button>
-            )}
-            <button
-                onClick={
-                    step === 1
-                    ? () => {
-                        if (!name || !email || !phone) {
-                            setError("Please fill all details.");
-                            return;
-                        }
-                        setError("");
-                        setStep(2);
-                        }
-                    : handleSubmit
-                }
-                disabled={loading}
-                className={`flex-[2] flex items-center justify-center gap-2 bg-indigo-600 text-white p-3 font-semibold rounded-xl hover:bg-indigo-700 active:scale-[0.98] transition-all shadow-md shadow-indigo-200 disabled:opacity-70 disabled:pointer-events-none`}
-            >
-                {loading ? (
-                    <>
-                        <Loader2 className="animate-spin" size={20} />
-                        <span>Processing...</span>
-                    </>
-                ) : (
-                    <>
-                        <span>{step === 1 ? "Next Step" : "Complete Enrollment"}</span>
-                        <ChevronRight size={18} />
-                    </>
-                )}
+      <div className="p-8 bg-slate-50 border-t border-slate-200">
+        {error && <div className="mb-4 p-4 bg-red-50 border border-red-100 text-red-600 text-xs font-bold rounded-xl">{error}</div>}
+        <div className="flex gap-4">
+          {step === 2 && (
+            <button onClick={() => setStep(1)} className="px-6 py-4 bg-white border-2 border-slate-200 text-slate-600 font-bold rounded-2xl hover:bg-slate-100 transition-all flex items-center gap-2">
+              <ArrowLeft size={18} /> Back
             </button>
+          )}
+          <button onClick={step === 1 ? goToStep2 : handleSubmit} disabled={loading}
+            className="flex-1 flex items-center justify-center gap-3 bg-indigo-600 text-white py-4 font-black rounded-2xl hover:bg-indigo-700 hover:shadow-xl hover:shadow-indigo-200 transition-all disabled:opacity-50">
+            {loading ? <Loader2 className="animate-spin" /> : <><span className="uppercase tracking-widest text-sm">{step === 1 ? "Next" : "Enroll Now"}</span><ChevronRight size={20} /></>}
+          </button>
         </div>
       </div>
     </div>
