@@ -60,7 +60,7 @@ export default function App(): React.ReactElement {
 
       // Navigate to dashboard
       // prefer router.push to avoid full reload
-      router.push("/student/dashboard");
+      router.push("/student");
     } catch (err) {
       console.error("Free login request failed:", err);
       setFreeError("Network error, please try again.");

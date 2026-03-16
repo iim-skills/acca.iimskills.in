@@ -43,7 +43,7 @@ export default function CoursePage() {
     const raw = localStorage.getItem("user");
 
     if (!raw) {
-      router.push("/student/login");
+      router.push("/");
       return;
     }
 
@@ -111,7 +111,7 @@ export default function CoursePage() {
         activeModules={student.modules}
         onLogout={() => {
           localStorage.removeItem("user");
-          router.push("/student/login");
+          router.push("/");
         }}
       />
 

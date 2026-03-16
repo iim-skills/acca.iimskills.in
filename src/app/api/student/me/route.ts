@@ -13,7 +13,7 @@ export async function GET(req:Request){
   }
 
   const [rows]:any = await db.query(
-    `SELECT name,email,courses FROM lms_students WHERE email=?`,
+    `SELECT name,email,student_type,courses FROM lms_students WHERE email=?`,
     [email]
   );
 
@@ -36,6 +36,7 @@ export async function GET(req:Request){
   return NextResponse.json({
     name:student.name,
     email:student.email,
+    student_type:student.student_type,
     modules:course?.modules || [],
     progress:course?.progress || {}
   });

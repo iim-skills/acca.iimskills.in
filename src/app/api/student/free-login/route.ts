@@ -2,38 +2,40 @@ import { NextResponse } from "next/server";
 import db from "../../../../lib/db";
 
 export async function POST(req: Request) {
+
   try {
+
     const { email } = await req.json();
 
     if (!email) {
-      return NextResponse.json({ error: "Email required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Email required" },
+        { status: 400 }
+      );
     }
 
-    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanEmail = email.trim().toLowerCase();
 
-    console.log("📩 Free Login Email:", cleanEmail);
+    console.log("Free Login:", cleanEmail);
 
     /* ===============================
-       CHECK EXISTING STUDENT
+       CHECK STUDENT
     =============================== */
 
     const [rows]: any = await db.query(
-      `SELECT * FROM lms_students WHERE email = ? LIMIT 1`,
+      `SELECT * FROM lms_students WHERE email=? LIMIT 1`,
       [cleanEmail]
     );
 
     let student;
 
     /* ===============================
-       CREATE NEW FREE USER
+       CREATE NEW FREE STUDENT
     =============================== */
 
-    if (!rows || rows.length === 0) {
+    if (!rows.length) {
 
-      const defaultName = cleanEmail.split("@")[0];
-
-      // ⭐ Only first module unlocked
-      const unlockedModules = JSON.stringify(["MOD_1"]);
+      const name = cleanEmail.split("@")[0];
 
       const [insertRes]: any = await db.query(
         `
@@ -43,31 +45,29 @@ export async function POST(req: Request) {
           email,
           login_id,
           password,
-          modules,
-          progress,
-          course_slug,
-          course_title,
+          courses,
           student_type
         )
-        VALUES (?, ?, ?, ?, ?, '{}', 'COURSE_ACCA_SKILLS_001', 'Free Preview', 'free')
+        VALUES (?,?,?,?,?,?)
         `,
         [
-          defaultName,
+          name,
           cleanEmail,
           cleanEmail,
-          cleanEmail,      // password = email
-          unlockedModules  // first module unlocked
+          cleanEmail,
+          JSON.stringify([]), // no courses assigned
+          "free"
         ]
       );
 
       const [newUser]: any = await db.query(
-        `SELECT * FROM lms_students WHERE id = ?`,
+        `SELECT * FROM lms_students WHERE id=?`,
         [insertRes.insertId]
       );
 
       student = newUser[0];
 
-      console.log("🆕 New Free Student Created:", student.email);
+      console.log("New Free Student:", student.email);
     }
 
     /* ===============================
@@ -78,28 +78,12 @@ export async function POST(req: Request) {
 
       student = rows[0];
 
-      // Update password to login email
       await db.query(
-        `UPDATE lms_students SET password = ? WHERE id = ?`,
+        `UPDATE lms_students SET password=? WHERE id=?`,
         [cleanEmail, student.id]
       );
 
-      console.log("✅ Existing Student Login:", student.email);
-    }
-
-    /* ===============================
-       PARSE MODULES
-    =============================== */
-
-    let modules: string[] = [];
-
-    try {
-      modules =
-        typeof student.modules === "string"
-          ? JSON.parse(student.modules || "[]")
-          : student.modules || [];
-    } catch {
-      modules = [];
+      console.log("Existing Free Login:", student.email);
     }
 
     /* ===============================
@@ -110,16 +94,20 @@ export async function POST(req: Request) {
       id: student.id,
       name: student.name,
       email: student.email,
-      phone: student.phone,
-      courseSlug: student.course_slug,
-      courseTitle: student.course_title,
-      studentType: student.student_type,
-      modules,
+      courses: [],
       role: "student",
+      studentType: "free"
     });
 
   } catch (err) {
-    console.error("❌ Free login error:", err);
-    return NextResponse.json({ error: "Server error" }, { status: 500 });
+
+    console.error("Free login error:", err);
+
+    return NextResponse.json(
+      { error: "Server error" },
+      { status: 500 }
+    );
+
   }
+
 }
