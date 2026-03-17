@@ -166,7 +166,7 @@ export default function App({
   const activeModule = course?.modules?.find(m => m.moduleId === activeModuleId);
 
   return (
-    <div className="bg-[#f0f4f8] min-h-screen p-4 font-sans text-slate-900">
+    <div className="bg-[#f0f4f8] p-4 font-sans text-slate-900">
       <div className="max-w-4xl mx-auto space-y-4">
 
         {/* Player Section */}
@@ -302,7 +302,7 @@ export default function App({
         </div>
 
         {/* Info Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className=" grid-cols-1 md:grid-cols-2 gap-4 hidden md:grid">
           <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm transition-all hover:shadow-md group">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-blue-50 rounded-lg group-hover:bg-blue-600 group-hover:text-white transition-colors">

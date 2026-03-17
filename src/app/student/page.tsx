@@ -2,298 +2,253 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { BookOpen, ArrowRight } from "lucide-react";
+import {
+  BookOpen,
+  ArrowRight,
+  LogOut,
+  GraduationCap,
+  Award,
+} from "lucide-react";
 
+/* ================= TYPES ================= */
 type Course = {
   course_slug: string;
   course_title: string;
+};
+
+/* ================= COURSE CONFIG (keys match API full slugs) ================= */
+const courseMeta: Record<
+  string,
+  { fee: number; description: string; enrollUrl: string }
+> = {
+  "acca-applied-knowledge": {
+    fee: 49900,
+    description: "Learn fundamentals of accounting, business & finance.",
+    enrollUrl: "/enroll?course=aak&type=expert",
+  },
+  "acca-applied-skills-level": {
+    fee: 149900,
+    description: "Build strong accounting, taxation & audit skills.",
+    enrollUrl: "/enroll?course=aas&type=expert",
+  },
+  "acca-professional-level": {
+    fee: 99900,
+    description:
+      "Advanced strategic professional level with case studies.",
+    enrollUrl: "/enroll?course=asp&type=expert",
+  },
 };
 
 export default function StudentPage() {
   const router = useRouter();
 
   const [activeTab, setActiveTab] = useState<"my" | "all">("my");
-
-  // API-fetched lists
   const [myCourses, setMyCourses] = useState<Course[]>([]);
   const [allCourses, setAllCourses] = useState<Course[]>([]);
-
-  // local "enrolled" cache for client-only enroll action (keeps UI responsive)
-  const [localEnrolled, setLocalEnrolled] = useState<string[]>([]);
-
   const [studentName, setStudentName] = useState("Student");
   const [studentEmail, setStudentEmail] = useState("");
-  const [studentType, setStudentType] = useState("student");
-
+  const [studentType, setStudentType] = useState("user");
   const [loading, setLoading] = useState(true);
 
-  /* ===================== Helpers ===================== */
+  /* ================= HELPERS ================= */
+  const isEnrolled = (slug: string) =>
+    myCourses.some((c) => c.course_slug === slug);
 
-  // Check enrolled either from server myCourses OR localEnrolled fallback
-  const isEnrolled = (slug: string) => {
-    return (
-      myCourses.some((c) => c.course_slug === slug) ||
-      localEnrolled.includes(slug)
-    );
-  };
-
-  // Decide primary action text depending on type & visited state
   const getButtonText = (slug: string) => {
-    if (studentType === "free") return "Start Free Preview";
-
+    if (typeof window === "undefined") return "Start Learning";
     const visited = JSON.parse(
       localStorage.getItem("visitedCourses") || "[]"
-    ) as string[];
-
-    if (visited.includes(slug)) return "Continue Learning";
-    return "Start Learning";
+    );
+    return visited.includes(slug) ? "Continue Learning" : "Start Learning";
   };
 
-  /* ===================== Lifecycle ===================== */
-
-  // Load user, studentType, enrolled courses from API
+  /* ================= FETCH ================= */
   useEffect(() => {
     const raw = localStorage.getItem("user");
+
     if (!raw) {
       router.push("/");
       return;
     }
+
     const user = JSON.parse(raw);
-    setStudentName(user.name || "Student");
-    setStudentEmail(user.email || "");
 
-    // fetch student type and assigned (paid) courses
-    fetch("/api/student/me", {
-      headers: { "x-user-email": user.email },
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data?.student_type) setStudentType(data.student_type);
-      })
-      .catch((err) => console.error("Student fetch error:", err));
+    setStudentName(user.name);
+    setStudentEmail(user.email);
+    setStudentType(user.type || "user");
 
-    // server-backed "my courses" (assigned courses)
     fetch("/api/student/course", {
       headers: { "x-user-email": user.email },
     })
       .then((res) => res.json())
-      .then((data) => {
-        // ensure consistent shape
-        setMyCourses(Array.isArray(data) ? data : []);
-      })
-      .catch((err) => {
-        console.error("My courses fetch error:", err);
-        setMyCourses([]);
-      });
-  }, [router]);
+      .then((data) => setMyCourses(data || []));
 
-  // Load all courses list + local enrolled/visited caches
-  useEffect(() => {
     fetch("/api/courses")
       .then((res) => res.json())
-      .then((data) => setAllCourses(Array.isArray(data) ? data : []))
-      .catch((err) => {
-        console.error("All courses fetch error:", err);
-        setAllCourses([]);
-      })
+      .then((data) => setAllCourses(data || []))
       .finally(() => setLoading(false));
+  }, [router]);
 
-    // load local enrolled (persisted client-side enrollment)
-    const savedEnrolled = JSON.parse(
-      localStorage.getItem("local_enrolled") || "[]"
-    ) as string[];
-    setLocalEnrolled(Array.isArray(savedEnrolled) ? savedEnrolled : []);
-  }, []);
+  const courses = activeTab === "my" ? myCourses : allCourses;
 
-  const courses = activeTab === "my"
-    ? studentType === "free" ? [] : myCourses
-    : allCourses;
+  /* ================= ACTION ================= */
+  const handleStart = (slug: string) => {
+    const visited = JSON.parse(
+      localStorage.getItem("visitedCourses") || "[]"
+    );
 
-  /* ===================== Enrollment Helpers ===================== */
-
-  // Persist local enrollment (this is client-side only; swap with real API later)
-  const persistLocalEnroll = (slug: string) => {
-    const next = Array.from(new Set([...localEnrolled, slug]));
-    setLocalEnrolled(next);
-    localStorage.setItem("local_enrolled", JSON.stringify(next));
-  };
-
-  // When user clicks "Enroll Now"
-  const handleEnrollNow = async (slug: string) => {
-    // If paid user, you'd normally call your enroll API here.
-    // For now we persist locally so UI updates immediately.
-    persistLocalEnroll(slug);
-
-    // Optionally also add to myCourses state to show up in "My Courses" immediately for this session
-    // (only if the course exists in allCourses, we copy minimal data)
-    const courseObj = allCourses.find((c) => c.course_slug === slug);
-    if (courseObj) {
-      setMyCourses((prev) => {
-        if (prev.some((c) => c.course_slug === slug)) return prev;
-        return [...prev, { course_slug: slug, course_title: courseObj.course_title }];
-      });
-    }
-  };
-
-  // Primary action: Start/Continue. If not enrolled and user is paid -> auto-enroll first, then navigate
-  const handlePrimaryClick = (slug: string) => {
-    const enrolled = isEnrolled(slug);
-
-    if (!enrolled && studentType !== "free") {
-      // auto-enroll paid user client-side; replace with API call if you have one
-      persistLocalEnroll(slug);
-
-      // add to myCourses state (so My Courses shows it)
-      const courseObj = allCourses.find((c) => c.course_slug === slug);
-      if (courseObj) {
-        setMyCourses((prev) => {
-          if (prev.some((c) => c.course_slug === slug)) return prev;
-          return [...prev, { course_slug: slug, course_title: courseObj.course_title }];
-        });
-      }
-    }
-
-    // mark as visited (for Start vs Continue text)
-    const visited = JSON.parse(localStorage.getItem("visitedCourses") || "[]") as string[];
     if (!visited.includes(slug)) {
       visited.push(slug);
       localStorage.setItem("visitedCourses", JSON.stringify(visited));
     }
 
-    router.push(`/student/course/${slug}`);
+    router.push(`/student/course/${encodeURIComponent(slug)}`);
   };
 
-  /* ===================== Render ===================== */
-
+  /* ================= UI ================= */
   return (
-    <main className="min-h-screen bg-[#f8fafc]">
+    <main className="min-h-screen bg-[#FDFDFE] text-slate-800">
+      {/* HERO */}
+      <div className="relative pt-16 pb-20 px-6 sm:px-10 bg-[#1c398e] bg-cover bg-center border-b border-slate-100">
+        {/* <div className="absolute inset-0 bg-black opacity-70" /> */}
 
-      {/* HEADER */}
-      <div className="bg-gradient-to-r from-blue-900 to-blue-700 text-white px-8 py-8">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <div className="w-20 h-20 rounded-xl bg-blue-800 flex items-center justify-center text-3xl">👤</div>
-            <div>
-              <div className="flex items-center gap-3">
-                <h2 className="text-3xl font-bold">{studentName}</h2>
-                <span className="text-xs px-3 py-1 bg-blue-500 rounded-full">{studentType.toUpperCase()}</span>
+        <div className="relative z-10 max-w-7xl mx-auto">
+          <div className="bg-white rounded-3xl p-10 shadow-xl">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-8">
+              <div className="flex items-center gap-6 flex-col md:flex-row text-center md:text-left">
+                <div className="relative">
+                  <div className="w-24 h-24 rounded-3xl bg-blue-900 flex items-center justify-center text-white">
+                    <GraduationCap size={48} />
+                  </div>
+                  <div className="absolute -top-2 -right-2 bg-amber-400 text-white p-2 rounded-xl">
+                    <Award size={18} />
+                  </div>
+                </div>
+
+                <div>
+                  <h2 className="text-3xl font-bold">{studentName}</h2>
+                  <p className="text-slate-600">{studentEmail}</p>
+                </div>
               </div>
-              <p className="text-blue-200 mt-1">{studentEmail}</p>
+
+              <button
+                onClick={() => {
+                  localStorage.removeItem("user");
+                  router.push("/");
+                }}
+                className="flex items-center gap-2 px-6 py-3 rounded-xl border hover:text-red-500"
+              >
+                <LogOut size={18} />
+                Logout
+              </button>
             </div>
           </div>
-
-          {/* Stats */}
-          <div className="flex gap-6">
-            <div className="bg-blue-800/40 px-6 py-4 rounded-xl text-center min-w-[120px]">
-              <div className="text-sm text-blue-200">ALL COURSES</div>
-              <div className="text-2xl font-bold">{allCourses.length}</div>
-            </div>
-            <div className="bg-blue-800/40 px-6 py-4 rounded-xl text-center min-w-[120px]">
-              <div className="text-sm text-blue-200">ENROLLED</div>
-              <div className="text-2xl font-bold">{(myCourses.length + localEnrolled.length)}</div>
-            </div>
-          </div>
-
-          <button
-            onClick={() => {
-              localStorage.removeItem("user");
-              router.push("/");
-            }}
-            className="bg-gradient-to-r from-blue-500 to-cyan-500 px-6 py-3 rounded-xl font-semibold hover:opacity-90 transition"
-          >
-            Logout
-          </button>
         </div>
       </div>
 
-      {/* DASHBOARD */}
-      <div className="max-w-7xl mx-auto p-8">
-        <h1 className="text-4xl font-black text-slate-900 mb-6">Learning Dashboard</h1>
-
+      {/* CONTENT */}
+      <div className="max-w-7xl mx-auto px-6 -mt-10">
         {/* TABS */}
-        <div className="flex gap-4 mb-10">
+        <div className="flex gap-4 mb-10 relative w-max bg-white px-5 py-3 rounded">
           <button
             onClick={() => setActiveTab("my")}
-            className={`px-6 py-2 rounded-xl font-semibold transition ${activeTab === "my"
-              ? "bg-blue-600 text-white"
-              : "bg-white border text-slate-600"}`}
+            className={`px-6 py-3 rounded-xl ${
+              activeTab === "my" ? "bg-blue-900 text-white" : "bg-white border"
+            }`}
           >
             My Courses
           </button>
 
           <button
             onClick={() => setActiveTab("all")}
-            className={`px-6 py-2 rounded-xl font-semibold transition ${activeTab === "all"
-              ? "bg-blue-600 text-white"
-              : "bg-white border text-slate-600"}`}
+            className={`px-6 py-3 rounded-xl ${
+              activeTab === "all" ? "bg-blue-900 text-white" : "bg-white border"
+            }`}
           >
-            All Courses
+            Explore
           </button>
         </div>
 
-        {/* CONTENT */}
+        {/* GRID */}
         {loading ? (
-          <div className="text-gray-500">Loading courses...</div>
-        ) : activeTab === "my" && (studentType === "free" || myCourses.length === 0) ? (
-          <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center">
-            <div className="text-4xl mb-4">📚</div>
-            <h3 className="text-xl font-bold text-slate-800 mb-2">No Courses Assigned</h3>
-            <p className="text-slate-500">Your learning journey hasn't started yet. Once a course is assigned to you, it will appear here.</p>
-          </div>
+          <div className="text-center py-20">Loading...</div>
         ) : (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 pb-20">
             {courses.map((course) => {
+              /* 🔥 Use the full API slug (lowercased & trimmed) to look up meta */
+              const processedSlug = course.course_slug?.toLowerCase().trim();
+              const meta = courseMeta[processedSlug as keyof typeof courseMeta];
+
+              // ===== DEBUG LOGS =====
+              console.log("-------- COURSE DEBUG --------");
+              console.log("Raw Slug:", course.course_slug);
+              console.log("Processed Slug:", processedSlug);
+              console.log("Meta Found:", meta);
+              console.log("Available Keys:", Object.keys(courseMeta));
+              if (!meta) {
+                console.warn("❌ No meta found for slug:", processedSlug, "raw:", course.course_slug);
+              }
+              console.log("-----------------------------");
+              // ======================
+
               const enrolled = isEnrolled(course.course_slug);
 
               return (
-                <div key={course.course_slug} className="group bg-white rounded-3xl border border-slate-200 shadow-sm hover:shadow-xl transition overflow-hidden flex flex-col">
-
-                  {/* Card top */}
-                  <div className="h-44 bg-slate-900 flex items-center justify-center relative">
-                    <div className="absolute inset-0 bg-gradient-to-br from-blue-600/40 to-black/70"></div>
-                    <BookOpen className="w-8 h-8 text-white relative z-10" />
-                  </div>
-
-                  {/* Card body */}
-                  <div className="p-6 flex flex-col flex-1">
-                    <h3 className="text-lg font-bold text-slate-800 mb-3 group-hover:text-blue-600 transition">
+                <div
+                  key={course.course_slug}
+                  className="bg-white rounded-3xl border overflow-hidden flex flex-col"
+                >
+                  {/* HEADER */}
+                  <div className="h-40 bg-slate-50 flex flex-col items-center justify-center">
+                    <BookOpen className="text-indigo-500 mb-2" />
+                    <h3 className="font-bold text-lg text-center px-4">
                       {course.course_title}
                     </h3>
+                  </div>
 
-                    {/* Row: Enrolled badge OR Enroll Now button */}
-                    <div className="flex items-center gap-3 mb-4">
-                      {enrolled ? (
-                        <div className="text-sm text-slate-600 font-medium">Enrolled</div> // plain text as requested
-                      ) : (
-                        <button
-                          onClick={() => handleEnrollNow(course.course_slug)}
-                          className="px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm font-semibold hover:bg-emerald-100 transition"
-                        >
-                          Enroll Now
-                        </button>
+                  {/* BODY */}
+                  <div className="p-6 flex flex-col flex-grow">
+                    <div className="flex justify-between mb-3">
+                      <p className="font-bold text-lg">
+                        ₹{meta?.fee?.toLocaleString() || "N/A"}
+                      </p>
+
+                      {enrolled && (
+                        <span className="text-xs text-green-600">ENROLLED</span>
                       )}
-                      {/* Optionally show small metadata or tag */}
-                      <div className="text-xs text-slate-400 ml-auto">{/* placeholder for duration/batch etc. */}</div>
                     </div>
 
-                    <div className="mt-auto flex items-center gap-3">
-                      {/* Primary action button (Start/Continue) */}
-                      <button
-                        onClick={() => handlePrimaryClick(course.course_slug)}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold transition"
-                      >
-                        {getButtonText(course.course_slug)}
-                        <ArrowRight size={16} />
-                      </button>
+                    <p className="text-sm text-slate-600 mb-6">
+                      {meta?.description || "Learn industry-ready skills."}
+                    </p>
 
-                      {/* If not enrolled, optionally show a secondary lighter CTA (duplicate of Enroll) */}
-                      {!enrolled && (
+                    <div className="mt-auto">
+                      {enrolled ? (
                         <button
-                          onClick={() => handleEnrollNow(course.course_slug)}
-                          className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 transition"
+                          onClick={() => handleStart(course.course_slug)}
+                          className="w-full bg-indigo-600 text-white py-3 rounded-xl flex justify-center items-center gap-2"
                         >
-                          Enroll
+                          {getButtonText(course.course_slug)}
+                          <ArrowRight size={16} />
                         </button>
+                      ) : (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleStart(course.course_slug)}
+                            className="flex-1 bg-gray-100 py-3 rounded-xl"
+                          >
+                            Explore
+                          </button>
+
+                          <button
+                            onClick={() =>
+                              router.push(meta?.enrollUrl || "/enroll")
+                            }
+                            className="flex-1 bg-cyan-500 text-white py-3 rounded-xl"
+                          >
+                            Enroll Now
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>
