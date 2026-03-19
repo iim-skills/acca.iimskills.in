@@ -57,22 +57,23 @@ function normalizeQuestions(questions: any[]) {
       correctOption = options[q.correctIndex]?.id;
     }
 
-    if (q.correctOption) {
-      correctOption = q.correctOption;
+    if (q.correctOptionId) {
+      correctOption = q.correctOptionId;
     }
 
     return {
       id: questionId,
       text: q.text,
-      type: q.type || "mcq",
+      type: q.type || "MCQ",
       options,
       correctOption,
+      parentContent: q.parentContent || null,
     };
   });
 }
 
 /* =====================================================
-   GET QUIZZES (ALL + SINGLE)
+   GET QUIZZES
 ===================================================== */
 
 export async function GET(req: NextRequest) {
@@ -100,8 +101,8 @@ export async function GET(req: NextRequest) {
 
     const formatted = rows.map((q: any) => ({
       id: q.id,
-      title: q.name, // for dropdown
       name: q.name,
+      title: q.name,
       course_slug: q.course_slug,
       module_id: q.module_id,
       submodule_id: q.submodule_id,
@@ -110,26 +111,21 @@ export async function GET(req: NextRequest) {
       time_minutes: q.time_minutes,
       passing_percent: q.passing_percent,
       created_by: q.created_by,
-      createdAt: q.createdAt,
-      updatedAt: q.updatedAt,
+      created_at: q.created_at,
     }));
 
-    if (id) {
-      return NextResponse.json(formatted[0] || null);
-    }
+    if (id) return NextResponse.json(formatted[0] || null);
 
     return NextResponse.json(formatted);
+
   } catch (error) {
     console.error("GET QUIZZES ERROR:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch quizzes" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to fetch quizzes" }, { status: 500 });
   }
 }
 
 /* =====================================================
-   CREATE QUIZ
+   CREATE QUIZ (FIXED)
 ===================================================== */
 
 export async function POST(req: Request) {
@@ -137,19 +133,21 @@ export async function POST(req: Request) {
     const pool = getPool();
     const body = await req.json();
 
-    const {
-      name,
-      course_slug,
-      module_id,
-      submodule_id,
-      batch_ids,
-      time_minutes,
-      passing_percent,
-      questions,
-      created_by,
-    } = body;
+    console.log("Create Quiz Payload:", body);
 
-    if (!name || !course_slug || !module_id || !questions?.length) {
+    // ✅ Support BOTH frontend & backend formats
+    const name = body.name || body.quizName;
+    const time_minutes = body.time_minutes || body.time || 10;
+    const passing_percent = body.passing_percent || body.passing || 50;
+    const questions = body.questions || [];
+
+    const course_slug = body.course_slug || "demo-course";
+    const module_id = body.module_id || "MOD_1";
+    const submodule_id = body.submodule_id || null;
+    const batch_ids = body.batch_ids || [];
+    const created_by = body.created_by || "admin";
+
+    if (!name || !course_slug || !module_id || !questions.length) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }
@@ -161,19 +159,19 @@ export async function POST(req: Request) {
     const [result]: any = await pool.query(
       `
       INSERT INTO quizzes
-      (name, course_slug, module_id, submodule_id, batch_ids, time_minutes, passing_percent, questions, created_by, createdAt, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      (name, course_slug, module_id, submodule_id, batch_ids, time_minutes, passing_percent, questions, created_by, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
       `,
       [
         name,
         course_slug,
         module_id,
-        submodule_id || null,
-        JSON.stringify(batch_ids || []),
-        time_minutes || 10,
-        passing_percent || 50,
+        submodule_id,
+        JSON.stringify(batch_ids),
+        time_minutes,
+        passing_percent,
         JSON.stringify(normalizedQuestions),
-        created_by || "admin",
+        created_by,
       ]
     );
 
@@ -181,17 +179,15 @@ export async function POST(req: Request) {
       success: true,
       id: result.insertId,
     });
+
   } catch (error) {
     console.error("CREATE QUIZ ERROR:", error);
-    return NextResponse.json(
-      { error: "Failed to create quiz" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to create quiz" }, { status: 500 });
   }
 }
 
 /* =====================================================
-   UPDATE QUIZ (FULL)
+   UPDATE QUIZ
 ===================================================== */
 
 export async function PUT(req: Request) {
@@ -202,60 +198,58 @@ export async function PUT(req: Request) {
     const {
       id,
       name,
+      quizName,
       course_slug,
       module_id,
       submodule_id,
       batch_ids,
       time_minutes,
+      time,
       passing_percent,
+      passing,
       questions,
     } = body;
 
     if (!id) {
-      return NextResponse.json(
-        { error: "Quiz ID required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Quiz ID required" }, { status: 400 });
     }
 
-const normalizedQuestions = questions
-  ? normalizeQuestions(questions)
-  : [];
+    const normalizedQuestions = questions
+      ? normalizeQuestions(questions)
+      : [];
 
-await pool.query(
-  `
-  UPDATE quizzes
-  SET 
-    name = ?,
-    course_slug = ?,
-    module_id = ?,
-    submodule_id = ?,
-    batch_ids = ?,
-    time_minutes = ?,
-    passing_percent = ?,
-    questions = ?
-  WHERE id = ?
-  `,
-  [
-    name,
-    course_slug,
-    module_id,
-    submodule_id || null,
-    JSON.stringify(batch_ids || []),
-    time_minutes || 10,
-    passing_percent || 50,
-    JSON.stringify(normalizedQuestions),
-    id,
-  ]
-);
+    await pool.query(
+      `
+      UPDATE quizzes
+      SET 
+        name = ?,
+        course_slug = ?,
+        module_id = ?,
+        submodule_id = ?,
+        batch_ids = ?,
+        time_minutes = ?,
+        passing_percent = ?,
+        questions = ?
+      WHERE id = ?
+      `,
+      [
+        name || quizName,
+        course_slug || "demo-course",
+        module_id || "MOD_1",
+        submodule_id || null,
+        JSON.stringify(batch_ids || []),
+        time_minutes || time || 10,
+        passing_percent || passing || 50,
+        JSON.stringify(normalizedQuestions),
+        id,
+      ]
+    );
 
     return NextResponse.json({ success: true });
+
   } catch (error) {
     console.error("UPDATE QUIZ ERROR:", error);
-    return NextResponse.json(
-      { error: "Failed to update quiz" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to update quiz" }, { status: 500 });
   }
 }
 
@@ -270,20 +264,15 @@ export async function DELETE(req: Request) {
     const id = searchParams.get("id");
 
     if (!id) {
-      return NextResponse.json(
-        { error: "Quiz ID required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Quiz ID required" }, { status: 400 });
     }
 
     await pool.query(`DELETE FROM quizzes WHERE id = ?`, [id]);
 
     return NextResponse.json({ success: true });
+
   } catch (error) {
     console.error("DELETE QUIZ ERROR:", error);
-    return NextResponse.json(
-      { error: "Failed to delete quiz" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to delete quiz" }, { status: 500 });
   }
 }
