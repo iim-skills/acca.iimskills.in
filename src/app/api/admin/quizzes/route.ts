@@ -72,7 +72,7 @@ function normalizeQuestions(questions: any[]) {
 }
 
 /* =====================================================
-   GET QUIZZES
+   GET QUIZZES (ALL + SINGLE)
 ===================================================== */
 
 export async function GET(req: NextRequest) {
@@ -80,12 +80,16 @@ export async function GET(req: NextRequest) {
     const pool = getPool();
     const { searchParams } = new URL(req.url);
 
+    const id = searchParams.get("id");
     const courseSlug = searchParams.get("courseSlug");
 
     let sql = `SELECT * FROM quizzes`;
     const params: any[] = [];
 
-    if (courseSlug) {
+    if (id) {
+      sql += ` WHERE id = ?`;
+      params.push(id);
+    } else if (courseSlug) {
       sql += ` WHERE course_slug = ?`;
       params.push(courseSlug);
     }
@@ -96,25 +100,23 @@ export async function GET(req: NextRequest) {
 
     const formatted = rows.map((q: any) => ({
       id: q.id,
-
-      /* ⭐ IMPORTANT FOR DROPDOWN */
-      title: q.name,
-
+      title: q.name, // for dropdown
       name: q.name,
       course_slug: q.course_slug,
       module_id: q.module_id,
       submodule_id: q.submodule_id,
-
       batch_ids: safeJSONParse(q.batch_ids, []),
       questions: safeJSONParse(q.questions, []),
-
       time_minutes: q.time_minutes,
       passing_percent: q.passing_percent,
       created_by: q.created_by,
-
       createdAt: q.createdAt,
       updatedAt: q.updatedAt,
     }));
+
+    if (id) {
+      return NextResponse.json(formatted[0] || null);
+    }
 
     return NextResponse.json(formatted);
   } catch (error) {
@@ -159,8 +161,8 @@ export async function POST(req: Request) {
     const [result]: any = await pool.query(
       `
       INSERT INTO quizzes
-      (name, course_slug, module_id, submodule_id, batch_ids, time_minutes, passing_percent, questions, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (name, course_slug, module_id, submodule_id, batch_ids, time_minutes, passing_percent, questions, created_by, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
       `,
       [
         name,
@@ -189,7 +191,7 @@ export async function POST(req: Request) {
 }
 
 /* =====================================================
-   UPDATE QUIZ
+   UPDATE QUIZ (FULL)
 ===================================================== */
 
 export async function PUT(req: Request) {
@@ -197,24 +199,55 @@ export async function PUT(req: Request) {
     const pool = getPool();
     const body = await req.json();
 
-    const { id, name, questions } = body;
+    const {
+      id,
+      name,
+      course_slug,
+      module_id,
+      submodule_id,
+      batch_ids,
+      time_minutes,
+      passing_percent,
+      questions,
+    } = body;
 
     if (!id) {
-      return NextResponse.json({ error: "Quiz ID required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Quiz ID required" },
+        { status: 400 }
+      );
     }
 
-    const normalizedQuestions = questions
-      ? normalizeQuestions(questions)
-      : undefined;
+const normalizedQuestions = questions
+  ? normalizeQuestions(questions)
+  : [];
 
-    await pool.query(
-      `
-      UPDATE quizzes
-      SET name = ?, questions = ?
-      WHERE id = ?
-      `,
-      [name, JSON.stringify(normalizedQuestions || []), id]
-    );
+await pool.query(
+  `
+  UPDATE quizzes
+  SET 
+    name = ?,
+    course_slug = ?,
+    module_id = ?,
+    submodule_id = ?,
+    batch_ids = ?,
+    time_minutes = ?,
+    passing_percent = ?,
+    questions = ?
+  WHERE id = ?
+  `,
+  [
+    name,
+    course_slug,
+    module_id,
+    submodule_id || null,
+    JSON.stringify(batch_ids || []),
+    time_minutes || 10,
+    passing_percent || 50,
+    JSON.stringify(normalizedQuestions),
+    id,
+  ]
+);
 
     return NextResponse.json({ success: true });
   } catch (error) {

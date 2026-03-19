@@ -5,17 +5,11 @@ import redirect from "./redirect";
 const nextConfig: NextConfig = {
   productionBrowserSourceMaps: false,
   reactStrictMode: true,
-  swcMinify: true,
   compress: true,
   poweredByHeader: false,
 
-  async redirects() {
-    return redirect;
-  },
-
   async rewrites() {
-    return [
-    ];
+    return [];
   },
 
   images: {
@@ -25,10 +19,12 @@ const nextConfig: NextConfig = {
     unoptimized: true,
   },
 
+  /* ✅ FIXED UPLOAD LIMIT */
   experimental: {
-    serverActions: {},
-    // ✅ ONLY THIS NEEDED FOR BIG UPLOADS
-    middlewareClientMaxBodySize: 50 * 1024 * 1024, // 50MB
+    serverActions: {
+      bodySizeLimit: "200mb",
+    },
+    middlewareClientMaxBodySize: 200, // 🔥 REQUIRED for API uploads
   },
 
   async headers() {
@@ -36,7 +32,10 @@ const nextConfig: NextConfig = {
       {
         source: "/(.*)",
         headers: [
-          { key: "Cache-Control", value: "public, max-age=31536000, immutable" },
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
           { key: "X-DNS-Prefetch-Control", value: "on" },
         ],
       },

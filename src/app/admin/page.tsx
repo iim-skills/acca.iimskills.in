@@ -1,21 +1,19 @@
 "use client";
 
 import React, { useEffect, useState, useRef } from "react";
-import { 
-  Calendar, 
-  User2, 
-  Settings, 
-  Bell, 
-  Search, 
-  ChevronRight, 
-  LayoutDashboard, 
-  Ticket, 
-  FolderOpen, 
-  BarChart3, 
-  LogOut, 
+import {
+  Calendar,
+  User2,
+  Settings,
+  ChevronRight,
+  BarChart3,
+  Ticket,
+  FolderOpen,
+  LogOut,
   Video,
   User
 } from "lucide-react";
+
 import LMSPage from "./StudentLIst";
 import DashboardHome from "./components/DashboardHome";
 import ProfilePage from "./profile/page";
@@ -24,21 +22,23 @@ import Quiz from "./quizzes/page";
 import Course from "./course-builder/page";
 import CouponPage from "./coupons/page";
 import MentorsBooking from "./MentorsBooking/page";
+import Users from "./users/page";
 import Videos from "./videos/page";
 import { MdQuiz } from "react-icons/md";
 
-/* ================= MOCK / TYPES ================= */
-// Defining inline for the preview
+/* ================= TYPES ================= */
 export interface User {
   id: number;
   name: string;
   email?: string;
+  role?: string;
 }
 
 /* ================= MAIN COMPONENT ================= */
 export default function App() {
   const [active, setActive] = useState("dashboard");
   const [user, setUser] = useState<User | null>(null);
+  const [loadingUser, setLoadingUser] = useState(true);
 
   // dropdown state & ref
   const [menuOpen, setMenuOpen] = useState(false);
@@ -46,30 +46,45 @@ export default function App() {
 
   /* ---------- LOAD & PROTECT ADMIN (Original Logic Maintained) ---------- */
   useEffect(() => {
-    const stored = sessionStorage.getItem("user") ?? localStorage.getItem("user");
-
-    if (!stored) {
-      // For preview purposes, setting a mock user if storage is empty
-      // In production, your original window.location.href = "/admin/login" logic is correct
-      setUser({ id: 1, name: "Admin User", email: "admin@imskills.com" });
-      return;
-    }
+    setLoadingUser(true);
 
     try {
-      const parsed = JSON.parse(stored);
-      if (parsed.loginType !== "admin") {
-        // window.location.href = "/student/dashboard";
+      const storedRaw = sessionStorage.getItem("user") ?? localStorage.getItem("user");
+
+      if (!storedRaw) {
+        // preview/dev fallback (remove or change in production)
+        const fallback: User = { id: 1, name: "Admin User", email: "admin@iimskills.com", role: "Super Admin" };
+        setUser(fallback);
+        console.log("No stored user found — using fallback:", fallback);
+        setLoadingUser(false);
         return;
       }
-      setUser({
+
+      const parsed = JSON.parse(storedRaw);
+
+      // Optional: ensure this is admin login
+      if (parsed && parsed.loginType && parsed.loginType !== "admin") {
+        console.warn("Stored user is not admin — parsed.loginType:", parsed.loginType);
+        setUser(null);
+        setLoadingUser(false);
+        return;
+      }
+
+      const mapped: User = {
         id: Number(parsed.id),
-        name: parsed.name,
+        name: parsed.name || "Admin User",
         email: parsed.email,
-      });
-    } catch {
-      sessionStorage.removeItem("user");
-      localStorage.removeItem("user");
-      // window.location.href = "/admin/login";
+        role: parsed.role || "Admin",
+      };
+
+      console.log("Loaded stored user:", mapped);
+      setUser(mapped);
+    } catch (err) {
+      console.error("Error parsing stored user:", err);
+      // fallback to null or mock depending on your preference
+      setUser(null);
+    } finally {
+      setLoadingUser(false);
     }
   }, []);
 
@@ -84,11 +99,26 @@ export default function App() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  if (!user) return (
-    <div className="flex items-center justify-center h-screen bg-slate-50">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-    </div>
-  );
+  /* ---------- LOADING STATE ---------- */
+  if (loadingUser) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-slate-50">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  /* ---------- PROTECT: if no user, show minimal message ---------- */
+  if (!user) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-slate-50">
+        <div className="text-center">
+          <h2 className="text-lg font-semibold mb-2">Not authorized</h2>
+          <p className="text-sm text-slate-500">No admin user found in session. Please login.</p>
+        </div>
+      </div>
+    );
+  }
 
   /* ---------- TABS ---------- */
   const tabs = [
@@ -99,8 +129,8 @@ export default function App() {
     { key: "lms", name: "Students", icon: <FolderOpen size={20} /> },
     { key: "batch", name: "Batches", icon: <Calendar size={20} /> },
     { key: "mentors_booking", name: "Mentors Slots", icon: <User size={20} /> },
+    { key: "users", name: "User", icon: <User size={20} /> },
     { key: "videos", name: "Videos", icon: <Video size={20} /> },
-     
   ];
 
   const activeTabName = tabs.find(t => t.key === active)?.name || "Dashboard";
@@ -108,7 +138,6 @@ export default function App() {
   /* ---------- RENDER ---------- */
   return (
     <div className="flex h-screen bg-[#F8FAFC] text-slate-900 font-sans overflow-hidden">
-      
       {/* SIDEBAR */}
       <aside className="w-72 bg-[#0F172A] text-white flex flex-col shadow-2xl relative z-10">
         {/* BRANDING */}
@@ -120,7 +149,7 @@ export default function App() {
             <h1 className="text-xl font-bold tracking-tight">IIM SKILLS</h1>
           </div>
           <div className="h-px w-full bg-slate-800 my-6" />
-          
+
           {/* USER INFO CARD */}
           <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50 mb-8">
             <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1">
@@ -129,6 +158,7 @@ export default function App() {
             <p className="text-sm font-semibold truncate text-blue-100">
               {user.name}
             </p>
+            <p className="text-xs text-slate-400 mt-1">{user.role}</p>
           </div>
 
           {/* NAVIGATION */}
@@ -141,8 +171,8 @@ export default function App() {
                   onClick={() => setActive(tab.key)}
                   className={`
                     flex items-center w-full px-4 py-3 rounded-xl transition-all duration-200 group
-                    ${isActive 
-                      ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20" 
+                    ${isActive
+                      ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20"
                       : "text-slate-400 hover:bg-slate-800 hover:text-white"
                     }
                   `}
@@ -157,14 +187,10 @@ export default function App() {
             })}
           </nav>
         </div>
-
-        {/* LOGOUT */}
-      
       </aside>
 
       {/* MAIN CONTENT AREA */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        
         {/* TOP HEADER */}
         <header className="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0">
           <div className="flex items-center gap-4">
@@ -174,14 +200,12 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-6">
-            
-
             <div className="h-8 w-px bg-slate-200 mx-2" />
-            
+
             <div className="flex items-center gap-3">
               <div className="text-right hidden sm:block">
                 <p className="text-sm font-bold text-slate-800 leading-none">{user.name}</p>
-                <p className="text-xs text-slate-500 mt-1">Super Admin</p>
+                <p className="text-xs text-slate-500 mt-1">{user.role}</p>
               </div>
 
               {/* Avatar + dropdown */}
@@ -190,7 +214,7 @@ export default function App() {
                   onClick={() => setMenuOpen((v) => !v)}
                   aria-haspopup="true"
                   aria-expanded={menuOpen}
-                  className="h-10 w-10 bg-linear-to-tr from-blue-600 to-indigo-600 rounded-full flex items-center justify-center text-white font-bold shadow-md shadow-blue-200 focus:outline-none"
+                  className="h-10 w-10 rounded-full flex items-center justify-center text-white font-bold shadow-md focus:outline-none bg-gradient-to-tr from-blue-600 to-indigo-600"
                 >
                   {user.name.charAt(0)}
                 </button>
@@ -241,6 +265,10 @@ export default function App() {
             {active === "lms" && <LMSPage />}
             {active === "videos" && <Videos />}
             {active === "profile" && <ProfilePage />}
+
+            {/* IMPORTANT: only render Users when `user` exists to avoid undefined prop */}
+            {active === "users" && user && <Users currentUser={user} />}
+
             {active === "course" && <Course />}
             {active === "quiz" && <Quiz />}
           </div>

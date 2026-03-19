@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Clock,
   ExternalLink,
+  Pencil,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -26,9 +27,7 @@ type Batch = {
 };
 
 type RawSubmodule = { submoduleId?: string; id?: string; slug?: string; title?: string; name?: string; [k: string]: any };
-
 type RawModule = { moduleId?: string; slug?: string; id?: string; name?: string; title?: string; submodules?: RawSubmodule[]; [k: string]: any };
-
 type Course = { slug: string; name?: string; modules?: Array<string | RawModule>; [k: string]: any };
 
 // Quiz question type
@@ -53,7 +52,18 @@ const generateId = () =>
     ? crypto.randomUUID()
     : Math.random().toString(36).substring(2);
 
-export default function QuizAdmin(): React.ReactElement {
+/* ============== ROLE HELPERS =============== */
+function normalizeRole(raw?: string) {
+  if (!raw) return "";
+  return raw.toString().toLowerCase().trim().replace(/[_\-]+/g, " ").replace(/\s+/g, " ");
+}
+function isSuperVariant(raw?: string) {
+  const r = normalizeRole(raw);
+  return r === "super admin" || r === "superadmin" || r === "sa" || r === "super-admin";
+}
+
+/* ============== MAIN COMPONENT =============== */
+export default function QuizAdmin({ currentUser: propUser }: { currentUser?: any } = {}) : React.ReactElement {
   const [batches, setBatches] = useState<Batch[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
@@ -81,7 +91,24 @@ export default function QuizAdmin(): React.ReactElement {
   const [qOptions, setQOptions] = useState<string[]>(["", "", "", ""]);
   const [qCorrect, setQCorrect] = useState<number>(0);
 
+  // resolve user role (prop OR storage)
+  const getStoredUser = () => {
+    try {
+      const s = sessionStorage.getItem("user") ?? localStorage.getItem("user");
+      if (!s) return null;
+      return JSON.parse(s);
+    } catch {
+      return null;
+    }
+  };
+  const resolvedUser = propUser ?? getStoredUser();
+  const roleRaw = resolvedUser?.role ?? "";
+  const normalizedRole = normalizeRole(roleRaw);
+  const isSuperAdmin = isSuperVariant(roleRaw);
+  const isAdmin = !isSuperAdmin && normalizedRole === "admin";
+
   useEffect(() => {
+    console.log("QuizAdmin resolvedUser:", resolvedUser, "role:", roleRaw, "normalized:", normalizedRole, "isSuperAdmin:", isSuperAdmin, "isAdmin:", isAdmin);
     loadInitial();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -227,7 +254,7 @@ export default function QuizAdmin(): React.ReactElement {
         passing_percent: Number(passingPercent),
         total_questions: questions.length,
         questions,
-        created_by: "admin",
+        created_by: resolvedUser?.email ?? "admin",
       };
 
       const res = await fetch("/api/admin/quizzes", {
@@ -274,6 +301,25 @@ export default function QuizAdmin(): React.ReactElement {
       return dt.toLocaleDateString();
     } catch {
       return "-";
+    }
+  };
+
+  /* ============ ROLE-GUARDED DELETE FOR QUIZ ============ */
+  const canDelete = () => isSuperAdmin;
+  const handleDeleteQuiz = async (id: string | number) => {
+    if (!canDelete()) {
+      showMsg("Unauthorized — only Super Admin can delete quizzes", "error");
+      return;
+    }
+    if (!confirm("Are you sure you want to delete this quiz?")) return;
+    try {
+      const res = await fetch(`/api/admin/quizzes?id=${encodeURIComponent(String(id))}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Delete failed");
+      showMsg("Quiz deleted", "success");
+      await loadQuizzes();
+    } catch (err: any) {
+      console.error(err);
+      showMsg(err?.message ?? "Delete failed");
     }
   };
 
@@ -428,23 +474,34 @@ export default function QuizAdmin(): React.ReactElement {
                               <ExternalLink size={18} />
                             </button>
 
+                            {/* EDIT button (always available) */}
                             <button
-                              onClick={async () => {
-                                if (!confirm("Are you sure you want to delete this quiz?")) return;
-                                try {
-                                  const res = await fetch(`/api/admin/quizzes?id=${encodeURIComponent(String(id))}`, { method: "DELETE" });
-                                  if (!res.ok) throw new Error("Delete failed");
-                                  showMsg("Quiz deleted", "success");
-                                  await loadQuizzes();
-                                } catch (err: any) {
-                                  showMsg(err?.message ?? String(err));
-                                }
-                              }}
-                              className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
-                              title="Delete Quiz"
+                              onClick={() => window.open(`/admin/quizzes/edit?id=${encodeURIComponent(String(id))}`, "_blank")}
+                              className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                              title="Edit Quiz"
                             >
-                              <Trash2 size={18} />
+                              <Pencil size={18} />
                             </button>
+
+                            {/* DELETE button: only clickable for Super Admin */}
+                            {canDelete() ? (
+                              <button
+                                onClick={() => handleDeleteQuiz(id)}
+                                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                                title="Delete Quiz"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => showMsg("Unauthorized — only Super Admin can delete quizzes", "error")}
+                                className="p-2 text-slate-300 rounded-lg cursor-not-allowed"
+                                title="Delete Quiz — Super Admin only"
+                                aria-disabled
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </motion.tr>

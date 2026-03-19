@@ -1,189 +1,241 @@
-// app/api/admin/users/route.ts
 import { NextResponse } from "next/server";
 import mysql from "mysql2/promise";
-import type { RowDataPacket, ResultSetHeader } from "mysql2";
 
-type UserBody = {
-  id?: number;
-  username?: string;
-  name?: string;
-  email?: string;
-  password?: string;
-  role?: string;
-  bio?: any;
-  photo?: string;
-  posts?: number;
-};
+/* ================= DB CONNECTION ================= */
+const pool = mysql.createPool({
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+  port: Number(process.env.DB_PORT || 3306),
+});
 
-type UserRow = RowDataPacket & {
-  id: number;
-  username: string;
-  name: string;
-  email: string;
-  password?: string | null;
-  role: string;
-  bio?: string | null;
-  photo?: string | null;
-  posts?: number;
-  created_at?: string;
-  updated_at?: string | null;
-};
-
-function dbErrLog(err: any, ctx = "") {
-  console.error(`DB Error ${ctx}:`, err?.message ?? err);
-  if (err?.code) console.error("DB Err code:", err.code);
-  if (err?.sqlMessage) console.error("SQL Message:", err.sqlMessage);
+/* ================= ROLE NORMALIZER ================= */
+function normalizeRole(role: string | null) {
+  if (!role) return "";
+  return role
+    .toLowerCase()
+    .trim()
+    .replace(/[_\-]+/g, " ")
+    .replace(/\s+/g, " ");
 }
 
-async function getConnection() {
-  return mysql.createConnection({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    port: Number(process.env.DB_PORT || 3306),
-  });
+function isSuperAdmin(role: string | null) {
+  const r = normalizeRole(role);
+  return (
+    r === "super admin" ||
+    r === "superadmin" ||
+    r === "sa"
+  );
 }
 
-// GET all users
+/* =========================
+   GET → LIST USERS
+========================= */
 export async function GET() {
   try {
-    const conn = await getConnection();
-    const [rows] = await conn.execute<UserRow[]>("SELECT * FROM users ORDER BY id DESC");
-    await conn.end();
-    return NextResponse.json(rows);
+    console.log("🚀 API HIT: /api/admin/users");
+
+    const [rows]: any = await pool.execute(
+      `SELECT id, name, email, role, photo, bio FROM users ORDER BY id DESC`
+    );
+
+    console.log("📦 RAW DB RESPONSE:", rows);
+    console.log("📊 TOTAL USERS:", rows?.length);
+
+    if (rows && rows.length > 0) {
+      console.log("👤 SAMPLE USER:", rows[0]);
+      console.log("🎭 USER ROLES:", rows.map((u: any) => u.role));
+    } else {
+      console.log("⚠️ NO USERS FOUND IN DATABASE");
+    }
+
+    const response = {
+      success: true,
+      data: rows || [],
+    };
+
+    console.log("📤 FINAL API RESPONSE:", response);
+
+    return NextResponse.json(response);
+
   } catch (err) {
-    dbErrLog(err, "GET /api/admin/users");
-    return NextResponse.json({ error: "Failed to fetch users" }, { status: 500 });
+    console.error("❌ GET users error:", err);
+
+    return NextResponse.json({
+      success: false,
+      message: "Failed to fetch users",
+      error: String(err),
+    });
   }
 }
 
-// POST create new user
+/* =========================
+   POST → CREATE USER
+========================= */
 export async function POST(req: Request) {
   try {
-    const body: UserBody = await req.json();
-    const { username, name, email, password, role, bio, photo } = body;
+    const roleHeader = req.headers.get("x-user-role");
 
-    if (!username || !name || !email || !password || !role) {
-      return NextResponse.json(
-        { error: "Username, name, email, password, and role are required" },
-        { status: 400 }
-      );
+    if (!isSuperAdmin(roleHeader)) {
+      return NextResponse.json({
+        success: false,
+        message: "Unauthorized: Only Super Admin can create users",
+      }, { status: 403 });
     }
 
-    const conn = await getConnection();
+    const { name, email, password, role, bio, photo } =
+      await req.json();
 
-    // duplicate email check
-    const [existingRows] = await conn.execute<RowDataPacket[]>(
-      "SELECT id FROM users WHERE email = ?",
-      [email]
-    );
-    if ((existingRows as RowDataPacket[]).length > 0) {
-      await conn.end();
-      return NextResponse.json({ error: "User with this email already exists" }, { status: 400 });
+    if (!email || !password) {
+      return NextResponse.json({
+        success: false,
+        message: "Email & Password required",
+      });
     }
 
-    // insert user (ResultSetHeader gives insertId)
-    const [result] = await conn.execute<ResultSetHeader>(
-      `INSERT INTO users (username, name, email, password, role, bio, photo, posts)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        username,
-        name,
-        email,
-        password,
-        role,
-        typeof bio === "object" ? JSON.stringify(bio) : bio ?? null,
-        photo ?? "/user.jpg",
-        0,
-      ]
+    await pool.execute(
+      `INSERT INTO users (name,email,password,role,bio,photo)
+       VALUES (?,?,?,?,?,?)`,
+      [name, email, password, role || "Admin", bio || null, photo || null]
     );
 
-    const insertId = result.insertId;
-
-    const [createdRows] = await conn.execute<UserRow[]>("SELECT * FROM users WHERE id = ?", [insertId]);
-
-    await conn.end();
-    return NextResponse.json((createdRows as UserRow[])[0] ?? { success: true }, { status: 200 });
+    return NextResponse.json({
+      success: true,
+      message: "User created",
+    });
   } catch (err) {
-    dbErrLog(err, "POST /api/admin/users");
-    return NextResponse.json({ error: "Failed to save user" }, { status: 500 });
+    console.error("❌ CREATE error:", err);
+    return NextResponse.json({
+      success: false,
+      message: "Create failed",
+      error: String(err),
+    });
   }
 }
 
-// PUT update user
+/* =========================
+   PUT → UPDATE USER
+========================= */
 export async function PUT(req: Request) {
   try {
-    const body: UserBody = await req.json();
-    const { id, username, name, email, password, role, bio, photo } = body;
+    const roleHeader = req.headers.get("x-user-role");
 
-    if (!id || !username || !name || !email || !role) {
-      return NextResponse.json({ error: "ID, username, name, email, and role are required" }, { status: 400 });
+    if (!isSuperAdmin(roleHeader)) {
+      return NextResponse.json({
+        success: false,
+        message: "Unauthorized: Only Super Admin can update users",
+      }, { status: 403 });
     }
 
-    const conn = await getConnection();
+    const { id, name, role, bio, photo } = await req.json();
 
-    // Duplicate email check for other users
-    const [dupRows] = await conn.execute<RowDataPacket[]>(
-      "SELECT id FROM users WHERE email = ? AND id <> ?",
-      [email, id]
-    );
-    if ((dupRows as RowDataPacket[]).length > 0) {
-      await conn.end();
-      return NextResponse.json({ error: "Email already used by another user" }, { status: 400 });
+    if (!id) {
+      return NextResponse.json({
+        success: false,
+        message: "User ID required",
+      });
     }
 
-    // Update (ResultSetHeader returned, but we don't need it)
-    await conn.execute<ResultSetHeader>(
-      `UPDATE users SET
-         username = ?,
-         name = ?,
-         email = ?,
-         role = ?,
-         bio = ?,
-         photo = COALESCE(?, photo),
-         password = COALESCE(?, password)
-       WHERE id = ?`,
-      [
-        username,
-        name,
-        email,
-        role,
-        typeof bio === "object" ? JSON.stringify(bio) : bio ?? null,
-        photo ?? null,
-        password ?? null,
-        id,
-      ]
+    await pool.execute(
+      `UPDATE users 
+       SET name=?, role=?, bio=?, photo=? 
+       WHERE id=?`,
+      [name, role, bio, photo, id]
     );
 
-    const [rows] = await conn.execute<UserRow[]>("SELECT * FROM users WHERE id = ?", [id]);
-    await conn.end();
-
-    return NextResponse.json((rows as UserRow[])[0], { status: 200 });
+    return NextResponse.json({
+      success: true,
+      message: "User updated",
+    });
   } catch (err) {
-    dbErrLog(err, "PUT /api/admin/users");
-    return NextResponse.json({ error: "Failed to update user" }, { status: 500 });
+    console.error("❌ UPDATE error:", err);
+    return NextResponse.json({
+      success: false,
+      message: "Update failed",
+      error: String(err),
+    });
   }
 }
 
-// DELETE user
+/* =========================
+   DELETE → DELETE USER
+========================= */
 export async function DELETE(req: Request) {
   try {
-    const { searchParams } = new URL(req.url);
-    const idParam = searchParams.get("id");
-    const id = idParam ? parseInt(idParam, 10) : NaN;
+    const roleHeader = req.headers.get("x-user-role");
 
-    if (!id || Number.isNaN(id)) {
-      return NextResponse.json({ error: "ID required" }, { status: 400 });
+    if (!isSuperAdmin(roleHeader)) {
+      return NextResponse.json({
+        success: false,
+        message: "Unauthorized: Only Super Admin can delete",
+      }, { status: 403 });
     }
 
-    const conn = await getConnection();
-    await conn.execute<ResultSetHeader>("DELETE FROM users WHERE id = ?", [id]);
-    await conn.end();
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
 
-    return NextResponse.json({ success: true });
+    if (!id) {
+      return NextResponse.json({
+        success: false,
+        message: "User ID required",
+      });
+    }
+
+    await pool.execute(`DELETE FROM users WHERE id=?`, [id]);
+
+    return NextResponse.json({
+      success: true,
+      message: "User deleted",
+    });
   } catch (err) {
-    dbErrLog(err, "DELETE /api/admin/users");
-    return NextResponse.json({ error: "Failed to delete user" }, { status: 500 });
+    console.error("❌ DELETE error:", err);
+    return NextResponse.json({
+      success: false,
+      message: "Delete failed",
+      error: String(err),
+    });
+  }
+}
+
+/* =========================
+   PATCH → CHANGE PASSWORD
+========================= */
+export async function PATCH(req: Request) {
+  try {
+    const roleHeader = req.headers.get("x-user-role");
+
+    if (!isSuperAdmin(roleHeader)) {
+      return NextResponse.json({
+        success: false,
+        message: "Unauthorized: Only Super Admin can change password",
+      }, { status: 403 });
+    }
+
+    const { email, password } = await req.json();
+
+    if (!email || !password) {
+      return NextResponse.json({
+        success: false,
+        message: "Email & password required",
+      });
+    }
+
+    await pool.execute(
+      `UPDATE users SET password=? WHERE email=?`,
+      [password, email]
+    );
+
+    return NextResponse.json({
+      success: true,
+      message: "Password updated",
+    });
+  } catch (err) {
+    console.error("❌ PASSWORD error:", err);
+    return NextResponse.json({
+      success: false,
+      message: "Password update failed",
+      error: String(err),
+    });
   }
 }

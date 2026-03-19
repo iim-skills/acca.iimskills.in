@@ -135,6 +135,28 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
   const isCourseSelected = (slug: string) => selectedCourseSlugs.includes(slug);
   const isModuleSelected = (courseSlug: string, moduleId: string) => (selectedModulesMap[courseSlug] || []).includes(moduleId);
 
+  /* ========== NEW: select-all helpers ========== */
+  const getModuleId = (m: any) => {
+    if (m == null) return "";
+    if (typeof m === "string") return m;
+    return m.moduleId ?? m.id ?? String(m.name ?? "");
+  };
+
+  const setAllModulesForCourse = (courseSlug: string, modulesArr: any[], value: boolean) => {
+    const ids = modulesArr.map((m: any) => getModuleId(m)).filter(Boolean);
+    setSelectedModulesMap((prev) => {
+      return { ...prev, [courseSlug]: value ? ids : [] };
+    });
+  };
+
+  const areAllModulesSelected = (courseSlug: string, modulesArr: any[]) => {
+    if (!modulesArr || modulesArr.length === 0) return false;
+    const ids = modulesArr.map((m: any) => getModuleId(m)).filter(Boolean);
+    const sel = selectedModulesMap[courseSlug] || [];
+    return ids.length > 0 && ids.every((id) => sel.includes(id));
+  };
+  /* ============================================== */
+
   const goToStep2 = () => {
     setError("");
     if (!name || !email || !phone) {
@@ -202,7 +224,6 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
           </div>
           <h2 className="text-xl font-extrabold text-white tracking-tight">Student Enrollment</h2>
         </div>
-       
       </div>
 
       {/* BODY */}
@@ -281,7 +302,22 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
                 return (
                   <div key={slug} className="border-2 border-slate-100 rounded-3xl p-5">
                     <div className="flex justify-between items-center mb-4">
-                      <span className="text-xs font-black text-indigo-600 uppercase tracking-widest">{c?.name}</span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs font-black text-indigo-600 uppercase tracking-widest">{c?.name}</span>
+
+                        {/* SELECT ALL CHECKBOX (added) */}
+                        <label className="ml-2 flex items-center gap-2 text-[12px] font-medium">
+                          <input
+                            type="checkbox"
+                            checked={areAllModulesSelected(slug, modules)}
+                            onChange={(e) => setAllModulesForCourse(slug, modules, e.target.checked)}
+                            disabled={!modules || modules.length === 0}
+                            className="w-4 h-4"
+                          />
+                          <span className="text-[10px] uppercase text-slate-600 font-bold">Select all</span>
+                        </label>
+                      </div>
+
                       <button onClick={() => setSelectedModulesMap(m => ({...m, [slug]: []}))} className="text-[10px] font-bold text-slate-400 uppercase">Clear</button>
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

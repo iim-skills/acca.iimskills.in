@@ -297,6 +297,23 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
   };
 
   /* =====================================================
+      NEW: select all helpers for a given course
+  ===================================================== */
+  const setAllModulesForCourse = (courseSlug: string, modulesArr: any[], value: boolean) => {
+    const ids = modulesArr.map((m: any) => moduleKeyFrom(m)).filter(Boolean);
+    setSelectedModulesMap((prev) => {
+      return { ...prev, [courseSlug]: value ? ids : [] };
+    });
+  };
+
+  const areAllModulesSelected = (courseSlug: string, modulesArr: any[]) => {
+    if (!modulesArr || modulesArr.length === 0) return false;
+    const ids = modulesArr.map((m: any) => moduleKeyFrom(m)).filter(Boolean);
+    const sel = selectedModulesMap[courseSlug] || [];
+    return ids.length > 0 && ids.every((id) => sel.includes(id));
+  };
+
+  /* =====================================================
       SAVE
   ===================================================== */
   const handleSave = async () => {
@@ -428,9 +445,7 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
                           disabled={editingField !== "phone"}
                           value={phone}
                           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                          className={`w-full pl-20 pr-12 py-3 border rounded-xl outline-none transition-all shadow-sm ${
-                            editingField === "phone" ? "bg-white border-indigo-500 ring-2 ring-indigo-500/10" : "bg-slate-100 border-transparent cursor-not-allowed text-slate-600"
-                          }`}
+                          className={`w-full pl-20 pr-12 py-3 border rounded-xl outline-none transition-all shadow-sm ${editingField === "phone" ? "bg-white border-indigo-500 ring-2 ring-indigo-500/10" : "bg-slate-100 border-transparent cursor-not-allowed text-slate-600"}`}
                         />
                         <button
                           className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 hover:bg-slate-200 rounded-lg text-slate-400 transition-colors"
@@ -505,15 +520,22 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
                             <div className="flex justify-between items-center mb-4">
                               <div className="flex items-center gap-3">
                                 <span className="text-xs font-black text-indigo-600 uppercase tracking-widest">{course?.name ?? slug}</span>
-                                <button onClick={() => toggleCourse(slug)} className="text-[10px] font-bold text-red-500 uppercase ml-2">Remove Course</button>
+
+                                {/* <-- REPLACED "Remove Course" BUTTON WITH SELECT ALL CHECKBOX */}
+                                <label className="ml-2 flex items-center gap-2 text-[12px] font-medium">
+                                  <input
+                                    type="checkbox"
+                                    checked={areAllModulesSelected(slug, modules)}
+                                    onChange={(e) => setAllModulesForCourse(slug, modules, e.target.checked)}
+                                    disabled={!modules || modules.length === 0}
+                                    className="w-4 h-4"
+                                  />
+                                  <span className="text-[10px] uppercase text-slate-600 font-bold">Select all</span>
+                                </label>
                               </div>
+
                               <button onClick={() => setSelectedModulesMap(m => ({...m, [slug]: []}))} className="text-[10px] font-bold text-slate-400 uppercase">Clear</button>
                             </div>
-
-                            {/* assigned chips */}
-                           
-
-                             
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                               {modules.length === 0 && (
