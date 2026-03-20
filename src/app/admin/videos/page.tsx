@@ -1097,15 +1097,15 @@ export default function VideoAdmin(): React.ReactElement {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-2 gap-6 mb-8">
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-            <div className="text-slate-500 text-sm font-medium mb-1 uppercase tracking-wider">
+            <div className="text-slate-500 text-[12px] md:text-sm font-medium mb-1 uppercase tracking-wider">
               Total Videos
             </div>
             <div className="text-3xl font-bold">{videos.length}</div>
           </div>
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-            <div className="text-slate-500 text-sm font-medium mb-1 uppercase tracking-wider">
+            <div className="text-slate-500 text-[12px] md:text-sm font-medium mb-1 uppercase tracking-wider">
               Recent Uploads
             </div>
             <div className="text-3xl font-bold">
@@ -1170,7 +1170,7 @@ export default function VideoAdmin(): React.ReactElement {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5 p-5">
+            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5 p-5">
               {pagedVideos.map((v) => {
                 const id = v?.id ?? v?._id ?? generateId();
                 const name = v?.name ?? v?.title ?? "Untitled";

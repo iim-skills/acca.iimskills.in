@@ -11,7 +11,9 @@ import {
   FolderOpen,
   LogOut,
   Video,
-  User
+  User,
+  Menu,
+  X,
 } from "lucide-react";
 
 import LMSPage from "./StudentLIst";
@@ -27,7 +29,7 @@ import Videos from "./videos/page";
 import { MdQuiz } from "react-icons/md";
 
 /* ================= TYPES ================= */
-export interface User {
+export interface UserType {
   id: number;
   name: string;
   email?: string;
@@ -37,14 +39,15 @@ export interface User {
 /* ================= MAIN COMPONENT ================= */
 export default function App() {
   const [active, setActive] = useState("dashboard");
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<UserType | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
 
-  // dropdown state & ref
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+
   const avatarRef = useRef<HTMLDivElement | null>(null);
 
-  /* ---------- LOAD & PROTECT ADMIN (Original Logic Maintained) ---------- */
+  /* ---------- LOAD & PROTECT ADMIN ---------- */
   useEffect(() => {
     setLoadingUser(true);
 
@@ -52,49 +55,49 @@ export default function App() {
       const storedRaw = sessionStorage.getItem("user") ?? localStorage.getItem("user");
 
       if (!storedRaw) {
-        // preview/dev fallback (remove or change in production)
-        const fallback: User = { id: 1, name: "Admin User", email: "admin@iimskills.com", role: "Super Admin" };
+        const fallback: UserType = {
+          id: 1,
+          name: "Admin User",
+          email: "admin@iimskills.com",
+          role: "Super Admin",
+        };
         setUser(fallback);
-        console.log("No stored user found — using fallback:", fallback);
         setLoadingUser(false);
         return;
       }
 
       const parsed = JSON.parse(storedRaw);
 
-      // Optional: ensure this is admin login
       if (parsed && parsed.loginType && parsed.loginType !== "admin") {
-        console.warn("Stored user is not admin — parsed.loginType:", parsed.loginType);
         setUser(null);
         setLoadingUser(false);
         return;
       }
 
-      const mapped: User = {
+      const mapped: UserType = {
         id: Number(parsed.id),
         name: parsed.name || "Admin User",
         email: parsed.email,
         role: parsed.role || "Admin",
       };
 
-      console.log("Loaded stored user:", mapped);
       setUser(mapped);
     } catch (err) {
       console.error("Error parsing stored user:", err);
-      // fallback to null or mock depending on your preference
       setUser(null);
     } finally {
       setLoadingUser(false);
     }
   }, []);
 
-  /* ---------- close dropdown on outside click ---------- */
+  /* ---------- CLOSE PROFILE DROPDOWN ON OUTSIDE CLICK ---------- */
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (avatarRef.current && !avatarRef.current.contains(e.target as Node)) {
-        setMenuOpen(false);
+        setProfileOpen(false);
       }
     }
+
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
@@ -108,10 +111,10 @@ export default function App() {
     );
   }
 
-  /* ---------- PROTECT: if no user, show minimal message ---------- */
+  /* ---------- NOT AUTHORIZED ---------- */
   if (!user) {
     return (
-      <div className="flex items-center justify-center h-screen bg-slate-50">
+      <div className="flex items-center justify-center h-screen bg-slate-50 px-4">
         <div className="text-center">
           <h2 className="text-lg font-semibold mb-2">Not authorized</h2>
           <p className="text-sm text-slate-500">No admin user found in session. Please login.</p>
@@ -133,33 +136,60 @@ export default function App() {
     { key: "videos", name: "Videos", icon: <Video size={20} /> },
   ];
 
-  const activeTabName = tabs.find(t => t.key === active)?.name || "Dashboard";
+  const activeTabName = tabs.find((t) => t.key === active)?.name || "Dashboard";
 
-  /* ---------- RENDER ---------- */
+  const handleTabChange = (key: string) => {
+    setActive(key);
+    setSidebarOpen(false);
+    setProfileOpen(false);
+  };
+
   return (
     <div className="flex h-screen bg-[#F8FAFC] text-slate-900 font-sans overflow-hidden">
+      {/* BACKDROP FOR MOBILE SIDEBAR */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 z-40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* SIDEBAR */}
-      <aside className="w-72 bg-[#0F172A] text-white flex flex-col shadow-2xl relative z-10">
-        {/* BRANDING */}
-        <div className="p-8">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
-              <Settings className="text-white" size={24} />
+      <aside
+        className={`
+          fixed lg:static z-50 top-0 left-0 h-full w-72 bg-[#0F172A] text-white flex flex-col shadow-2xl
+          transform transition-transform duration-300 ease-in-out
+          ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
+        `}
+      >
+        <div className="p-6 lg:p-8 flex-1 overflow-y-auto hide-scrollbar">
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20 shrink-0">
+                <Settings className="text-white" size={24} />
+              </div>
+              <h1 className="text-xl font-bold tracking-tight">IIM SKILLS</h1>
             </div>
-            <h1 className="text-xl font-bold tracking-tight">IIM SKILLS</h1>
+
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="lg:hidden p-2 rounded-lg hover:bg-slate-800 text-slate-300"
+              aria-label="Close sidebar"
+            >
+              <X size={20} />
+            </button>
           </div>
+
           <div className="h-px w-full bg-slate-800 my-6" />
 
           {/* USER INFO CARD */}
-          <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50 mb-8">
+          {/* <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50 mb-8">
             <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1">
               Administrator
             </p>
-            <p className="text-sm font-semibold truncate text-blue-100">
-              {user.name}
-            </p>
+            <p className="text-sm font-semibold truncate text-blue-100">{user.name}</p>
             <p className="text-xs text-slate-400 mt-1">{user.role}</p>
-          </div>
+          </div> */}
 
           {/* NAVIGATION */}
           <nav className="space-y-1.5">
@@ -168,16 +198,21 @@ export default function App() {
               return (
                 <button
                   key={tab.key}
-                  onClick={() => setActive(tab.key)}
+                  onClick={() => handleTabChange(tab.key)}
                   className={`
                     flex items-center w-full px-4 py-3 rounded-xl transition-all duration-200 group
-                    ${isActive
-                      ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20"
-                      : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                    ${
+                      isActive
+                        ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20"
+                        : "text-slate-400 hover:bg-slate-800 hover:text-white"
                     }
                   `}
                 >
-                  <span className={`${isActive ? "text-white" : "text-slate-500 group-hover:text-blue-400"} transition-colors`}>
+                  <span
+                    className={`${
+                      isActive ? "text-white" : "text-slate-500 group-hover:text-blue-400"
+                    } transition-colors`}
+                  >
                     {tab.icon}
                   </span>
                   <span className="ml-3 font-medium text-sm">{tab.name}</span>
@@ -192,41 +227,50 @@ export default function App() {
       {/* MAIN CONTENT AREA */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* TOP HEADER */}
-        <header className="h-20 bg-white border-b border-slate-200 flex items-center justify-between px-8 shrink-0">
-          <div className="flex items-center gap-4">
-            <h2 className="text-2xl font-bold text-slate-800 capitalize">
+        <header className="h-16 sm:h-20 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 lg:px-8 shrink-0">
+          <div className="flex items-center gap-3 sm:gap-4">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="lg:hidden p-2 rounded-lg hover:bg-slate-100 transition"
+              aria-label="Open sidebar"
+            >
+              <Menu size={22} />
+            </button>
+
+            <h2 className="text-lg sm:text-xl lg:text-2xl font-bold text-slate-800 capitalize">
               {activeTabName}
             </h2>
           </div>
 
-          <div className="flex items-center gap-6">
-            <div className="h-8 w-px bg-slate-200 mx-2" />
+          <div className="flex items-center gap-3 sm:gap-4">
+            <div className="h-8 w-px bg-slate-200 mx-1 sm:mx-2 hidden sm:block" />
 
             <div className="flex items-center gap-3">
+              {/* USER INFO (HIDDEN ON SMALL SCREENS) */}
               <div className="text-right hidden sm:block">
                 <p className="text-sm font-bold text-slate-800 leading-none">{user.name}</p>
                 <p className="text-xs text-slate-500 mt-1">{user.role}</p>
               </div>
 
-              {/* Avatar + dropdown */}
+              {/* AVATAR + DROPDOWN */}
               <div ref={avatarRef} className="relative">
                 <button
-                  onClick={() => setMenuOpen((v) => !v)}
+                  onClick={() => setProfileOpen((v) => !v)}
                   aria-haspopup="true"
-                  aria-expanded={menuOpen}
-                  className="h-10 w-10 rounded-full flex items-center justify-center text-white font-bold shadow-md focus:outline-none bg-gradient-to-tr from-blue-600 to-indigo-600"
+                  aria-expanded={profileOpen}
+                  className="h-9 w-9 sm:h-10 sm:w-10 rounded-full flex items-center justify-center text-white font-bold shadow-md focus:outline-none bg-gradient-to-tr from-blue-600 to-indigo-600"
                 >
                   {user.name.charAt(0)}
                 </button>
 
-                {menuOpen && (
-                  <div className="absolute right-0 mt-2 w-44 bg-white rounded-lg shadow-lg border ring-1 ring-black/5 z-20">
+                {profileOpen && (
+                  <div className="absolute right-0 mt-2 w-44 bg-white rounded-lg shadow-lg border ring-1 ring-black/5 z-20 overflow-hidden">
                     <button
                       onClick={() => {
                         setActive("profile");
-                        setMenuOpen(false);
+                        setProfileOpen(false);
                       }}
-                      className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-slate-50 rounded-t-lg"
+                      className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-slate-50"
                     >
                       <User2 size={16} className="text-slate-600" />
                       <div>
@@ -243,7 +287,7 @@ export default function App() {
                         localStorage.removeItem("user");
                         window.location.href = "/";
                       }}
-                      className="w-full text-left px-4 py-3 flex items-center gap-3 text-red-500 hover:bg-slate-50 rounded-b-lg"
+                      className="w-full text-left px-4 py-3 flex items-center gap-3 text-red-500 hover:bg-slate-50"
                     >
                       <LogOut size={16} />
                       <div className="text-sm font-medium">Logout</div>
@@ -256,7 +300,7 @@ export default function App() {
         </header>
 
         {/* PAGE CONTENT CONTAINER */}
-        <main className="flex-1 p-8 overflow-y-auto custom-scrollbar">
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto custom-scrollbar">
           <div className="max-w-6xl mx-auto">
             {active === "dashboard" && <DashboardHome />}
             {active === "coupon" && <CouponPage />}
@@ -266,7 +310,6 @@ export default function App() {
             {active === "videos" && <Videos />}
             {active === "profile" && <ProfilePage />}
 
-            {/* IMPORTANT: only render Users when `user` exists to avoid undefined prop */}
             {active === "users" && user && <Users currentUser={user} />}
 
             {active === "course" && <Course />}
@@ -279,6 +322,15 @@ export default function App() {
         .custom-scrollbar::-webkit-scrollbar {
           width: 6px;
         }
+
+        .hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.hide-scrollbar {
+  -ms-overflow-style: none;  /* IE/Edge */
+  scrollbar-width: none;     /* Firefox */
+}
         .custom-scrollbar::-webkit-scrollbar-track {
           background: transparent;
         }

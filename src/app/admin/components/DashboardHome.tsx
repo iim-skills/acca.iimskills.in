@@ -11,22 +11,24 @@ import {
   Cell,
   Area,
   AreaChart,
+  PieChart,
+  Pie,
 } from "recharts";
-import { 
-  BookOpen, 
-  Users, 
-  FileQuestion, 
-  Video, 
-  Layers, 
-  Ticket, 
-  Calendar, 
+import {
+  BookOpen,
+  Users,
+  FileQuestion,
+  Video,
+  Layers,
+  Ticket,
+  Calendar,
   LayoutDashboard,
   CheckCircle2,
   Clock,
-  AlertCircle
+  AlertCircle,
 } from "lucide-react";
 
-// Types derived from your implementation
+/* ================= TYPES ================= */
 type Stats = {
   courses?: { totalCourses?: number } | null;
   batches?: {
@@ -68,10 +70,12 @@ export default function App() {
 
   if (!stats) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-gray-500 font-medium animate-pulse">Initializing Dashboard...</p>
+      <div className="flex items-center justify-center min-h-screen bg-gray-50 px-4">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+          <p className="text-gray-500 font-medium animate-pulse">
+            Initializing Dashboard...
+          </p>
         </div>
       </div>
     );
@@ -92,7 +96,7 @@ export default function App() {
   const filledSlots = stats.mentorSlots?.filledSlots ?? 0;
   const availableSlots = Math.max(0, totalSlots - filledSlots);
 
-  /* ================= CHART CONFIGS ================= */
+  /* ================= CHART DATA ================= */
   const batchChart = [
     { name: "Active", value: activeBatches, color: "#3b82f6" },
     { name: "Upcoming", value: upcomingBatches, color: "#60a5fa" },
@@ -109,143 +113,221 @@ export default function App() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] p-4 md:p-8 text-slate-900">
-      <div className="max-w-7xl mx-auto space-y-8">
-        
+    <div className="min-h-screen bg-[#F8FAFC] px-3 py-4 sm:px-6 sm:py-6 lg:p-8 text-slate-900">
+      <div className="max-w-7xl mx-auto space-y-6 sm:space-y-8">
         {/* Header Section */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-4 sm:pb-6">
           <div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 flex items-center gap-3">
-              <div className="p-2 bg-blue-600 rounded-lg text-white">
-                <LayoutDashboard size={28} />
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-extrabold tracking-tight text-slate-900 flex items-center gap-3">
+              <div className="p-2 bg-blue-600 rounded-lg text-white shrink-0">
+                <LayoutDashboard size={24} className="sm:w-7 sm:h-7" />
               </div>
-              Admin Analytics
+              <span>Admin Analytics</span>
             </h1>
-            <p className="text-slate-500 mt-1">Real-time overview of your platform's performance.</p>
+            <p className="text-sm sm:text-base text-slate-500 mt-2">
+              Real-time overview of your platform&apos;s performance.
+            </p>
           </div>
-          <div className="flex items-center gap-2 text-sm font-medium text-slate-500 bg-white px-4 py-2 rounded-full shadow-sm border border-slate-100">
-            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+
+          <div className="flex items-center gap-2 text-xs sm:text-sm font-medium text-slate-500 bg-white px-3 sm:px-4 py-2 rounded-full shadow-sm border border-slate-100 w-fit">
+            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
             Live System Status
           </div>
         </div>
 
         {/* ================= PRIMARY STATS ================= */}
         <section>
-          <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Core Metrics</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard title="Total Courses" value={totalCourses} icon={<BookOpen />} color="blue" />
-            <StatCard title="Active Students" value={totalStudents} icon={<Users />} color="purple" />
-            <StatCard title="Assessments" value={totalQuiz} icon={<FileQuestion />} color="emerald" />
-            <StatCard title="Video Library" value={totalVideos} icon={<Video />} color="rose" />
+          <h2 className="text-xs sm:text-sm font-bold text-slate-400 uppercase tracking-wider mb-3 sm:mb-4">
+            Core Metrics
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            <StatCard
+              title="Total Courses"
+              value={totalCourses}
+              icon={<BookOpen />}
+              color="blue"
+            />
+            <StatCard
+              title="Active Students"
+              value={totalStudents}
+              icon={<Users />}
+              color="purple"
+            />
+            <StatCard
+              title="Assessments"
+              value={totalQuiz}
+              icon={<FileQuestion />}
+              color="emerald"
+            />
+            <StatCard
+              title="Video Library"
+              value={totalVideos}
+              icon={<Video />}
+              color="rose"
+            />
           </div>
         </section>
 
         {/* ================= SECONDARY STATS ================= */}
-        <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* Detailed Batch Metrics */}
-          <div className="lg:col-span-3 space-y-4">
-             <h2 className="text-sm font-bold text-slate-400 uppercase tracking-wider">Batch & Revenue Management</h2>
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <StatCard title="Total Batches" value={totalBatches} icon={<Layers />} color="slate" variant="compact" />
-                <StatCard title="Active Batches" value={activeBatches} icon={<CheckCircle2 />} color="blue" variant="compact" />
-                <StatCard title="Upcoming" value={upcomingBatches} icon={<Clock />} color="sky" variant="compact" />
-                <StatCard title="Total Coupons" value={totalCoupons} icon={<Ticket />} color="indigo" variant="compact" />
-                <StatCard title="Active Coupons" value={activeCoupons} icon={<CheckCircle2 />} color="emerald" variant="compact" />
-                <StatCard title="Mentor Allocation" value={`${filledSlots}/${totalSlots}`} icon={<Calendar />} color="amber" variant="compact" />
-             </div>
+        <section className="space-y-4">
+          <h2 className="text-xs sm:text-sm font-bold text-slate-400 uppercase tracking-wider">
+            Batch & Revenue Management
+          </h2>
 
-             {/* Main Chart Area */}
-             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-2">
-  
-  {/* Batch Distribution - Area Chart */}
-  <ChartCard title="Batch Distribution" subtitle="Active vs Upcoming Batches">
-    <AreaChart data={batchChart} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-      <defs>
-        <linearGradient id="colorBatch" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-        </linearGradient>
-      </defs>
-      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} dy={10} />
-      <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
-      <Tooltip 
-        contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}} 
-      />
-      <Area 
-        type="monotone" 
-        dataKey="value" 
-        stroke="#3b82f6" 
-        strokeWidth={3}
-        fillOpacity={1} 
-        fill="url(#colorBatch)" 
-        dot={{ r: 4, fill: "#3b82f6", strokeWidth: 2, stroke: "#fff" }}
-        activeDot={{ r: 6, strokeWidth: 0 }}
-      />
-    </AreaChart>
-  </ChartCard>
-
-  {/* Coupon Efficiency - Area Chart (Emerald Variation) */}
-  <ChartCard title="Coupon Efficiency" subtitle="Usage and availability status">
-    <AreaChart data={couponChart} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-      <defs>
-        <linearGradient id="colorCoupon" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-          <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-        </linearGradient>
-      </defs>
-      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} dy={10} />
-      <YAxis axisLine={false} tickLine={false} tick={{fill: '#64748b', fontSize: 12}} />
-      <Tooltip 
-        contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}} 
-      />
-      <Area 
-        type="monotone" 
-        dataKey="value" 
-        stroke="#10b981" 
-        strokeWidth={3}
-        fillOpacity={1} 
-        fill="url(#colorCoupon)" 
-        dot={{ r: 4, fill: "#10b981", strokeWidth: 2, stroke: "#fff" }}
-      />
-    </AreaChart>
-  </ChartCard>
-
-  {/* Mentor Slots - Capsule Design */}
-  <ChartCard title="Mentor Slots" subtitle="Session capacity tracking">
-    <div className="flex flex-col h-full">
-      <div className="flex-1 flex flex-col justify-center px-4">
-        {mentorChart.map((item, idx) => (
-          <div key={idx} className="mb-8 last:mb-0">
-            <div className="flex justify-between items-end mb-2">
-              <span className="text-sm font-bold text-slate-700">{item.name}</span>
-              <span className="text-sm font-medium text-slate-500">{item.value} Slots</span>
-            </div>
-            <div className="w-full h-4 bg-slate-100 rounded-full overflow-hidden">
-              <div 
-                className="h-full rounded-full transition-all duration-1000 ease-out"
-                style={{ 
-                  width: `${(item.value / totalSlots) * 100}%`, 
-                  backgroundColor: item.color,
-                  boxShadow: `0 0 12px ${item.color}40`
-                }}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-      
-     
-    </div>
-  </ChartCard>
-</div>
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+            <StatCard
+              title="Total Batches"
+              value={totalBatches}
+              icon={<Layers />}
+              color="slate"
+              variant="compact"
+            />
+            <StatCard
+              title="Active Batches"
+              value={activeBatches}
+              icon={<CheckCircle2 />}
+              color="blue"
+              variant="compact"
+            />
+            <StatCard
+              title="Upcoming"
+              value={upcomingBatches}
+              icon={<Clock />}
+              color="sky"
+              variant="compact"
+            />
+            <StatCard
+              title="Total Coupons"
+              value={totalCoupons}
+              icon={<Ticket />}
+              color="indigo"
+              variant="compact"
+            />
+            <StatCard
+              title="Active Coupons"
+              value={activeCoupons}
+              icon={<CheckCircle2 />}
+              color="emerald"
+              variant="compact"
+            />
+            <StatCard
+              title="Mentor Allocation"
+              value={`${filledSlots}/${totalSlots}`}
+              icon={<Calendar />}
+              color="amber"
+              variant="compact"
+            />
           </div>
 
-          {/* Side Panel Chart */}
-          
+          {/* Main Chart Area */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 pt-2">
+            {/* Batch Distribution */}
+            <ChartCard title="Batch Distribution" subtitle="Active vs Upcoming Batches">
+              <AreaChart data={batchChart} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorBatch" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis
+                  dataKey="name"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: "#64748b", fontSize: 12 }}
+                  dy={10}
+                />
+                <YAxis axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
+                <Tooltip
+                  contentStyle={{
+                    borderRadius: "12px",
+                    border: "none",
+                    boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)",
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="value"
+                  stroke="#3b82f6"
+                  strokeWidth={3}
+                  fillOpacity={1}
+                  fill="url(#colorBatch)"
+                  dot={{ r: 4, fill: "#3b82f6", strokeWidth: 2, stroke: "#fff" }}
+                  activeDot={{ r: 6, strokeWidth: 0 }}
+                />
+              </AreaChart>
+            </ChartCard>
 
+            {/* Coupon Efficiency */}
+            <ChartCard title="Coupon Efficiency" subtitle="Usage and availability status">
+              <AreaChart data={couponChart} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorCoupon" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis
+                  dataKey="name"
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fill: "#64748b", fontSize: 12 }}
+                  dy={10}
+                />
+                <YAxis axisLine={false} tickLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
+                <Tooltip
+                  contentStyle={{
+                    borderRadius: "12px",
+                    border: "none",
+                    boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)",
+                  }}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="value"
+                  stroke="#10b981"
+                  strokeWidth={3}
+                  fillOpacity={1}
+                  fill="url(#colorCoupon)"
+                  dot={{ r: 4, fill: "#10b981", strokeWidth: 2, stroke: "#fff" }}
+                />
+              </AreaChart>
+            </ChartCard>
+
+            {/* Mentor Slots */}
+            <ChartCard title="Mentor Slots" subtitle="Session capacity tracking">
+              <div className="flex flex-col h-full">
+                <div className="flex-1 flex flex-col justify-center px-2 sm:px-4">
+                  {mentorChart.map((item, idx) => {
+                    const percent = totalSlots ? (item.value / totalSlots) * 100 : 0;
+
+                    return (
+                      <div key={idx} className="mb-6 sm:mb-8 last:mb-0">
+                        <div className="flex justify-between items-end mb-2">
+                          <span className="text-sm font-bold text-slate-700">{item.name}</span>
+                          <span className="text-sm font-medium text-slate-500">
+                            {item.value} Slots
+                          </span>
+                        </div>
+                        <div className="w-full h-3 sm:h-4 bg-slate-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-1000 ease-out"
+                            style={{
+                              width: `${percent}%`,
+                              backgroundColor: item.color,
+                              boxShadow: `0 0 12px ${item.color}40`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </ChartCard>
+          </div>
         </section>
       </div>
     </div>
@@ -258,20 +340,19 @@ function ChartCard({
   title,
   subtitle,
   children,
-  height = 300
 }: {
   title: string;
   subtitle?: string;
   children: React.ReactElement;
-  height?: number;
 }) {
   return (
-    <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 transition-all hover:shadow-md">
-      <div className="mb-6">
-        <h3 className="text-lg font-bold text-slate-800">{title}</h3>
-        {subtitle && <p className="text-sm text-slate-500">{subtitle}</p>}
+    <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-4 sm:p-6 transition-all hover:shadow-md">
+      <div className="mb-5 sm:mb-6">
+        <h3 className="text-base sm:text-lg font-bold text-slate-800">{title}</h3>
+        {subtitle && <p className="text-sm text-slate-500 mt-1">{subtitle}</p>}
       </div>
-      <div style={{ height: height - 80 }}>
+
+      <div className="h-[220px] sm:h-[240px] lg:h-[260px]">
         <ResponsiveContainer width="100%" height="100%">
           {children}
         </ResponsiveContainer>
@@ -298,7 +379,7 @@ function StatCard({
   value,
   icon,
   color = "blue",
-  variant = "default"
+  variant = "default",
 }: {
   title: string;
   value: number | string;
@@ -311,30 +392,40 @@ function StatCard({
   if (variant === "compact") {
     return (
       <div className="bg-white border border-slate-100 shadow-sm rounded-xl p-4 flex items-center gap-4 transition-transform hover:-translate-y-1">
-        <div className={`p-2 rounded-lg ${styles.bg} ${styles.text}`}>
+        <div className={`p-2 rounded-lg ${styles.bg} ${styles.text} shrink-0`}>
           {React.cloneElement(icon as React.ReactElement, { size: 20 } as any)}
         </div>
-        <div>
-          <p className="text-xs font-medium text-slate-400 truncate uppercase tracking-tight">{title}</p>
-          <p className="text-lg font-bold text-slate-800">{value}</p>
+        <div className="min-w-0">
+          <p className="text-[10px] sm:text-xs font-medium text-slate-400 truncate uppercase tracking-tight">
+            {title}
+          </p>
+          <p className="text-base sm:text-lg font-bold text-slate-800 truncate">{value}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-6 transition-all hover:shadow-lg group">
-      <div className="flex items-start justify-between">
-        <div>
+    <div className="bg-white border border-slate-200 shadow-sm rounded-2xl p-5 sm:p-6 transition-all hover:shadow-lg group">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
           <p className="text-sm font-semibold text-slate-500 mb-1">{title}</p>
-          <h3 className="text-3xl font-black text-slate-900 tracking-tight">{value}</h3>
+          <h3 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight truncate">
+            {value}
+          </h3>
         </div>
-        <div className={`p-3 rounded-xl transition-colors ${styles.bg} ${styles.text} group-hover:${styles.icon} group-hover:text-white`}>
+
+        <div
+          className={`p-3 rounded-xl transition-colors ${styles.bg} ${styles.text} group-hover:${styles.icon} group-hover:text-white shrink-0`}
+        >
           {React.cloneElement(icon as React.ReactElement, { size: 24 } as any)}
         </div>
       </div>
+
       <div className="mt-4 flex items-center gap-2">
-        <span className="text-[10px] font-bold py-0.5 px-2 bg-slate-100 text-slate-500 rounded uppercase">Updated Now</span>
+        <span className="text-[10px] font-bold py-0.5 px-2 bg-slate-100 text-slate-500 rounded uppercase">
+          Updated Now
+        </span>
       </div>
     </div>
   );
