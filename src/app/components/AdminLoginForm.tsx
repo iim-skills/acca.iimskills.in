@@ -56,7 +56,7 @@ export default function AdminLoginForm(): React.ReactElement {
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       {error && (
-        <div className="p-3 rounded-lg bg-red-50 border border-red-100 text-red-600 text-xs font-medium">
+        <div className="p-3 rounded-lg bg-red-50 border border-red-300 text-red-600 text-xs font-medium">
           {error}
         </div>
       )}
@@ -67,7 +67,7 @@ export default function AdminLoginForm(): React.ReactElement {
           <input
             type="email"
             required
-            className="w-full bg-slate-50 border border-slate-100 rounded-xl py-3.5 pl-12 pr-4 text-slate-900"
+            className="w-full bg-slate-50 border border-slate-300 rounded-xl py-3.5 pl-12 pr-4 text-slate-900"
             placeholder="Email Address"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -81,7 +81,7 @@ export default function AdminLoginForm(): React.ReactElement {
           <input
             type={showPassword ? "text" : "password"}
             required
-            className="w-full bg-slate-50 border border-slate-100 rounded-xl py-3.5 pl-12 pr-12 text-slate-900"
+            className="w-full bg-slate-50 border border-slate-300 rounded-xl py-3.5 pl-12 pr-12 text-slate-900"
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}

@@ -2,7 +2,7 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
-import QuizCreator from "./QuizCreator";
+import QuizCreator from "../quizzes/create/page";
 
 interface Props {
   isOpen: boolean;

@@ -48,11 +48,11 @@ export default function CoursePage() {
 
     fetch(`/api/student/me?slug=${slug}`, {
       headers: {
-        "x-user-email": user.email
-      }
+        "x-user-email": user.email,
+      },
     })
-      .then(res => res.json())
-      .then(data => {
+      .then((res) => res.json())
+      .then((data) => {
         setStudent(data);
       });
   }, [router, slug]);
@@ -60,8 +60,8 @@ export default function CoursePage() {
   /* ================= COURSE ================= */
   useEffect(() => {
     fetch(`/api/student/course/course-details?slug=${slug}`)
-      .then(res => res.json())
-      .then(data => {
+      .then((res) => res.json())
+      .then((data) => {
         setCourse(data.course);
       });
   }, [slug]);
@@ -102,24 +102,36 @@ export default function CoursePage() {
       />
 
       {/* MAIN GRID */}
-      {/* Mobile-first: RightPanel will be order-first & sticky;
-          Modules will be order-last (so they appear below).
-          On lg: breakpoint restore original grid columns & ordering */}
-      <div className="max-w-7xl mx-auto md:px-6 py-8 grid grid-cols-12 gap-15">
+      <div className="max-w-7xl mx-auto md:px-6 py-8 grid grid-cols-12 gap-6">
 
-        {/* RIGHT SIDE (Player + Quiz) - mobile: top & sticky */}
+        {/* LEFT SIDE (Modules) */}
+        {/* Mobile: bottom | Desktop: left */}
+        <div className="col-span-12 order-last lg:order-first lg:col-span-5 xl:col-span-5">
+          <CourseModules
+            course={course}
+            allowedModules={student.modules}
+            progress={student.progress}
+            onPlayVideo={(url, title, moduleId) =>
+              handlePlayVideo(url, title, moduleId)
+            }
+            onOpenQuiz={handleOpenQuiz}
+          />
+        </div>
+
+        {/* RIGHT SIDE (Player + Quiz) */}
+        {/* Mobile: top | Desktop: right */}
         <div
-  className="
-    col-span-12
-    order-first
-    sticky top-4 z-20 bg-white
-    lg:order-none lg:col-span-7 xl:col-span-7
-    h-fit
-    rounded-xl
-    shadow-sm
-    p-0
-  "
->
+          className="
+            col-span-12
+            order-first
+            lg:order-last lg:col-span-7 xl:col-span-7
+            lg:sticky lg:top-4
+            h-fit
+            rounded-xl
+            shadow-sm
+            bg-white
+          "
+        >
           <RightPanel
             course={course}
             student={student}
@@ -132,19 +144,6 @@ export default function CoursePage() {
               handlePlayVideo(url, title, moduleId)
             }
             QuizPanel={require("@/components/Students/QuizPanel").default}
-          />
-        </div>
-
-        {/* LEFT SIDE (Modules) - mobile: below right panel */}
-        <div className="col-span-12 order-last lg:order-none lg:col-span-5 xl:col-span-5">
-          <CourseModules
-            course={course}
-            allowedModules={student.modules}
-            progress={student.progress}
-            onPlayVideo={(url, title, moduleId) =>
-              handlePlayVideo(url, title, moduleId)
-            }
-            onOpenQuiz={handleOpenQuiz}
           />
         </div>
 

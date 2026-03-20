@@ -11,7 +11,6 @@ type LoginType = "admin" | "student";
 export default function App(): React.ReactElement {
   const [loginType, setLoginType] = useState<LoginType>("admin");
 
-  // ⭐ FREE LOGIN STATES
   const [showFreeLogin, setShowFreeLogin] = useState(false);
   const [freeEmail, setFreeEmail] = useState("");
   const [loadingFree, setLoadingFree] = useState(false);
@@ -44,25 +43,16 @@ export default function App(): React.ReactElement {
       const data = await res.json();
 
       if (!res.ok || data?.error) {
-        const msg = data?.error || `Server returned ${res.status}`;
-        setFreeError(String(msg));
+        setFreeError(data?.error || "Something went wrong");
         setLoadingFree(false);
         return;
       }
 
-      // Save session locally
-      try {
-        localStorage.setItem("user", JSON.stringify(data));
-        localStorage.setItem("course_user_key", String(data.email ?? cleanEmail));
-      } catch (err) {
-        console.warn("localStorage error:", err);
-      }
+      localStorage.setItem("user", JSON.stringify(data));
+      localStorage.setItem("course_user_key", String(data.email ?? cleanEmail));
 
-      // Navigate to dashboard
-      // prefer router.push to avoid full reload
       router.push("/student");
     } catch (err) {
-      console.error("Free login request failed:", err);
       setFreeError("Network error, please try again.");
     } finally {
       setLoadingFree(false);
@@ -70,97 +60,103 @@ export default function App(): React.ReactElement {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center p-4 bg-gradient-to-br from-[#b8c1ec] via-[#dff9fb] to-[#c56cf0]/20 font-sans">
-      <div className="w-full max-w-4xl bg-white rounded-[2rem] overflow-hidden shadow-2xl flex flex-col md:flex-row min-h-[550px]">
+    <div className="min-h-screen flex bg-[#f8f8fb]">
 
-        {/* LEFT SIDE */}
-        <div className="w-full md:w-[45%] bg-gradient-to-b from-[#1e3799] to-[#0c2461] p-10 flex flex-col justify-between text-white relative">
-          <div>
-            <div className="flex items-center gap-2 mb-12">
-              <div className="bg-white/20 p-2 rounded-lg backdrop-blur-md">
-                <BookOpen className="text-white w-6 h-6" />
-              </div>
-              <span className="text-xl font-bold tracking-tight">ACCA IIM SKILLS</span>
-            </div>
+      {/* LEFT SIDE */}
+      <div className="hidden md:flex w-1/2 bg-[#f3eaea] items-center justify-center p-10">
+        <div className="text-center max-w-sm">
+          <img
+            src="https://cdn-icons-png.flaticon.com/512/295/295128.png"
+            alt="illustration"
+            className="w-64 mx-auto mb-8 opacity-90"
+          />
 
-            <h1 className="text-4xl font-extrabold leading-tight">
-              ACCA Professional <br /> Education
-            </h1>
+          <h1 className="text-3xl font-bold text-gray-800 mb-3">
+            ACCA Professional Education
+          </h1>
 
-            <p className="text-blue-100/70 text-sm mt-4 max-w-[250px]">
-              Access your professional finance & accounting journey and manage your learning progress with ease.
-            </p>
-          </div>
+          <p className="text-gray-500 text-sm leading-relaxed">
+            Access your professional finance & accounting journey and manage your learning progress with ease.
+          </p>
         </div>
+      </div>
 
-        {/* RIGHT SIDE */}
-        <div className="w-full md:w-[55%] p-8 md:p-12 flex flex-col justify-center bg-white">
-
-          {/* LOGIN SWITCH */}
-          <div className="mb-8">
-            <div className="flex p-1 bg-slate-100 rounded-xl mb-6">
+      {/* RIGHT SIDE */}
+      <div className="w-full md:w-1/2 flex items-center justify-center p-6">
+    <div className="w-full md:w-[]70%] p-8 md:p-16 flex flex-col justify-center">
+             <div className="flex items-center gap-2 mb-10">
+              <div className="bg-[#6c5ce7] text-white p-2 rounded-md">
+                <BookOpen size={18} />
+              </div>
+              <span className="text-3xl font-bold text-[#6c5ce7]">
+                ACCA <span className="text-xs text-red-500">LMS</span>
+              </span>
+            </div>
+ 
+          {/* LOGIN SWITCH: Minimalist style */}
+          <div className="mb-10">
+            <div className="flex p-1 bg-gray-100 rounded-xl mb-8">
               <button
                 onClick={() => setLoginType("admin")}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 text-sm font-bold rounded-lg ${
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-bold rounded-lg transition-all ${
                   loginType === "admin"
-                    ? "bg-white text-[#1e3799] shadow-sm"
-                    : "text-slate-500"
+                    ? "bg-white text-[#404eed] shadow-md"
+                    : "text-gray-500 hover:text-gray-700"
                 }`}
               >
-                <User size={16} /> Admin
+                <User size={14} /> ADMIN
               </button>
 
               <button
                 onClick={() => setLoginType("student")}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 text-sm font-bold rounded-lg ${
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-bold rounded-lg transition-all ${
                   loginType === "student"
-                    ? "bg-white text-[#1e3799] shadow-sm"
-                    : "text-slate-500"
+                    ? "bg-white text-[#404eed] shadow-md"
+                    : "text-gray-500 hover:text-gray-700"
                 }`}
               >
-                <GraduationCap size={16} /> Student
+                <GraduationCap size={14} /> STUDENT
               </button>
             </div>
 
-            <h2 className="text-2xl font-bold text-slate-800">
+            <h2 className="text-3xl font-bold text-gray-900 tracking-tight">
               {loginType === "admin" ? "Admin Login" : "Student Login"}
             </h2>
-            <p className="text-slate-400 text-sm mt-1">
-              Please enter your credentials to proceed
+            <p className="text-gray-500 text-sm mt-2">
+              Enter your details to access your account.
             </p>
           </div>
 
           {/* FORMS */}
-          <div className="space-y-5">
+          <div className="space-y-6">
             {loginType === "admin" ? <AdminLoginForm /> : <StudentLoginForm />}
 
-            {/* ⭐ FREE LOGIN SECTION */}
-            <div className="pt-0 border-t border-slate-100">
+            {/* ⭐ FREE LOGIN SECTION: Updated to match theme colors */}
+            <div className="pt-4 border-t border-gray-100">
 
-              {/* MAIN BUTTON */}
               {!showFreeLogin && (
                 <button
                   onClick={() => {
                     setFreeError(null);
                     setShowFreeLogin(true);
                   }}
-                  className="text-gray-700 text-sm font-semibold hover:underline transition"
+                  className="text-gray-500 text-sm font-medium hover:text-[#404eed] transition flex items-center gap-2"
                 >
-                  🚀 Continue with <span className="text-blue-700">Free Email Login</span>
+                  <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+                  Try with <span className="font-bold">Free Email Access</span>
                 </button>
               )}
 
-              {/* EMAIL INPUT APPEARS HERE */}
               {showFreeLogin && (
-                <div className="space-y-3">
+                <div className="space-y-4 mt-2">
                   <div className="relative">
-                    <Mail size={16} className="absolute left-3 top-3 text-slate-400" />
+                    <Mail size={18} className="absolute left-4 top-3.5 text-gray-400" />
                     <input
                       type="email"
-                      placeholder="Enter your email"
+                      placeholder="name@company.com"
                       value={freeEmail}
                       onChange={(e) => setFreeEmail(e.target.value)}
-                      className="w-full pl-9 pr-3 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      className="w-full pl-11 pr-4 py-3.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#404eed]/20 focus:border-[#404eed] transition-all bg-gray-50"
                       disabled={loadingFree}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") handleFreeLoginSubmit();
@@ -168,26 +164,24 @@ export default function App(): React.ReactElement {
                     />
                   </div>
 
-                  {freeError && <div className="text-sm text-rose-600">{freeError}</div>}
+                  {freeError && <div className="text-xs font-medium text-red-500 ml-1">{freeError}</div>}
 
                   <button
                     onClick={handleFreeLoginSubmit}
-                    className="w-full py-3 rounded-xl text-sm font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition flex items-center justify-center gap-2"
+                    className="w-full py-4 rounded-xl text-sm font-bold bg-[#404eed] text-white hover:bg-[#2d38be] shadow-lg shadow-blue-200 transition-all flex items-center justify-center gap-2"
                     disabled={loadingFree}
                   >
                     {loadingFree ? (
                       <>
-                        <Loader2 className="animate-spin" size={16} /> Processing...
+                        <Loader2 className="animate-spin" size={18} /> Validating...
                       </>
                     ) : (
-                      "Continue Free"
+                      "Continue to Dashboard"
                     )}
                   </button>
                 </div>
               )}
-
             </div>
-
           </div>
         </div>
       </div>

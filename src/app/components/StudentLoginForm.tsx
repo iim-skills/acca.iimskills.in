@@ -128,7 +128,7 @@ export default function StudentLoginForm(): React.ReactElement {
         <input
           type="email"
           required
-          className="w-full bg-slate-50 border border-slate-100 rounded-xl py-3.5 pl-12 pr-4 text-slate-900"
+          className="w-full bg-slate-50 border border-slate-300 rounded-xl py-3.5 pl-12 pr-4 text-slate-900"
           placeholder="Email Address"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -142,7 +142,7 @@ export default function StudentLoginForm(): React.ReactElement {
         <input
           type={showPassword ? "text" : "password"}
           required
-          className="w-full bg-slate-50 border border-slate-100 rounded-xl py-3.5 pl-12 pr-12 text-slate-900"
+          className="w-full bg-slate-50 border border-slate-300 rounded-xl py-3.5 pl-12 pr-12 text-slate-900"
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
