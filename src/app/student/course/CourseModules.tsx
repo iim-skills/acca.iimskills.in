@@ -831,12 +831,24 @@ export default function CourseModules({
 
     <div className="ml-auto">
       <button
-        onClick={() => router.push("/enroll")}
-        type="button"
-        className="px-3 py-2 bg-amber-500 text-white text-sm font-semibold rounded-md hover:bg-amber-600"
-      >
-        Upgrade Your Access
-      </button>
+      className="px-3 py-2 bg-amber-500 text-white text-sm font-semibold rounded-md hover:bg-amber-600"
+    onClick={() => {
+      const slug = course?.slug || "";
+      const name = course?.name || "";
+
+      const courseMap: Record<string, string> = {
+        "acca-applied-knowledge": "acca-applied-knowledge",
+        "acca-applied-skill": "acca-applied-skills-level",
+        "acca-strategic-professional": "acca-professional-level",
+      };
+
+      const courseKey = courseMap[slug] || "acca-applied-skills-level";
+
+      router.push(`/enroll?course=${courseKey}&type=expert&name=${encodeURIComponent(name)}`);
+    }}
+  >
+    Upgrade Your Access
+  </button>
     </div>
 
   )}

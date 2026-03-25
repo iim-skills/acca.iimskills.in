@@ -1,7 +1,13 @@
 "use client";
 
 import React, { useState } from "react";
-import { BookOpen, User, GraduationCap, Mail, Loader2 } from "lucide-react";
+import {
+  BookOpen,
+  User,
+  GraduationCap,
+  Mail,
+  Loader2,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import AdminLoginForm from "@/components/AdminLoginForm";
 import StudentLoginForm from "@/components/StudentLoginForm";
@@ -10,7 +16,6 @@ type LoginType = "admin" | "student";
 
 export default function App(): React.ReactElement {
   const [loginType, setLoginType] = useState<LoginType>("admin");
-
   const [showFreeLogin, setShowFreeLogin] = useState(false);
   const [freeEmail, setFreeEmail] = useState("");
   const [loadingFree, setLoadingFree] = useState(false);
@@ -20,12 +25,14 @@ export default function App(): React.ReactElement {
 
   const handleFreeLoginSubmit = async () => {
     setFreeError(null);
+
     const cleanEmail = freeEmail.trim().toLowerCase();
 
     if (!cleanEmail) {
       setFreeError("Please enter your email.");
       return;
     }
+
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       setFreeError("Please enter a valid email address.");
       return;
@@ -44,7 +51,6 @@ export default function App(): React.ReactElement {
 
       if (!res.ok || data?.error) {
         setFreeError(data?.error || "Something went wrong");
-        setLoadingFree(false);
         return;
       }
 
@@ -53,6 +59,7 @@ export default function App(): React.ReactElement {
 
       router.push("/student");
     } catch (err) {
+      console.error(err);
       setFreeError("Network error, please try again.");
     } finally {
       setLoadingFree(false);
@@ -61,7 +68,6 @@ export default function App(): React.ReactElement {
 
   return (
     <div className="min-h-screen flex bg-[#f8f8fb]">
-
       {/* LEFT SIDE */}
       <div className="hidden md:flex w-1/2 bg-[#f3eaea] items-center justify-center p-10">
         <div className="text-center max-w-sm">
@@ -83,17 +89,17 @@ export default function App(): React.ReactElement {
 
       {/* RIGHT SIDE */}
       <div className="w-full md:w-1/2 flex items-center justify-center p-6">
-    <div className="w-full md:w-[]70%] p-8 md:p-16 flex flex-col justify-center">
-             <div className="flex items-center gap-2 mb-10">
-              <div className="bg-[#6c5ce7] text-white p-2 rounded-md">
-                <BookOpen size={18} />
-              </div>
-              <span className="text-3xl font-bold text-[#6c5ce7]">
-                ACCA <span className="text-xs text-red-500">LMS</span>
-              </span>
+        <div className="w-full md:w-[70%] p-8 md:p-16 flex flex-col justify-center">
+          <div className="flex items-center gap-2 mb-10">
+            <div className="bg-[#6c5ce7] text-white p-2 rounded-md">
+              <BookOpen size={18} />
             </div>
- 
-          {/* LOGIN SWITCH: Minimalist style */}
+            <span className="text-3xl font-bold text-[#6c5ce7]">
+              ACCA <span className="text-xs text-red-500">LMS</span>
+            </span>
+          </div>
+
+          {/* LOGIN SWITCH */}
           <div className="mb-10">
             <div className="flex p-1 bg-gray-100 rounded-xl mb-8">
               <button
@@ -131,9 +137,8 @@ export default function App(): React.ReactElement {
           <div className="space-y-6">
             {loginType === "admin" ? <AdminLoginForm /> : <StudentLoginForm />}
 
-            {/* ⭐ FREE LOGIN SECTION: Updated to match theme colors */}
+            {/* FREE LOGIN SECTION */}
             <div className="pt-4 border-t border-gray-100">
-
               {!showFreeLogin && (
                 <button
                   onClick={() => {
@@ -164,7 +169,11 @@ export default function App(): React.ReactElement {
                     />
                   </div>
 
-                  {freeError && <div className="text-xs font-medium text-red-500 ml-1">{freeError}</div>}
+                  {freeError && (
+                    <div className="text-xs font-medium text-red-500 ml-1">
+                      {freeError}
+                    </div>
+                  )}
 
                   <button
                     onClick={handleFreeLoginSubmit}

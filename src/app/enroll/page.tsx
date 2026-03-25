@@ -1,36 +1,33 @@
 "use client";
- 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+
+import { useEffect, useState } from "react";
 import PhoneInput from "react-phone-input-2";
 import "react-phone-input-2/lib/style.css";
 import axios from "axios";
 import { FaHandPointRight } from "react-icons/fa";
 
 const courseDetails = {
-aak: {
-    title: "ACCA Applied Knowledge",
-    url: "aak",
+  aak: {
+    title: "ACCA ",
+    url: "acca-applied-knowledge",
     programs: {
-      expert: { name: "Expert Program", fee: 49900 },     
+      expert: { name: "Applied Knowledge Program", fee: 0 },
     },
   },
-   
   aas: {
-    title: "ACCA Applied Skill",
-    url: "aas",
+    title: "ACCA",
+    url: "acca-applied-skills-level",
     programs: {
-      expert: { name: "Self Paced Program", fee: 149900 },  
+      expert: { name: "Applied Skill Program", fee: 0 },
     },
   },
   acp: {
-    title: "ACCA Strategic Professional",
-    url: "acp",
+    title: "ACCA ",
+    url: "acca-professional-level",
     programs: {
-      expert: { name: "Self Paced Program", fee: 99900 },
+      expert: { name: "Strategic Professional Program", fee: 99900 },
     },
   },
-  
 } as const;
 
 type CourseKey = keyof typeof courseDetails;
@@ -42,7 +39,7 @@ declare global {
   }
 }
 
-interface FormData {
+interface EnrollmentFormData {
   course: string;
   programType: string;
   url: string;
@@ -55,23 +52,23 @@ interface FormData {
   country: string;
 }
 
-/** Coupon shape based on your example */
 interface Coupon {
   code: string;
   type: "percent" | "fixed";
   value: number;
-  expiry: string; // ISO date like "2025-09-28"
-  course?: string; // e.g. "dm" or "all"
+  expiry: string;
+  course?: string;
   courseName?: string;
-  program?: string; // e.g. "master" or "all"
+  program?: string;
   programName?: string;
 }
 
 export default function EnrollPage() {
-  const router = useRouter();
   const [courseKey, setCourseKey] = useState<CourseKey>("aak");
   const [type, setType] = useState<ProgramKey>("expert");
-  const [formData, setFormData] = useState<FormData>({
+  const [selectedCourseName, setSelectedCourseName] = useState("");
+
+  const [formData, setFormData] = useState<EnrollmentFormData>(() => ({
     course: courseKey,
     programType: type,
     url: courseDetails[courseKey].url,
@@ -82,7 +79,7 @@ export default function EnrollPage() {
     pincode: "",
     cityState: "",
     country: "India",
-  });
+  }));
 
   const [coupon, setCoupon] = useState("");
   const [discount, setDiscount] = useState(0);
@@ -92,7 +89,10 @@ export default function EnrollPage() {
   const [paymentUnlocked, setPaymentUnlocked] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
 
-  // Live currency states
+  const [locked, setLocked] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileFound, setProfileFound] = useState(false);
+
   const [currencyRate, setCurrencyRate] = useState(1);
   const [currencySymbol, setCurrencySymbol] = useState("₹");
   const [userCountry, setUserCountry] = useState("IN");
@@ -101,70 +101,70 @@ export default function EnrollPage() {
   const program = course.programs[type];
   const baseFee = program.fee;
 
-  // 18% uplift (no GST breakdown)
   const feeWith18 = Math.round(baseFee * 1.18);
-
-  // Keep coupon support (applied after 18% uplift)
   const totalFee = Math.max(feeWith18 - discount, 0);
-
-  // Converted for UI only
   const convertedFee = Math.round(totalFee * currencyRate);
 
   useEffect(() => {
-  async function testAllCountries() {
-    try {
-      const res = await fetch("https://open.er-api.com/v6/latest/INR");
-      const data = await res.json();
+    async function testAllCountries() {
+      try {
+        const res = await fetch("https://open.er-api.com/v6/latest/INR");
+        const data = await res.json();
 
-      const rates = data.rates;
-      const fee = feeWith18; // your final fee after +18%
+        const rates = data.rates;
+        const fee = feeWith18;
 
-      console.log("✅ FINAL FEE (INR):", fee);
+        console.log("✅ FINAL FEE (INR):", fee);
 
-      const allPrices = {
-        INR: fee,
-        AED: Math.round(fee * rates.AED),
-        USD: Math.round(fee * rates.USD),
-        GBP: Math.round(fee * rates.GBP),
-        CAD: Math.round(fee * rates.CAD),
-        AUD: Math.round(fee * rates.AUD),
-        EUR: Math.round(fee * rates.EUR),
-        SGD: Math.round(fee * rates.SGD),
-      };
+        const allPrices = {
+          INR: fee,
+          AED: Math.round(fee * rates.AED),
+          USD: Math.round(fee * rates.USD),
+          GBP: Math.round(fee * rates.GBP),
+          CAD: Math.round(fee * rates.CAD),
+          AUD: Math.round(fee * rates.AUD),
+          EUR: Math.round(fee * rates.EUR),
+          SGD: Math.round(fee * rates.SGD),
+        };
 
-      console.log("✅ ALL COUNTRY PRICES:", allPrices);
-    } catch (error) {
-      console.log("Currency check failed:", error);
+        console.log("✅ ALL COUNTRY PRICES:", allPrices);
+      } catch (error) {
+        console.log("Currency check failed:", error);
+      }
     }
-  }
 
-  testAllCountries();
-}, [feeWith18]);
-
+    testAllCountries();
+  }, [feeWith18]);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      const courseParam = params.get("course");
-      const typeParam = params.get("type");
+    if (typeof window === "undefined") return;
 
-      if (courseParam && courseParam in courseDetails) {
-        setCourseKey(courseParam as CourseKey);
-        const validPrograms = courseDetails[courseParam as CourseKey].programs;
-        const availableTypes = Object.keys(validPrograms) as ProgramKey[];
-        setType(
-          typeParam && availableTypes.includes(typeParam as ProgramKey)
-            ? (typeParam as ProgramKey)
-            : availableTypes[0]
-        );
+    const params = new URLSearchParams(window.location.search);
+    const courseParam = params.get("course");
+    const typeParam = params.get("type");
+    const nameParam = params.get("name");
 
-        setFormData((prev) => ({
-          ...prev,
-          course: courseParam,
-          programType: typeParam || availableTypes[0],
-          url: courseDetails[courseParam as CourseKey].url,
-        }));
-      }
+    if (courseParam && courseParam in courseDetails) {
+      const typedCourse = courseParam as CourseKey;
+      setCourseKey(typedCourse);
+
+      const validPrograms = courseDetails[typedCourse].programs;
+      const availableTypes = Object.keys(validPrograms) as ProgramKey[];
+
+      const resolvedType =
+        typeParam && availableTypes.includes(typeParam as ProgramKey)
+          ? (typeParam as ProgramKey)
+          : availableTypes[0];
+
+      setType(resolvedType);
+      setSelectedCourseName(nameParam ? decodeURIComponent(nameParam) : "");
+
+      setFormData((prev) => ({
+        ...prev,
+        course: typedCourse,
+        programType: resolvedType,
+        url: courseDetails[typedCourse].url,
+      }));
     }
   }, []);
 
@@ -177,20 +177,18 @@ export default function EnrollPage() {
         console.error("Failed to load coupons", error);
       }
     };
+
     fetchCoupons();
   }, []);
 
-  // Detect country and fetch live INR conversion rates
   useEffect(() => {
     async function loadCurrency() {
       try {
-        // 1) Detect country
         const geo = await fetch("https://ipapi.co/json/");
         const geoData = await geo.json();
         const cc = geoData?.country_code || "IN";
         setUserCountry(cc);
 
-        // 2) Fetch live INR base rates
         const res = await fetch("https://open.er-api.com/v6/latest/INR");
         const data = await res.json();
 
@@ -213,7 +211,6 @@ export default function EnrollPage() {
           rate = data.rates?.AUD ?? 1;
           symbol = "A$ ";
         } else {
-          // India or unsupported → INR
           rate = 1;
           symbol = "₹";
         }
@@ -230,23 +227,32 @@ export default function EnrollPage() {
     loadCurrency();
   }, []);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const validateForm = () => Object.values(formData).every((v) => v.trim() !== "");
+  const validateForm = () => {
+    return (
+      formData.name.trim() !== "" &&
+      formData.phone.trim() !== "" &&
+      formData.email.trim() !== "" &&
+      formData.address.trim() !== "" &&
+      formData.pincode.trim() !== "" &&
+      formData.cityState.trim() !== "" &&
+      formData.country.trim() !== ""
+    );
+  };
 
-  /**
-   * Apply coupon logic:
-   * - requires course/program match (or "all")
-   * - expiry inclusive till end of day
-   * - discount applied AFTER +18% uplift
-   */
   const applyCoupon = () => {
     if (!coupon.trim()) return;
 
-    const found = coupons.find((c) => c.code.toLowerCase() === coupon.trim().toLowerCase());
+    const found = coupons.find(
+      (c) => c.code.toLowerCase() === coupon.trim().toLowerCase()
+    );
+
     if (!found) {
       alert("Invalid coupon code.");
       setDiscount(0);
@@ -264,13 +270,19 @@ export default function EnrollPage() {
     const couponCourse = (found.course || "all").toString().toLowerCase();
     const couponProgram = (found.program || "all").toString().toLowerCase();
 
-    if (couponCourse !== "all" && couponCourse !== courseKey.toString().toLowerCase()) {
+    if (
+      couponCourse !== "all" &&
+      couponCourse !== courseKey.toString().toLowerCase()
+    ) {
       alert("This coupon does not apply to the selected course.");
       setDiscount(0);
       return;
     }
 
-    if (couponProgram !== "all" && couponProgram !== type.toString().toLowerCase()) {
+    if (
+      couponProgram !== "all" &&
+      couponProgram !== type.toString().toLowerCase()
+    ) {
       alert("This coupon does not apply to the selected program.");
       setDiscount(0);
       return;
@@ -278,7 +290,7 @@ export default function EnrollPage() {
 
     const discountAmount =
       found.type === "percent"
-        ? Math.round((feeWith18 * found.value) / 100) // percent of uplifted fee
+        ? Math.round((feeWith18 * found.value) / 100)
         : found.value;
 
     setDiscount(discountAmount);
@@ -295,18 +307,23 @@ export default function EnrollPage() {
     try {
       await axios.post("/api/enroll", {
         ...formData,
-        courseName: course.title,
+        course: courseKey,
+        courseName: selectedCourseName || course.title,
+        programType: type,
         programName: program.name,
-        fee: totalFee, // INR final fee
+        fee: totalFee,
         discount,
         couponCode: coupon,
       });
+
       setActiveTab(2);
       setPaymentUnlocked(true);
-    } catch {
+    } catch (error) {
+      console.error(error);
       alert("Failed to submit details.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const loadRazorpayScript = (): Promise<boolean> =>
@@ -321,32 +338,46 @@ export default function EnrollPage() {
     });
 
   const handleRazorpayPayment = async () => {
+    if (totalFee <= 0) {
+      alert("Free course enrolled successfully!");
+      window.location.href = "/student";
+      return;
+    }
+
     const isLoaded = await loadRazorpayScript();
-    if (!isLoaded) return alert("Failed to load Razorpay SDK.");
+    if (!isLoaded) {
+      alert("Razorpay SDK failed to load.");
+      return;
+    }
 
     try {
-      const res = await fetch("/api/razorpay-order/", {
+      const res = await fetch("/api/razorpay-order", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
-          amount: totalFee * 100, // INR paise
+          amount: totalFee * 100,
           name: formData.name,
           email: formData.email,
           phone: formData.phone,
-          course: course.title,
-          program: program.name,
+          course: courseKey,
+          courseName: selectedCourseName || course.title,
+          program: type,
+          programName: program.name,
           billing: formData.address,
-          pincode: formData.pincode,
-          cityState: formData.cityState,
-          country: formData.country,
         }),
       });
 
       const data = await res.json();
-      if (!data?.id) return alert("Failed to create Razorpay order.");
+
+      if (!res.ok) {
+        alert(data.error || "Order failed");
+        return;
+      }
 
       const options = {
-        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY || "rzp_live_ou7Grny4mPDOjy",
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY!,
         amount: data.amount,
         currency: "INR",
         name: course.title,
@@ -356,24 +387,32 @@ export default function EnrollPage() {
           alert("Payment successful!");
           window.location.href = "/";
         },
-        prefill: { name: formData.name, email: formData.email, contact: formData.phone },
-        theme: { color: "#108BF2" },
+        prefill: {
+          name: formData.name,
+          email: formData.email,
+          contact: formData.phone,
+        },
+        theme: {
+          color: "#108BF2",
+        },
       };
 
-      if (window.Razorpay) new window.Razorpay(options).open();
+      const rzp = new (window as any).Razorpay(options);
+      rzp.open();
     } catch (error) {
       console.error(error);
-      alert("Payment failed. Try again.");
+      alert("Payment failed");
     }
   };
 
   const handleCCAvenuePayment = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+
     try {
       const orderId = `IIMSKILLS_${Date.now()}`;
       const res = await axios.post("/api/ccavenue-order/", {
         orderId,
-        amount: totalFee.toString(), // INR
+        amount: totalFee.toString(),
         ...formData,
       });
 
@@ -402,7 +441,58 @@ export default function EnrollPage() {
     }
   };
 
-    /* ================= PAYU HANDLER (NEW) ================= */
+  useEffect(() => {
+    const email = formData.email?.trim().toLowerCase();
+
+    if (!email || !email.includes("@")) {
+      setLocked(false);
+      setProfileFound(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        setProfileLoading(true);
+
+        const res = await fetch(
+          `/api/student/profile?email=${encodeURIComponent(email)}`
+        );
+
+        const data = await res.json();
+
+        console.log("✅ PROFILE RESPONSE:", data);
+
+        if (data?.found && data?.student) {
+          const s = data.student;
+
+          setFormData((prev) => ({
+            ...prev,
+            name: s.name || "",
+            phone: s.phone || "",
+            address: s.address || "",
+            pincode: s.pincode || "",
+            cityState: s.cityState || "",
+            country: s.country || "India",
+          }));
+
+          setLocked(true);
+          setProfileFound(true);
+        } else {
+          setLocked(false);
+          setProfileFound(false);
+        }
+      } catch (err) {
+        console.error(err);
+        setLocked(false);
+        setProfileFound(false);
+      } finally {
+        setProfileLoading(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [formData.email]);
+
   const handlePayUPayment = async () => {
     try {
       const txnid = `TXN_${Date.now()}`;
@@ -456,6 +546,7 @@ export default function EnrollPage() {
     }
   };
 
+  console.log("EMAIL STATE:", formData.email);
 
   return (
     <div className="px-4">
@@ -472,7 +563,8 @@ export default function EnrollPage() {
           Pay & Start Learning
         </h2>
         <h1 className="text-4xl font-bold text-center mb-10">
-          {course.title} <span className="text-blue-600">{program.name}</span>
+          {(selectedCourseName || course.title)}{" "}
+          <span className="text-blue-600">{program.name}</span>
         </h1>
       </div>
 
@@ -486,70 +578,160 @@ export default function EnrollPage() {
             <h3 className="text-xl font-bold text-blue-700">
               1. Basic Details
             </h3>
+
             {activeTab === 1 && (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-8">
+                  <input
+  type="email"
+  name="email"
+  value={formData.email}
+  onChange={async (e) => {
+    const email = e.target.value;
+
+    setFormData((prev) => ({
+      ...prev,
+      email,
+    }));
+
+    console.log("🔥 EMAIL:", email);
+
+    // ✅ DIRECT API CALL (NO useEffect dependency issue)
+    if (!email.includes("@")) return;
+
+    try {
+      setProfileLoading(true);
+
+      console.log("🚀 CALLING PROFILE API");
+
+      const res = await fetch(
+        `/api/student/profile?email=${encodeURIComponent(email)}`
+      );
+
+      const data = await res.json();
+
+      console.log("✅ PROFILE RESPONSE:", data);
+
+      if (data?.found) {
+        const s = data.student;
+
+        setFormData((prev) => ({
+          ...prev,
+          email,
+          name: s.name || "",
+          phone: s.phone || "",
+          address: s.address || "",
+          pincode: s.pincode || "",
+          cityState: s.cityState || "",
+          country: s.country || "India",
+        }));
+
+        setLocked(true);
+        setProfileFound(true);
+      } else {
+        setLocked(false);
+        setProfileFound(false);
+      }
+    } catch (err) {
+      console.error(err);
+      setLocked(false);
+    } finally {
+      setProfileLoading(false);
+    }
+  }}
+  placeholder="Email*"
+  className="border border-gray-300 p-2 rounded-sm h-full"
+/>
+
+                  {profileLoading && (
+                    <p className="text-blue-600 text-sm">
+                      Checking student details...
+                    </p>
+                  )}
+
+                  {profileFound && (
+                    <p className="text-green-600 text-sm">
+                      Existing student found. Details auto-filled and locked.
+                    </p>
+                  )}
+
+                  {!profileFound && formData.email.includes("@") && !profileLoading && (
+                    <p className="text-gray-500 text-sm">
+                      No student record found. Please fill in the remaining details manually.
+                    </p>
+                  )}
+
                   <input
                     type="text"
                     name="name"
                     value={formData.name}
                     onChange={handleChange}
                     placeholder="Name*"
-                    className="border-1 border-gray-300 p-2 rounded-sm h-full"
+                    className={`border border-gray-300 p-2 rounded-sm h-full ${
+                      locked ? "bg-gray-100 cursor-not-allowed" : ""
+                    }`}
+                    readOnly={locked}
                     required
                   />
+
                   <PhoneInput
                     country={"in"}
                     value={formData.phone}
-                    onChange={(phone) => setFormData({ ...formData, phone })}
+                    onChange={(phone) =>
+                      setFormData((prev) => ({ ...prev, phone }))
+                    }
+                    inputProps={{
+                      name: "phone",
+                      readOnly: locked,
+                      disabled: locked,
+                    }}
                     inputStyle={{
                       width: "100%",
                       padding: "10px 10px 10px 45px",
                       borderRadius: "4px",
                       border: "1px solid #ccc",
+                      backgroundColor: locked ? "#f3f4f6" : "white",
+                      cursor: locked ? "not-allowed" : "text",
                     }}
                   />
-                  <input
-                    type="email"
-                    name="email"
-                    value={formData.email}
-                    onChange={handleChange}
-                    placeholder="Email ID*"
-                    className="border-1 border-gray-300 p-2 rounded-sm h-full"
-                    required
-                  />
+
                   <input
                     type="text"
                     name="address"
                     value={formData.address}
                     onChange={handleChange}
                     placeholder="Billing Address*"
-                    className="border-1 border-gray-300 p-2 rounded-sm h-full"
+                    className={`border border-gray-300 p-2 rounded-sm h-full`}
+                     
                     required
                   />
+
                   <input
                     type="text"
                     name="pincode"
                     value={formData.pincode}
                     onChange={handleChange}
                     placeholder="Pincode*"
-                    className="border-1 border-gray-300 p-2 rounded-sm h-full"
+                    className={`border border-gray-300 p-2 rounded-sm h-full`}
                     required
                   />
+
                   <input
                     type="text"
                     name="cityState"
                     value={formData.cityState}
                     onChange={handleChange}
                     placeholder="City, State*"
-                    className="border-1 border-gray-300 p-2 rounded-sm h-full"
+                    className={`border border-gray-300 p-2 rounded-sm h-full`}
                     required
                   />
+
                   <select
                     name="country"
                     value={formData.country}
                     onChange={handleChange}
-                    className="border-1 border-gray-300 p-2 rounded-sm h-full"
+                    className={`border border-gray-300 p-2 rounded-sm h-full `}
+                     
                   >
                     <option value="India">India</option>
                     <option value="United States">United States</option>
@@ -558,6 +740,7 @@ export default function EnrollPage() {
                     <option value="Australia">Australia</option>
                   </select>
                 </div>
+
                 <div className="py-4">
                   <p className="flex gap-3 text-sm">
                     <FaHandPointRight color="#108BF2" size={32} />
@@ -566,6 +749,7 @@ export default function EnrollPage() {
                     other purposes described in our privacy policy.
                   </p>
                 </div>
+
                 <label className="flex items-center gap-2 text-sm mb-3">
                   <input
                     type="checkbox"
@@ -575,6 +759,7 @@ export default function EnrollPage() {
                   />
                   I have read and agree to the website terms and conditions
                 </label>
+
                 <button
                   className={`px-6 py-2 rounded text-white ${
                     agreedToTerms
@@ -598,6 +783,7 @@ export default function EnrollPage() {
             <h3 className="text-xl font-bold text-blue-700">
               2. Secure Payment
             </h3>
+
             {activeTab === 2 && paymentUnlocked && (
               <>
                 <div className="mb-4 mt-7">
@@ -620,7 +806,6 @@ export default function EnrollPage() {
                   </button>
                 </div>
 
-                {/* Final amount only (converted) */}
                 <div className="flex justify-between text-sm font-bold mt-2">
                   <span>Grand Total</span>
                   <span>
@@ -628,11 +813,11 @@ export default function EnrollPage() {
                     {convertedFee.toLocaleString()}
                   </span>
                 </div>
+
                 <p className="text-xs text-gray-500 mt-1">
                   Charged in INR at checkout: ₹{totalFee.toLocaleString()}
                 </p>
 
-                {/* Payment Buttons */}
                 <div className="flex flex-row gap-4 mt-6">
                   <button
                     onClick={handleRazorpayPayment}
@@ -640,6 +825,7 @@ export default function EnrollPage() {
                   >
                     Pay Via Razorpay
                   </button>
+
                   <form onSubmit={handleCCAvenuePayment}>
                     <button
                       type="submit"
@@ -648,16 +834,17 @@ export default function EnrollPage() {
                     >
                       Pay Via CCAvenue
                     </button>
-                    
                   </form>
+
                   {/* <button
-                  onClick={handlePayUPayment}
-                  disabled
-                  className="bg-blue-300 text-white px-6 py-2 rounded cursor-not-allowed pointer-events-none"
-                >
-                  Pay Via PayU
-                </button> */}
+                    onClick={handlePayUPayment}
+                    disabled
+                    className="bg-blue-300 text-white px-6 py-2 rounded cursor-not-allowed pointer-events-none"
+                  >
+                    Pay Via PayU
+                  </button> */}
                 </div>
+
                 <div className="py-4">
                   <p className="flex gap-3 text-sm">
                     <FaHandPointRight color="#108BF2" size={22} />
@@ -673,19 +860,10 @@ export default function EnrollPage() {
         <div className="bg-white rounded-lg shadow px-6 py-3 border border-blue-300 h-fit sticky top-5">
           <h3 className="text-sm font-semibold mb-1">Order Summary</h3>
           <p className="font-bold text-lg mb-1 text-blue-700">
-            {course.title} {program.name}
+            {(selectedCourseName || course.title)} {program.name}
           </p>
           <hr className="my-2" />
-
-          {/* Show only final amount (converted) */}
-          {/* <p className="text-sm font-semibold">
-            Program Fee (incl. +18%):{" "}
-            {currencySymbol}
-            {Math.round(feeWith18 * currencyRate).toLocaleString()}
-          </p> */}
-
           <hr className="my-3" />
-
           <div className="flex justify-between text-sm font-bold">
             <span>Grand Total</span>
             <span>

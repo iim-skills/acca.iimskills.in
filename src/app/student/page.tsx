@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   BookOpen,
   ArrowRight,
@@ -13,13 +15,10 @@ import {
   CheckCircle,
   Clock,
   ChevronRight,
-  UserCircle,
   Bell,
-  MoreVertical,
-  Calendar,
-  MessageSquare,
   Zap,
-  PlayCircle
+  TrendingUp,
+  Globe,
 } from "lucide-react";
 
 /* ================= TYPES ================= */
@@ -32,38 +31,31 @@ type Course = {
   last_accessed?: string;
 };
 
-/* ================= MOCK ROUTER ================= */
-const useRouter = () => {
-  return {
-    push: (url: string) => {
-      console.log("Navigating to:", url);
-      window.location.href = url;
-    },
-  };
-};
-
 /* ================= COURSE CONFIG ================= */
 const courseMeta: Record<
   string,
-  { fee: number; description: string; enrollUrl: string; color: string }
+  { fee: number; description: string; enrollUrl: string; color: string; gradient: string }
 > = {
   "acca-applied-knowledge": {
     fee: 49900,
     description: "Learn fundamentals of accounting, business & finance.",
     enrollUrl: "/enroll?course=aak&type=expert",
-    color: "bg-blue-500",
+    color: "bg-blue-600",
+    gradient: "from-blue-600 to-indigo-700",
   },
   "acca-applied-skills-level": {
     fee: 149900,
     description: "Build strong accounting, taxation & audit skills.",
     enrollUrl: "/enroll?course=aas&type=expert",
-    color: "bg-purple-500",
+    color: "bg-purple-600",
+    gradient: "from-purple-600 to-fuchsia-700",
   },
   "acca-professional-level": {
     fee: 99900,
     description: "Advanced strategic professional level with case studies.",
     enrollUrl: "/enroll?course=asp&type=expert",
-    color: "bg-pink-500",
+    color: "bg-pink-600",
+    gradient: "from-pink-600 to-rose-700",
   },
 };
 
@@ -75,39 +67,21 @@ export default function StudentPage() {
   const [allCourses, setAllCourses] = useState<Course[]>([]);
   const [studentName, setStudentName] = useState("Student");
   const [studentEmail, setStudentEmail] = useState("");
-  const [studentPhone, setStudentPhone] = useState("");
   const [studentType, setStudentType] = useState("user");
   const [loading, setLoading] = useState(true);
 
   /* ================= HELPERS ================= */
-  const isEnrolled = (slug: string) =>
-    myCourses.some((c) => c.course_slug === slug);
-
-  const getButtonText = (slug: string) => {
-    if (typeof window === "undefined") return "Start Learning";
-    const visited = JSON.parse(
-      localStorage.getItem("visitedCourses") || "[]"
-    );
-    return visited.includes(slug) ? "Continue Learning" : "Start Learning";
-  };
-
   const getChartProgress = (course: Course) => {
-    const directProgress =
-      typeof course.progress === "number" ? course.progress : 0;
-
+    const directProgress = typeof course.progress === "number" ? course.progress : 0;
     const moduleProgress =
       course.total_modules && course.total_modules > 0
-        ? Math.round(
-            ((course.completed_modules || 0) / course.total_modules) * 100
-          )
+        ? Math.round(((course.completed_modules || 0) / course.total_modules) * 100)
         : 0;
-
     const value = directProgress > 0 ? directProgress : moduleProgress;
-
-    return Math.max(8, Math.min(100, value));
+    return Math.max(5, Math.min(100, value));
   };
 
-  /* ================= FETCH ================= */
+  /* ================= FETCH DATA ================= */
   useEffect(() => {
     const raw = localStorage.getItem("user");
 
@@ -117,24 +91,16 @@ export default function StudentPage() {
     }
 
     const user = JSON.parse(raw);
-
     setStudentName(user.name);
     setStudentEmail(user.email);
-    setStudentPhone(user.phone || user.mobile || user.phone_number || "N/A");
     setStudentType(user.type || "user");
 
-    // Fetching Original Data
     fetch("/api/student/course", {
       headers: { "x-user-email": user.email },
     })
       .then((res) => res.json())
       .then((data) => {
-        // 🔥 LOGGING STUDENT COURSE DATA
-        console.log("-----------------------------------------");
-        console.log("API FETCH: /api/student/course");
-        console.log("FOR EMAIL:", user.email);
-        console.log("RECEIVED DATA:", data);
-        console.log("-----------------------------------------");
+        console.log("RECEIVED MY COURSES:", data);
         setMyCourses(data || []);
       })
       .catch((err) => {
@@ -145,11 +111,7 @@ export default function StudentPage() {
     fetch("/api/courses")
       .then((res) => res.json())
       .then((data) => {
-        // 🔥 LOGGING ALL COURSES DATA
-        console.log("-----------------------------------------");
-        console.log("API FETCH: /api/courses");
-        console.log("RECEIVED DATA:", data);
-        console.log("-----------------------------------------");
+        console.log("RECEIVED ALL COURSES:", data);
         setAllCourses(data || []);
       })
       .catch((err) => {
@@ -157,331 +119,339 @@ export default function StudentPage() {
         setAllCourses([]);
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [router]);
 
   /* ================= CALCULATED STATS ================= */
-  const totalModules = myCourses.reduce((acc, curr) => acc + (curr.total_modules || 0), 0);
   const completedModules = myCourses.reduce((acc, curr) => acc + (curr.completed_modules || 0), 0);
-  const averageProgress = myCourses.length > 0 
-    ? Math.round(myCourses.reduce((acc, curr) => acc + (curr.progress || 0), 0) / myCourses.length) 
-    : 0;
-
-  // Identify most recently accessed course for the "Feature Card"
-  const recentCourse = [...myCourses].sort((a, b) => 
-    new Date(b.last_accessed || 0).getTime() - new Date(a.last_accessed || 0).getTime()
-  )[0];
-
-  const courses = activeTab === "my" ? myCourses : allCourses;
+  const averageProgress =
+    myCourses.length > 0
+      ? Math.round(myCourses.reduce((acc, curr) => acc + getChartProgress(curr), 0) / myCourses.length)
+      : 0;
 
   const handleStart = (slug: string) => {
-    const visited = JSON.parse(
-      localStorage.getItem("visitedCourses") || "[]"
-    );
-
+    const visited = JSON.parse(localStorage.getItem("visitedCourses") || "[]");
     if (!visited.includes(slug)) {
       visited.push(slug);
       localStorage.setItem("visitedCourses", JSON.stringify(visited));
     }
-
-    router.push(`/student/course/${encodeURIComponent(slug)}`);
   };
 
   return (
-    <div className="min-h-screen bg-[#F1F3F9] flex gap-6 font-sans">
-      
-      
-      {/* SIDEBAR - LEFT PANEL (Based on unique image style) */}
-      <aside className="hidden lg:flex flex-col w-[300px] bg-[#0F172A] p-8 text-white shadow-2xl relative overflow-hidden">
-        <div className="z-10 h-full flex flex-col">
-          <div className="flex items-center gap-2 mb-10">
-            <span className="text-2xl">😍</span>
-            <div>
-              <p className="text-indigo-200 text-xs font-medium opacity-70">Welcome</p>
-              <h1 className="text-xl font-bold">{studentName}</h1>
-              <p className="text-indigo-200 text-xs font-medium">{studentEmail}</p>
+    <div className="min-h-screen bg-slate-50 flex font-sans text-slate-900">
+      {/* SIDEBAR */}
+      <aside className="hidden lg:flex flex-col w-80 bg-slate-950 p-8 text-white sticky top-0 h-screen shadow-2xl">
+        <div className="mb-12 flex items-center gap-3">
+          <div className="w-10 h-10 bg-indigo-500 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/30">
+            <GraduationCap size={24} className="text-white" />
+          </div>
+          <span className="text-xl font-bold tracking-tight">
+            Student<span className="text-indigo-400">Portal</span>
+          </span>
+        </div>
+
+        <nav className="flex-1 space-y-2">
+          <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-bold mb-4 px-2">
+            Dashboard
+          </div>
+          <button
+            onClick={() => setActiveTab("my")}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+              activeTab === "my"
+                ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20"
+                : "text-slate-400 hover:bg-white/5 hover:text-white"
+            }`}
+          >
+            <LayoutDashboard size={20} />
+            <span className="font-semibold text-sm">My Tracks</span>
+          </button>
+          <button
+            onClick={() => setActiveTab("all")}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+              activeTab === "all"
+                ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20"
+                : "text-slate-400 hover:bg-white/5 hover:text-white"
+            }`}
+          >
+            <Compass size={20} />
+            <span className="font-semibold text-sm">Explore All</span>
+          </button>
+        </nav>
+
+        <div className="mt-8 grid grid-cols-2 gap-3">
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+            <TrendingUp size={16} className="text-emerald-400 mb-2" />
+            <p className="text-xl font-bold">{averageProgress}%</p>
+            <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">
+              Avg. Progress
+            </p>
+          </div>
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
+            <Award size={16} className="text-amber-400 mb-2" />
+            <p className="text-xl font-bold">{completedModules}</p>
+            <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">
+              Modules
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-auto pt-8 border-t border-white/5">
+          <div className="flex items-center gap-3 mb-6 px-2">
+            <div className="w-10 h-10 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 font-bold border border-indigo-500/30">
+              {studentName.charAt(0)}
             </div>
+            <div className="overflow-hidden">
+              <p className="text-sm font-bold truncate">{studentName}</p>
+              <p className="text-[10px] text-slate-500 truncate">{studentEmail}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              localStorage.removeItem("user");
+              router.push("/");
+            }}
+            className="w-full flex items-center justify-center gap-2 bg-rose-500/10 hover:bg-rose-50 text-rose-500 hover:text-white transition-all py-3 rounded-xl text-xs font-bold border border-rose-500/20"
+          >
+            <LogOut size={16} />
+            Sign Out
+          </button>
+        </div>
+      </aside>
+
+      {/* MAIN CONTENT */}
+      <main className="flex-1 overflow-y-auto h-screen p-6 lg:p-10 space-y-10">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div>
+            <h2 className="text-3xl font-black text-slate-900 tracking-tight">
+              Welcome, {studentName.split(" ")[0]}
+            </h2>
+            <p className="text-slate-500 mt-1 font-medium">
+              Monitoring your academic records and course progress.
+            </p>
           </div>
 
-          {/* DYNAMIC STATS FROM API */}
-          <div className="grid grid-cols-2 gap-4 mb-10">
-            <div className="bg-white/10 backdrop-blur-md rounded-[24px] p-5 flex flex-col gap-1 border border-white/5">
-              <div className="w-8 h-8 rounded-lg bg-orange-400/20 flex items-center justify-center text-orange-400 mb-1">
-                <BookOpen size={16} />
-              </div>
-              <p className="text-xl font-black">{myCourses.length}</p>
-              <p className="text-[9px] text-indigo-200 uppercase font-bold tracking-widest">Courses</p>
+          <div className="flex items-center gap-4">
+            <div className="relative">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <input
+                type="text"
+                placeholder="Search records..."
+                className="bg-white border border-slate-200 rounded-2xl py-3 pl-12 pr-6 text-sm font-medium focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none w-full md:w-64 transition-all shadow-sm"
+              />
             </div>
-            <div className="bg-white/10 backdrop-blur-md rounded-[24px] p-5 flex flex-col gap-1 border border-white/5">
-              <div className="w-8 h-8 rounded-lg bg-pink-400/20 flex items-center justify-center text-pink-400 mb-1">
-                <Award size={16} />
-              </div>
-              <p className="text-xl font-black">{completedModules}</p>
-              <p className="text-[9px] text-indigo-200 uppercase font-bold tracking-widest">Modules</p>
-            </div>
-            <div className="bg-white/10 backdrop-blur-md rounded-[24px] p-5 flex flex-col gap-1 border border-white/5">
-              <div className="w-8 h-8 rounded-lg bg-cyan-400/20 flex items-center justify-center text-cyan-400 mb-1">
-                <Zap size={16} />
-              </div>
-              <p className="text-xl font-black">{averageProgress}%</p>
-              <p className="text-[9px] text-indigo-200 uppercase font-bold tracking-widest">Progress</p>
-            </div>
-            <div className="bg-white/10 backdrop-blur-md rounded-[24px] p-5 flex flex-col gap-1 border border-white/5">
-              <div className="w-8 h-8 rounded-lg bg-green-400/20 flex items-center justify-center text-green-400 mb-1">
-                <CheckCircle size={16} />
-              </div>
-              <p className="text-xl font-black">{totalModules}</p>
-              <p className="text-[9px] text-indigo-200 uppercase font-bold tracking-widest">Total</p>
-            </div>
-          </div>
-
-          {/* ACTIVE TRACKS (Based on Original Data) */}
-          <div className="mt-6">
-            <h3 className="font-bold text-sm text-indigo-100 uppercase tracking-widest mb-6 opacity-60">Active Tracks</h3>
-            <div className="space-y-5">
-              {myCourses.slice(0, 3).map((c, i) => (
-                <div key={i} className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-xl ${courseMeta[c.course_slug]?.color || 'bg-indigo-400'} flex items-center justify-center text-white shadow-lg`}>
-                    <PlayCircle size={18} />
-                  </div>
-                  <div className="flex-1 overflow-hidden">
-                    <p className="text-xs font-bold truncate">{c.course_title}</p>
-                    <p className="text-[9px] text-indigo-300 font-bold">{c.progress}% Completed</p>
-                  </div>
-                </div>
-              ))}
-              {myCourses.length === 0 && <p className="text-xs text-indigo-300 italic">No active enrollments</p>}
-            </div>
-          </div>
-          
-          <div className="mt-auto pt-8 border-t border-white/10">
-            <button 
-              onClick={() => { localStorage.removeItem("user"); router.push("/"); }}
-              className="flex items-center gap-3 text-indigo-300 hover:text-white transition-colors text-sm font-bold"
-            >
-              <LogOut size={18} />
-              Sign Out
+            <button className="relative w-12 h-12 bg-white border border-slate-200 rounded-2xl flex items-center justify-center text-slate-600 hover:bg-slate-50 shadow-sm transition-all">
+              <Bell size={20} />
+              <span className="absolute top-3 right-3 w-2 h-2 bg-rose-500 rounded-full border-2 border-white"></span>
             </button>
           </div>
         </div>
-        
-        <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-400/10 blur-3xl rounded-full translate-x-10 -translate-y-10"></div>
-      </aside>
 
-      {/* MAIN CONTENT AREA */}
-      <div className="flex-1 flex flex-col gap-6 p-6 overflow-hidden">
-        
-        {/* HEADER */}
-        <header className="flex items-center justify-between">
-          <div className="flex items-center gap-4 bg-white px-6 py-3 rounded-full shadow-sm border border-slate-100">
-            <Search className="text-slate-400" size={18} />
-            <input 
-              type="text" 
-              placeholder="Search your records..." 
-              className="bg-transparent border-none outline-none text-sm w-48 lg:w-64 font-medium"
-            />
+        <div className="flex items-center gap-1 bg-slate-200/50 p-1.5 rounded-2xl w-fit shadow-inner">
+          <button
+            onClick={() => setActiveTab("my")}
+            className={`flex items-center gap-2 px-8 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.15em] transition-all ${
+              activeTab === "my" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            <Zap size={14} className={activeTab === "my" ? "text-amber-500" : ""} />
+            My Learning
+          </button>
+          <button
+            onClick={() => setActiveTab("all")}
+            className={`flex items-center gap-2 px-8 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.15em] transition-all ${
+              activeTab === "all" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            <Globe size={14} className={activeTab === "all" ? "text-blue-500" : ""} />
+            All Courses
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="flex flex-col items-center justify-center h-64 text-slate-300 gap-4 animate-pulse">
+            <div className="w-12 h-12 border-4 border-slate-200 border-t-indigo-500 rounded-full animate-spin"></div>
+            <p className="font-bold text-xs uppercase tracking-widest">Fetching Records...</p>
           </div>
-
-          
-        </header>
-
-        {/* WIDGETS */}
-        <div className="flex-1 overflow-y-auto pr-2 space-y-6">
-          
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-            {/* ACTIVITY CHART - BASED ON ORIGINAL COURSE DATA */}
-            <div className="xl:col-span-2 bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
-              <div className="flex items-center justify-between mb-8">
-                <h3 className="font-extrabold text-slate-800 tracking-tight">Your Course Progress</h3>
-                <div className="flex bg-slate-50 p-1.5 rounded-2xl border border-slate-100">
-                  <span className="px-4 py-1.5 text-[10px] font-black rounded-xl bg-white shadow-sm text-[#3B38A4] uppercase">Live Data</span>
+        ) : (
+          <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {activeTab === "my" ? (
+              <section>
+                <div className="flex items-center justify-between mb-8">
+                  <h3 className="text-xl font-bold text-slate-800">Your Current Progress</h3>
+                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                    {myCourses.length} Enrolled
+                  </div>
                 </div>
-              </div>
-              
-              <div className="flex items-end justify-around h-[260px] px-4 gap-4">
-                {myCourses.length > 0 ? (
-                  myCourses.map((c, i) => {
-                    const chartProgress = getChartProgress(c);
-                    const barHeight = `${chartProgress}%`;
-                    const barColor =
-                      courseMeta[c.course_slug]?.color || "bg-[#3B38A4]";
 
-                    return (
-                      <div key={i} className="flex-1 flex flex-col items-center gap-3 group">
-                        <div className="relative w-full flex items-end justify-center h-[220px]">
-                          <div
-                            className={`w-full max-w-[52px] ${barColor} rounded-t-2xl rounded-b-lg transition-all duration-700 opacity-90 group-hover:opacity-100 shadow-lg`}
-                            style={{ height: barHeight, minHeight: "14px" }}
-                          >
-                            <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[9px] font-bold px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                              {chartProgress}%
+                {myCourses.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                    {myCourses.map((course) => {
+                      const progress = getChartProgress(course);
+                      const meta = courseMeta[course.course_slug?.toLowerCase().trim()] || {
+                        gradient: "from-slate-400 to-slate-600",
+                        color: "bg-slate-500",
+                      };
+
+                      return (
+                        <Link
+                          key={course.course_slug}
+                          href={`/student/course/${encodeURIComponent(course.course_slug)}`}
+                          onClick={() => handleStart(course.course_slug)}
+                          className="group bg-white rounded-[2rem] p-8 shadow-sm border border-slate-100 hover:shadow-xl hover:shadow-indigo-500/5 transition-all cursor-pointer relative overflow-hidden block"
+                        >
+                          <div className="flex items-start justify-between mb-8">
+                            <div
+                              className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${meta.gradient} flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform duration-500`}
+                            >
+                              <BookOpen size={24} />
+                            </div>
+                            <div className="relative w-16 h-16 flex items-center justify-center">
+                              <svg className="w-full h-full transform -rotate-90">
+                                <circle cx="32" cy="32" r="28" fill="none" stroke="#F1F5F9" strokeWidth="4" />
+                                <circle
+                                  cx="32"
+                                  cy="32"
+                                  r="28"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="4"
+                                  strokeDasharray={175.9}
+                                  strokeDashoffset={175.9 - (175.9 * progress) / 100}
+                                  strokeLinecap="round"
+                                  className="transition-all duration-1000 ease-out text-indigo-500"
+                                />
+                              </svg>
+                              <span className="absolute text-[11px] font-black">{progress}%</span>
                             </div>
                           </div>
-                        </div>
 
-                        <span className="text-[9px] font-black text-slate-400 truncate w-full text-center uppercase tracking-tighter">
-                          {c.course_title.split(" ")[0]}
-                        </span>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="flex flex-col items-center justify-center w-full h-full text-slate-300">
-                    <BookOpen size={48} className="mb-4 opacity-10" />
-                    <p className="text-sm font-bold opacity-30">No enrollment data to graph</p>
+                          <h4 className="text-lg font-bold text-slate-900 mb-2 leading-tight group-hover:text-indigo-600 transition-colors">
+                            {course.course_title}
+                          </h4>
+
+                          <div className="flex items-center gap-3 mt-6 pt-6 border-t border-slate-50">
+                            <span className="text-[10px] font-black text-slate-400 uppercase">
+                              {course.completed_modules || 0}/{course.total_modules || 0} Modules
+                            </span>
+                            <div className="w-1 h-1 rounded-full bg-slate-200"></div>
+                            <span
+                              className={`text-[10px] font-black uppercase ${
+                                progress === 100 ? "text-emerald-500" : "text-amber-500"
+                              }`}
+                            >
+                              {progress === 100 ? "Completed" : "Active"}
+                            </span>
+                          </div>
+
+                          <div className="mt-8 flex items-center justify-between text-slate-400 text-[10px] font-bold">
+                            <div className="flex items-center gap-1.5">
+                              <Clock size={12} />
+                              {course.last_accessed ? new Date(course.last_accessed).toLocaleDateString() : "Never"}
+                            </div>
+                            <div className="flex items-center gap-1 text-indigo-500 group-hover:translate-x-1 transition-transform">
+                              Continue <ChevronRight size={12} />
+                            </div>
+                          </div>
+                        </Link>
+                      );
+                    })}
                   </div>
-                )}
-              </div>
-            </div>
-
-            {/* FEATURED CONTINUE CARD - BASED ON last_accessed */}
-            <div className="bg-[#E4E9FF] rounded-[40px] p-8 relative overflow-hidden flex flex-col border border-indigo-100">
-              <div className="inline-block bg-[#FF8A9A] text-white text-[10px] font-black px-4 py-1.5 rounded-full mb-6 self-start uppercase tracking-widest shadow-md">
-                Resume Learning
-              </div>
-              
-              {recentCourse ? (
-                <>
-                  <p className="text-4xl font-black text-[#3B38A4] mb-2 leading-none">
-                    {recentCourse.progress}%<span className="text-lg opacity-50 ml-1">Done</span>
-                  </p>
-                  <h4 className="text-xl font-bold text-[#3B38A4] mt-4 mb-4 leading-tight">{recentCourse.course_title}</h4>
-                  <p className="text-sm text-indigo-400 font-bold mb-6">Last accessed: {new Date(recentCourse.last_accessed || "").toLocaleDateString()}</p>
-                  
-                  <div className="mt-auto">
-                    <button 
-                      onClick={() => handleStart(recentCourse.course_slug)}
-                      className="w-full bg-[#3B38A4] text-white py-4 rounded-3xl shadow-xl shadow-indigo-200 font-black text-sm flex items-center justify-center gap-3 hover:scale-[1.02] transition-transform"
+                ) : (
+                  <div className="bg-white border-2 border-dashed border-slate-200 rounded-[2rem] p-16 text-center">
+                    <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6 text-slate-300">
+                      <BookOpen size={32} />
+                    </div>
+                    <h4 className="text-lg font-bold text-slate-800 italic">No Enrolled Courses Found</h4>
+                    <p className="text-slate-400 mt-2 mb-8 text-sm">
+                      Please check the catalog to start your learning journey.
+                    </p>
+                    <button
+                      onClick={() => setActiveTab("all")}
+                      className="bg-indigo-600 text-white px-8 py-3 rounded-2xl font-bold shadow-lg shadow-indigo-600/20"
                     >
-                      Continue Now
-                      <ArrowRight size={18} />
+                      Browse Catalog
                     </button>
                   </div>
-                </>
-              ) : (
-                <div className="h-full flex flex-col justify-center items-center text-center">
-                   <p className="text-[#3B38A4] font-black text-lg mb-4">Start Your Journey</p>
-                   <button 
-                    onClick={() => setActiveTab('all')}
-                    className="bg-[#3B38A4] text-white px-8 py-3 rounded-2xl font-bold"
-                   >
-                     Browse All
-                   </button>
+                )}
+              </section>
+            ) : (
+              <section>
+                <div className="flex items-center justify-between mb-8">
+                  <div>
+                    <h3 className="text-xl font-bold text-slate-800">All Available Courses</h3>
+                    <p className="text-slate-500 text-sm mt-1">Explore our professional qualification tracks.</p>
+                  </div>
                 </div>
-              )}
 
-              <div className="absolute top-4 right-4 w-24 h-24 opacity-5 pointer-events-none">
-                <GraduationCap size={96} />
-              </div>
-            </div>
-          </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                  {allCourses.map((course) => {
+                    const slug = course.course_slug?.toLowerCase().trim();
+                    const meta = courseMeta[slug] || {
+                      fee: 0,
+                      description: "Professional ACCA qualification course.",
+                      gradient: "from-slate-400 to-slate-600",
+                    };
+                    const isEnrolled = myCourses.some((c) => c.course_slug === course.course_slug);
 
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 pb-12">
-            {/* COURSE LIST WITH ORIGINAL DATA */}
-            <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
-              <div className="flex items-center justify-between mb-8">
-                <h3 className="font-extrabold text-slate-800 tracking-tight">Your Original Enrollment</h3>
-                <div className="flex bg-slate-50 p-1 rounded-2xl border border-slate-100">
-                  <button 
-                    onClick={() => setActiveTab('my')}
-                    className={`px-5 py-2 text-[10px] font-black rounded-xl transition-all uppercase tracking-widest ${activeTab === 'my' ? 'bg-white shadow-md text-[#3B38A4]' : 'text-slate-400'}`}
-                  >
-                    My Tracks
-                  </button>
-                  <button 
-                    onClick={() => setActiveTab('all')}
-                    className={`px-5 py-2 text-[10px] font-black rounded-xl transition-all uppercase tracking-widest ${activeTab === 'all' ? 'bg-white shadow-md text-[#3B38A4]' : 'text-slate-400'}`}
-                  >
-                    Explore
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-6">
-                {loading ? (
-                  <div className="text-center py-10 animate-pulse text-slate-300 font-black tracking-[0.2em]">FETCHING API RECORDS...</div>
-                ) : courses.length > 0 ? (
-                  courses.map((course) => {
-                    const processedSlug = course.course_slug?.toLowerCase().trim();
-                    const meta = courseMeta[processedSlug] || { color: "bg-slate-200" };
-                    const progress = course.progress || 0;
-                    
                     return (
-                      <div key={course.course_slug} className="flex items-center gap-5 group cursor-pointer" onClick={() => handleStart(course.course_slug)}>
-                        <div className={`w-14 h-14 rounded-2xl ${meta.color} flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform`}>
-                          <BookOpen size={24} />
-                        </div>
-                        <div className="flex-1 overflow-hidden">
-                          <h4 className="text-sm font-black text-slate-800 truncate">{course.course_title}</h4>
-                          <div className="flex items-center gap-3 mt-1.5">
-                             <span className="text-[10px] text-slate-400 font-black uppercase">
-                                {course.completed_modules || 0}/{course.total_modules || 0} Modules
-                             </span>
-                             <div className="w-1 h-1 rounded-full bg-slate-200"></div>
-                             <span className={`text-[9px] font-black uppercase ${progress === 100 ? 'text-green-500' : 'text-[#FF8A9A]'}`}>
-                                {progress === 100 ? "Verified Done" : "In Progress"}
-                             </span>
+                      <div
+                        key={course.course_slug}
+                        className="bg-white rounded-[2.5rem] overflow-hidden shadow-sm border border-slate-100 flex flex-col hover:shadow-2xl hover:shadow-indigo-500/10 transition-all group"
+                      >
+                        <div className={`h-32 bg-gradient-to-br ${meta.gradient} relative p-8 flex items-end overflow-hidden`}>
+                          <div className="absolute top-4 right-4 bg-white/20 backdrop-blur-md rounded-full px-4 py-1.5 text-[9px] text-white font-black uppercase tracking-widest border border-white/20">
+                            Certified
+                          </div>
+                          <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center shadow-lg transform translate-y-12 group-hover:translate-y-10 transition-transform duration-500">
+                            <Award className="text-slate-800" size={28} />
                           </div>
                         </div>
-                        <div className="relative w-14 h-14 flex items-center justify-center">
-                          <svg className="w-full h-full transform -rotate-90">
-                            <circle cx="28" cy="28" r="22" fill="none" stroke="#F1F3F9" strokeWidth="5" />
-                            <circle cx="28" cy="28" r="22" fill="none" stroke={meta.color.replace('bg-', '') === 'blue-500' ? '#3b82f6' : (meta.color.replace('bg-', '') === 'purple-500' ? '#a855f7' : '#ec4899')} strokeWidth="5" 
-                              strokeDasharray={138.2} 
-                              strokeDashoffset={138.2 - (138.2 * progress) / 100}
-                              strokeLinecap="round"
-                              className="transition-all duration-1000 ease-out"
-                            />
-                          </svg>
-                          <span className="absolute text-[10px] font-black">{progress}%</span>
+
+                        <div className="p-8 pt-14 flex-1 flex flex-col">
+                          <h4 className="text-xl font-black text-slate-900 mb-3 leading-tight group-hover:text-indigo-600 transition-colors">
+                            {course.course_title}
+                          </h4>
+                          <p className="text-slate-500 text-sm font-medium leading-relaxed mb-6 line-clamp-2">
+                            {meta.description}
+                          </p>
+
+                          <div className="flex items-center gap-2 mb-8">
+                            <div className="bg-slate-50 rounded-xl px-4 py-2 text-[10px] font-black text-slate-700 uppercase">
+                              Fee: ₹{(meta.fee).toLocaleString()}
+                            </div>
+                            <div className="bg-slate-50 rounded-xl px-4 py-2 text-[10px] font-black text-slate-700 uppercase">
+                              12+ Modules
+                            </div>
+                          </div>
+
+                          {isEnrolled ? (
+                            <Link
+                              href={`/student/course/${encodeURIComponent(course.course_slug)}`}
+                              onClick={() => handleStart(course.course_slug)}
+                              className="w-full py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-2 bg-emerald-50 text-emerald-600"
+                            >
+                              <CheckCircle size={16} />
+                              Currently Learning
+                            </Link>
+                          ) : (
+                            <Link
+                              href={`/student/course/${encodeURIComponent(course.course_slug)}`}
+                              onClick={() => handleStart(course.course_slug)}
+                              className="w-full py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-2 bg-slate-900 text-white hover:bg-indigo-600 hover:shadow-xl hover:shadow-indigo-600/20"
+                            >
+                              View Details
+                              <ArrowRight size={16} />
+                            </Link>
+                          )}
                         </div>
                       </div>
                     );
-                  })
-                ) : (
-                  <div className="text-center py-12 bg-slate-50 rounded-3xl border border-dashed border-slate-200">
-                     <p className="text-slate-400 text-xs font-bold italic">No records found for current student</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* TRACKING TIMELINE - BASED ON PRESENT COURSE TITLES */}
-            <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100">
-              <div className="flex items-center justify-between mb-10">
-                <h3 className="font-extrabold text-slate-800 tracking-tight">Access Log</h3>
-                <Clock size={18} className="text-[#3B38A4] opacity-40" />
-              </div>
-
-              <div className="relative flex flex-col gap-8">
-                {myCourses.length > 0 ? myCourses.slice(0, 4).map((c, i) => {
-                   return (
-                    <div key={i} className="flex items-start gap-6 group">
-                      <div className="w-12 pt-1 flex flex-col items-end">
-                         <span className="text-[10px] font-black text-slate-900 leading-none">Recent</span>
-                         <span className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter mt-1">Access</span>
-                      </div>
-                      <div className="flex-1 h-[1px] bg-slate-100 mt-3 relative">
-                        <div 
-                          className={`absolute top-[-14px] left-0 ${courseMeta[c.course_slug]?.color || 'bg-indigo-500'} text-white px-5 py-2.5 rounded-2xl text-[10px] font-black shadow-lg shadow-indigo-100 flex items-center justify-between w-[90%] group-hover:w-full transition-all`}
-                        >
-                          <span className="truncate pr-4">{c.course_title}</span>
-                          <ChevronRight size={14} className="flex-shrink-0" />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                }) : (
-                  <div className="py-12 text-center text-slate-300 font-bold italic text-xs">
-                    No access logs available
-                  </div>
-                )}
-                <div className="absolute left-[64px] top-0 bottom-0 w-[1px] bg-slate-100 opacity-50"></div>
-              </div>
-            </div>
-
+                  })}
+                </div>
+              </section>
+            )}
           </div>
-        </div>
-      </div>
+        )}
+      </main>
     </div>
   );
 }

@@ -23,16 +23,38 @@ export async function GET(req: Request) {
 
     const student = rows[0];
 
-    const courses = student.courses ? JSON.parse(student.courses) : [];
-    const progressData = student.progress ? JSON.parse(student.progress) : {};
+    let courses: any[] = [];
+    let progressData: any = {};
+
+    try {
+      courses = student.courses ? JSON.parse(student.courses) : [];
+      if (!Array.isArray(courses)) courses = [];
+    } catch {
+      courses = [];
+    }
+
+    try {
+      progressData = student.progress ? JSON.parse(student.progress) : {};
+    } catch {
+      progressData = {};
+    }
 
     console.log("📚 COURSES:", courses);
     console.log("📊 PROGRESS:", progressData);
 
-    const progressKeys = Object.keys(progressData);
+    /* ================= 🚨 CRITICAL FIX ================= */
+    if (!courses.length) {
+      console.log("⚠ No courses → skipping DB query");
+
+      return NextResponse.json([]); // no crash
+    }
 
     /* ================= 2️⃣ FETCH COURSE TITLES ================= */
-    const slugs = courses.map((c: any) => c.course_slug);
+    const slugs = courses.map((c: any) => c.course_slug).filter(Boolean);
+
+    if (!slugs.length) {
+      return NextResponse.json([]);
+    }
 
     const [courseDetails]: any = await db.query(
       `
@@ -48,6 +70,8 @@ export async function GET(req: Request) {
       titleMap[c.course_slug] = c.course_title;
     });
 
+    const progressKeys = Object.keys(progressData);
+
     /* ================= 3️⃣ PROCESS ================= */
     const formatted = courses.map((course: any, index: number) => {
       const slug = course.course_slug;
@@ -55,11 +79,9 @@ export async function GET(req: Request) {
 
       const totalModules = modules.length;
 
-      /* 🔥 KEY FIX: MAP BY INDEX */
-      const progressKey = progressKeys[index]; // 👈 IMPORTANT
+      const progressKey = progressKeys[index];
       const courseProgress = progressData[progressKey] || {};
 
-      // Convert session → module
       const completedModuleSet = new Set(
         Object.keys(courseProgress)
           .filter((k) => courseProgress[k]?.completed)
@@ -72,16 +94,6 @@ export async function GET(req: Request) {
         totalModules > 0
           ? Math.round((completedModules / totalModules) * 100)
           : 0;
-
-      /* ================= DEBUG ================= */
-      console.log("------------ COURSE DEBUG ------------");
-      console.log("📌 Course:", slug);
-      console.log("🔑 Progress Key Used:", progressKey);
-      console.log("📊 Raw Progress:", courseProgress);
-      console.log("📈 Total Modules:", totalModules);
-      console.log("✅ Completed Modules:", completedModules);
-      console.log("📊 Progress:", progress + "%");
-      console.log("-------------------------------------");
 
       return {
         course_slug: slug,

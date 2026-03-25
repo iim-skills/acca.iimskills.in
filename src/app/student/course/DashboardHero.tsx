@@ -41,7 +41,7 @@ export default function DashboardHero({
         <div className="rounded-3xl p-6 sm:p-8 lg:p-10 flex flex-col md:flex-row items-center justify-between gap-8 bg-[#111C33] border border-white/10 shadow-2xl">
           
           {/* LEFT SECTION: AVATAR + STUDENT INFO */}
-          <div className="flex items-center gap-6 flex-grow">
+          <div className="flex items-center gap-6 grow">
             
             {/* AVATAR/INITIAL */}
             <div className="relative shrink-0">
