@@ -7,25 +7,25 @@ import axios from "axios";
 import { FaHandPointRight } from "react-icons/fa";
 
 const courseDetails = {
-  aak: {
-    title: "ACCA ",
+  "acca-applied-knowledge": {
+    title: "ACCA",
     url: "acca-applied-knowledge",
     programs: {
-      expert: { name: "Applied Knowledge Program", fee: 0 },
+      expert: { name: "Applied Knowledge Program", fee: 1 },
     },
   },
-  aas: {
+  "acca-applied-skills-level": {
     title: "ACCA",
     url: "acca-applied-skills-level",
     programs: {
-      expert: { name: "Applied Skill Program", fee: 0 },
+      expert: { name: "Applied Skill Program", fee: 1 },
     },
   },
-  acp: {
-    title: "ACCA ",
+  "acca-professional-level": {
+    title: "ACCA",
     url: "acca-professional-level",
     programs: {
-      expert: { name: "Strategic Professional Program", fee: 99900 },
+      expert: { name: "Strategic Professional Program", fee: 1 },
     },
   },
 } as const;
@@ -63,10 +63,15 @@ interface Coupon {
   programName?: string;
 }
 
+type PaymentStatus = "free" | "success";
+
 export default function EnrollPage() {
-  const [courseKey, setCourseKey] = useState<CourseKey>("aak");
+  const [courseKey, setCourseKey] = useState<CourseKey>(
+    "acca-applied-skills-level"
+  );
   const [type, setType] = useState<ProgramKey>("expert");
   const [selectedCourseName, setSelectedCourseName] = useState("");
+  const [paymentEnabled, setPaymentEnabled] = useState(false);
 
   const [formData, setFormData] = useState<EnrollmentFormData>(() => ({
     course: courseKey,
@@ -86,7 +91,6 @@ export default function EnrollPage() {
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<1 | 2>(1);
-  const [paymentUnlocked, setPaymentUnlocked] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
 
   const [locked, setLocked] = useState(false);
@@ -95,50 +99,82 @@ export default function EnrollPage() {
 
   const [currencyRate, setCurrencyRate] = useState(1);
   const [currencySymbol, setCurrencySymbol] = useState("₹");
-  const [userCountry, setUserCountry] = useState("IN");
 
   const course = courseDetails[courseKey];
   const program = course.programs[type];
   const baseFee = program.fee;
-
   const feeWith18 = Math.round(baseFee * 1.18);
   const totalFee = Math.max(feeWith18 - discount, 0);
+  const isFreeCourse = totalFee <= 0;
   const convertedFee = Math.round(totalFee * currencyRate);
 
+  const assignCourse = async (
+    paymentStatus: PaymentStatus,
+    paymentData?: Record<string, any>
+  ) => {
+    return axios.post("/api/enroll/assign-course", {
+      ...formData,
+      course: courseKey,
+      courseName: selectedCourseName || course.title,
+      programType: type,
+      programName: program.name,
+      fee: totalFee,
+      discount,
+      couponCode: coupon,
+      payment_status: paymentStatus,
+      payment_gateway: paymentData?.payment_gateway || "",
+      payment_id: paymentData?.payment_id || "",
+      order_id: paymentData?.order_id || "",
+      signature: paymentData?.signature || "",
+    });
+  };
+
   useEffect(() => {
-    async function testAllCountries() {
+    async function loadCurrency() {
       try {
+        const geo = await fetch("https://ipapi.co/json/");
+        const geoData = await geo.json();
+        const cc = geoData?.country_code || "IN";
+
         const res = await fetch("https://open.er-api.com/v6/latest/INR");
         const data = await res.json();
 
-        const rates = data.rates;
-        const fee = feeWith18;
+        let symbol = "₹";
+        let rate = 1;
 
-        console.log("✅ FINAL FEE (INR):", fee);
+        if (cc === "AE") {
+          rate = data.rates?.AED ?? 1;
+          symbol = "AED ";
+        } else if (cc === "US") {
+          rate = data.rates?.USD ?? 1;
+          symbol = "$ ";
+        } else if (cc === "GB") {
+          rate = data.rates?.GBP ?? 1;
+          symbol = "£ ";
+        } else if (cc === "CA") {
+          rate = data.rates?.CAD ?? 1;
+          symbol = "CA$ ";
+        } else if (cc === "AU") {
+          rate = data.rates?.AUD ?? 1;
+          symbol = "A$ ";
+        } else {
+          rate = 1;
+          symbol = "₹";
+        }
 
-        const allPrices = {
-          INR: fee,
-          AED: Math.round(fee * rates.AED),
-          USD: Math.round(fee * rates.USD),
-          GBP: Math.round(fee * rates.GBP),
-          CAD: Math.round(fee * rates.CAD),
-          AUD: Math.round(fee * rates.AUD),
-          EUR: Math.round(fee * rates.EUR),
-          SGD: Math.round(fee * rates.SGD),
-        };
-
-        console.log("✅ ALL COUNTRY PRICES:", allPrices);
-      } catch (error) {
-        console.log("Currency check failed:", error);
+        setCurrencyRate(rate);
+        setCurrencySymbol(symbol);
+      } catch (err) {
+        console.log("currency error", err);
+        setCurrencyRate(1);
+        setCurrencySymbol("₹");
       }
     }
 
-    testAllCountries();
-  }, [feeWith18]);
+    loadCurrency();
+  }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
     const params = new URLSearchParams(window.location.search);
     const courseParam = params.get("course");
     const typeParam = params.get("type");
@@ -182,50 +218,54 @@ export default function EnrollPage() {
   }, []);
 
   useEffect(() => {
-    async function loadCurrency() {
-      try {
-        const geo = await fetch("https://ipapi.co/json/");
-        const geoData = await geo.json();
-        const cc = geoData?.country_code || "IN";
-        setUserCountry(cc);
+    const email = formData.email?.trim().toLowerCase();
 
-        const res = await fetch("https://open.er-api.com/v6/latest/INR");
-        const data = await res.json();
-
-        let symbol = "₹";
-        let rate = 1;
-
-        if (cc === "AE") {
-          rate = data.rates?.AED ?? 1;
-          symbol = "AED ";
-        } else if (cc === "US") {
-          rate = data.rates?.USD ?? 1;
-          symbol = "$ ";
-        } else if (cc === "GB") {
-          rate = data.rates?.GBP ?? 1;
-          symbol = "£ ";
-        } else if (cc === "CA") {
-          rate = data.rates?.CAD ?? 1;
-          symbol = "CA$ ";
-        } else if (cc === "AU") {
-          rate = data.rates?.AUD ?? 1;
-          symbol = "A$ ";
-        } else {
-          rate = 1;
-          symbol = "₹";
-        }
-
-        setCurrencyRate(rate);
-        setCurrencySymbol(symbol);
-      } catch (err) {
-        console.log("currency error", err);
-        setCurrencyRate(1);
-        setCurrencySymbol("₹");
-      }
+    if (!email || !email.includes("@")) {
+      setLocked(false);
+      setProfileFound(false);
+      return;
     }
 
-    loadCurrency();
-  }, []);
+    const timer = setTimeout(async () => {
+      try {
+        setProfileLoading(true);
+
+        const res = await fetch(
+          `/api/student/profile?email=${encodeURIComponent(email)}`
+        );
+
+        const data = await res.json();
+
+        if (data?.found && data?.student) {
+          const s = data.student;
+
+          setFormData((prev) => ({
+            ...prev,
+            name: s.name || "",
+            phone: s.phone || "",
+            address: s.address || "",
+            pincode: s.pincode || "",
+            cityState: s.cityState || "",
+            country: s.country || "India",
+          }));
+
+          setLocked(true);
+          setProfileFound(true);
+        } else {
+          setLocked(false);
+          setProfileFound(false);
+        }
+      } catch (err) {
+        console.error(err);
+        setLocked(false);
+        setProfileFound(false);
+      } finally {
+        setProfileLoading(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [formData.email]);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -303,27 +343,30 @@ export default function EnrollPage() {
       return;
     }
 
-    setLoading(true);
-    try {
-      await axios.post("/api/enroll", {
-        ...formData,
-        course: courseKey,
-        courseName: selectedCourseName || course.title,
-        programType: type,
-        programName: program.name,
-        fee: totalFee,
-        discount,
-        couponCode: coupon,
-      });
-
-      setActiveTab(2);
-      setPaymentUnlocked(true);
-    } catch (error) {
-      console.error(error);
-      alert("Failed to submit details.");
-    } finally {
-      setLoading(false);
+    if (isFreeCourse) {
+      setLoading(true);
+      try {
+        await assignCourse("free");
+        alert("Free course enrolled successfully!");
+        window.location.href = "/student";
+      } catch (error) {
+        console.error(error);
+        alert("Failed to enroll free course.");
+      } finally {
+        setLoading(false);
+      }
+      return;
     }
+
+    setPaymentEnabled(true);
+    setActiveTab(2);
+
+    setTimeout(() => {
+      const el = document.getElementById("payment-section");
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 150);
   };
 
   const loadRazorpayScript = (): Promise<boolean> =>
@@ -338,9 +381,8 @@ export default function EnrollPage() {
     });
 
   const handleRazorpayPayment = async () => {
-    if (totalFee <= 0) {
-      alert("Free course enrolled successfully!");
-      window.location.href = "/student";
+    if (isFreeCourse) {
+      alert("This course is free. Click Enroll.");
       return;
     }
 
@@ -383,9 +425,25 @@ export default function EnrollPage() {
         name: course.title,
         description: program.name,
         order_id: data.id,
-        handler: function () {
-          alert("Payment successful!");
-          window.location.href = "/";
+        handler: async function (response: any) {
+          try {
+            setLoading(true);
+
+            await assignCourse("success", {
+              payment_gateway: "razorpay",
+              payment_id: response.razorpay_payment_id,
+              order_id: response.razorpay_order_id,
+              signature: response.razorpay_signature,
+            });
+
+            alert("Payment successful! Course assigned.");
+            window.location.href = "/student";
+          } catch (err) {
+            console.error(err);
+            alert("Payment succeeded, but enrollment failed.");
+          } finally {
+            setLoading(false);
+          }
         },
         prefill: {
           name: formData.name,
@@ -408,12 +466,24 @@ export default function EnrollPage() {
   const handleCCAvenuePayment = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
+    if (isFreeCourse) {
+      await handleSubmit();
+      return;
+    }
+
     try {
       const orderId = `IIMSKILLS_${Date.now()}`;
       const res = await axios.post("/api/ccavenue-order/", {
         orderId,
         amount: totalFee.toString(),
         ...formData,
+        course: courseKey,
+        courseName: selectedCourseName || course.title,
+        programType: type,
+        programName: program.name,
+        fee: totalFee,
+        discount,
+        couponCode: coupon,
       });
 
       const form = document.createElement("form");
@@ -441,113 +511,6 @@ export default function EnrollPage() {
     }
   };
 
-  useEffect(() => {
-    const email = formData.email?.trim().toLowerCase();
-
-    if (!email || !email.includes("@")) {
-      setLocked(false);
-      setProfileFound(false);
-      return;
-    }
-
-    const timer = setTimeout(async () => {
-      try {
-        setProfileLoading(true);
-
-        const res = await fetch(
-          `/api/student/profile?email=${encodeURIComponent(email)}`
-        );
-
-        const data = await res.json();
-
-        console.log("✅ PROFILE RESPONSE:", data);
-
-        if (data?.found && data?.student) {
-          const s = data.student;
-
-          setFormData((prev) => ({
-            ...prev,
-            name: s.name || "",
-            phone: s.phone || "",
-            address: s.address || "",
-            pincode: s.pincode || "",
-            cityState: s.cityState || "",
-            country: s.country || "India",
-          }));
-
-          setLocked(true);
-          setProfileFound(true);
-        } else {
-          setLocked(false);
-          setProfileFound(false);
-        }
-      } catch (err) {
-        console.error(err);
-        setLocked(false);
-        setProfileFound(false);
-      } finally {
-        setProfileLoading(false);
-      }
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [formData.email]);
-
-  const handlePayUPayment = async () => {
-    try {
-      const txnid = `TXN_${Date.now()}`;
-
-      const res = await fetch("/api/payu/hash", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          txnid,
-          amount: totalFee.toString(),
-          productinfo: `${course.title} - ${program.name}`,
-          firstname: formData.name,
-          email: formData.email,
-          phone: formData.phone,
-        }),
-      });
-
-      const data = await res.json();
-      if (!data.hash) return alert("PayU initialization failed");
-
-      const form = document.createElement("form");
-      form.method = "POST";
-      form.action = data.payuUrl;
-
-      const fields: Record<string, string> = {
-        key: data.key,
-        txnid,
-        amount: totalFee.toString(),
-        productinfo: `${course.title} - ${program.name}`,
-        firstname: formData.name,
-        email: formData.email,
-        phone: formData.phone,
-        surl: `${window.location.origin}/api/payu/success`,
-        furl: `${window.location.origin}/payment-failed`,
-        hash: data.hash,
-      };
-
-      Object.entries(fields).forEach(([k, v]) => {
-        const input = document.createElement("input");
-        input.type = "hidden";
-        input.name = k;
-        input.value = v;
-        form.appendChild(input);
-      });
-
-      document.body.appendChild(form);
-      form.submit();
-    } catch (err) {
-      console.error(err);
-      alert("PayU payment failed");
-    }
-  };
-
-  console.log("EMAIL STATE:", formData.email);
-
   return (
     <div className="px-4">
       <div
@@ -563,14 +526,12 @@ export default function EnrollPage() {
           Pay & Start Learning
         </h2>
         <h1 className="text-4xl font-bold text-center mb-10">
-          {(selectedCourseName || course.title)}{" "}
-          <span className="text-blue-600">{program.name}</span>
+          ACCA <span className="text-blue-600">{program.name}</span>
         </h1>
       </div>
 
       <div className="max-w-6xl mx-auto grid md:grid-cols-3 gap-6 py-15">
         <div className="md:col-span-2">
-          {/* Step 1: Basic Details */}
           <div
             className="bg-white rounded-lg shadow px-6 py-3 mb-6 border border-blue-300"
             onClick={() => setActiveTab(1)}
@@ -583,65 +544,58 @@ export default function EnrollPage() {
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-8">
                   <input
-  type="email"
-  name="email"
-  value={formData.email}
-  onChange={async (e) => {
-    const email = e.target.value;
+                    type="email"
+                    name="email"
+                    value={formData.email}
+                    onChange={async (e) => {
+                      const email = e.target.value;
 
-    setFormData((prev) => ({
-      ...prev,
-      email,
-    }));
+                      setFormData((prev) => ({
+                        ...prev,
+                        email,
+                      }));
 
-    console.log("🔥 EMAIL:", email);
+                      if (!email.includes("@")) return;
 
-    // ✅ DIRECT API CALL (NO useEffect dependency issue)
-    if (!email.includes("@")) return;
+                      try {
+                        setProfileLoading(true);
 
-    try {
-      setProfileLoading(true);
+                        const res = await fetch(
+                          `/api/student/profile?email=${encodeURIComponent(email)}`
+                        );
 
-      console.log("🚀 CALLING PROFILE API");
+                        const data = await res.json();
 
-      const res = await fetch(
-        `/api/student/profile?email=${encodeURIComponent(email)}`
-      );
+                        if (data?.found) {
+                          const s = data.student;
 
-      const data = await res.json();
+                          setFormData((prev) => ({
+                            ...prev,
+                            email,
+                            name: s.name || "",
+                            phone: s.phone || "",
+                            address: s.address || "",
+                            pincode: s.pincode || "",
+                            cityState: s.cityState || "",
+                            country: s.country || "India",
+                          }));
 
-      console.log("✅ PROFILE RESPONSE:", data);
-
-      if (data?.found) {
-        const s = data.student;
-
-        setFormData((prev) => ({
-          ...prev,
-          email,
-          name: s.name || "",
-          phone: s.phone || "",
-          address: s.address || "",
-          pincode: s.pincode || "",
-          cityState: s.cityState || "",
-          country: s.country || "India",
-        }));
-
-        setLocked(true);
-        setProfileFound(true);
-      } else {
-        setLocked(false);
-        setProfileFound(false);
-      }
-    } catch (err) {
-      console.error(err);
-      setLocked(false);
-    } finally {
-      setProfileLoading(false);
-    }
-  }}
-  placeholder="Email*"
-  className="border border-gray-300 p-2 rounded-sm h-full"
-/>
+                          setLocked(true);
+                          setProfileFound(true);
+                        } else {
+                          setLocked(false);
+                          setProfileFound(false);
+                        }
+                      } catch (err) {
+                        console.error(err);
+                        setLocked(false);
+                      } finally {
+                        setProfileLoading(false);
+                      }
+                    }}
+                    placeholder="Email*"
+                    className="border border-gray-300 p-2 rounded-sm h-full"
+                  />
 
                   {profileLoading && (
                     <p className="text-blue-600 text-sm">
@@ -701,8 +655,7 @@ export default function EnrollPage() {
                     value={formData.address}
                     onChange={handleChange}
                     placeholder="Billing Address*"
-                    className={`border border-gray-300 p-2 rounded-sm h-full`}
-                     
+                    className="border border-gray-300 p-2 rounded-sm h-full"
                     required
                   />
 
@@ -712,7 +665,7 @@ export default function EnrollPage() {
                     value={formData.pincode}
                     onChange={handleChange}
                     placeholder="Pincode*"
-                    className={`border border-gray-300 p-2 rounded-sm h-full`}
+                    className="border border-gray-300 p-2 rounded-sm h-full"
                     required
                   />
 
@@ -722,7 +675,7 @@ export default function EnrollPage() {
                     value={formData.cityState}
                     onChange={handleChange}
                     placeholder="City, State*"
-                    className={`border border-gray-300 p-2 rounded-sm h-full`}
+                    className="border border-gray-300 p-2 rounded-sm h-full"
                     required
                   />
 
@@ -730,8 +683,7 @@ export default function EnrollPage() {
                     name="country"
                     value={formData.country}
                     onChange={handleChange}
-                    className={`border border-gray-300 p-2 rounded-sm h-full `}
-                     
+                    className="border border-gray-300 p-2 rounded-sm h-full"
                   >
                     <option value="India">India</option>
                     <option value="United States">United States</option>
@@ -761,30 +713,47 @@ export default function EnrollPage() {
                 </label>
 
                 <button
+                  type="button"
                   className={`px-6 py-2 rounded text-white ${
-                    agreedToTerms
+                    agreedToTerms && !loading
                       ? "bg-blue-600 hover:bg-blue-700 cursor-pointer"
                       : "bg-blue-300 cursor-not-allowed"
                   }`}
                   onClick={handleSubmit}
                   disabled={!agreedToTerms || loading}
                 >
-                  {loading ? "Submitting..." : "Proceed"}
+                  {loading
+                    ? "Processing..."
+                    : isFreeCourse
+                    ? "Enroll Now"
+                    : "Proceed to Payment"}
                 </button>
               </>
             )}
           </div>
 
-          {/* Step 2: Payment */}
           <div
+            id="payment-section"
             className="bg-white rounded-lg shadow px-5 py-3"
-            onClick={() => paymentUnlocked && setActiveTab(2)}
           >
-            <h3 className="text-xl font-bold text-blue-700">
+            <h3
+              className={`text-xl font-bold ${
+                activeTab === 2 ? "text-green-600" : "text-blue-700"
+              }`}
+            >
               2. Secure Payment
             </h3>
 
-            {activeTab === 2 && paymentUnlocked && (
+            {isFreeCourse ? (
+              <div className="mt-7 py-4">
+                <p className="text-green-700 font-medium">
+                  This course is free. No payment is required.
+                </p>
+                <p className="text-sm text-gray-600 mt-2">
+                  Click <strong>Enroll</strong> in Step 1 to complete registration.
+                </p>
+              </div>
+            ) : paymentEnabled ? (
               <>
                 <div className="mb-4 mt-7">
                   <input
@@ -835,14 +804,6 @@ export default function EnrollPage() {
                       Pay Via CCAvenue
                     </button>
                   </form>
-
-                  {/* <button
-                    onClick={handlePayUPayment}
-                    disabled
-                    className="bg-blue-300 text-white px-6 py-2 rounded cursor-not-allowed pointer-events-none"
-                  >
-                    Pay Via PayU
-                  </button> */}
                 </div>
 
                 <div className="py-4">
@@ -852,18 +813,23 @@ export default function EnrollPage() {
                   </p>
                 </div>
               </>
+            ) : (
+              <div className="mt-7 py-4">
+                <p className="text-gray-600 text-sm">
+                  Click <strong>Proceed to Payment</strong> in Step 1 to open
+                  this section.
+                </p>
+              </div>
             )}
           </div>
         </div>
 
-        {/* Order Summary */}
         <div className="bg-white rounded-lg shadow px-6 py-3 border border-blue-300 h-fit sticky top-5">
           <h3 className="text-sm font-semibold mb-1">Order Summary</h3>
           <p className="font-bold text-lg mb-1 text-blue-700">
             {(selectedCourseName || course.title)} {program.name}
           </p>
           <hr className="my-2" />
-          <hr className="my-3" />
           <div className="flex justify-between text-sm font-bold">
             <span>Grand Total</span>
             <span>
