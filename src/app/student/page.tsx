@@ -153,18 +153,7 @@ export default function StudentPage() {
           <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-bold mb-4 px-2">
             Dashboard
           </div>
-          <button
-            onClick={() => setActiveTab("my")}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
-              activeTab === "my"
-                ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20"
-                : "text-slate-400 hover:bg-white/5 hover:text-white"
-            }`}
-          >
-            <LayoutDashboard size={20} />
-            <span className="font-semibold text-sm">My Tracks</span>
-          </button>
-          <button
+           <button
             onClick={() => setActiveTab("all")}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
               activeTab === "all"
@@ -175,23 +164,49 @@ export default function StudentPage() {
             <Compass size={20} />
             <span className="font-semibold text-sm">Explore All</span>
           </button>
+          <button
+            onClick={() => setActiveTab("my")}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+              activeTab === "my"
+                ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20"
+                : "text-slate-400 hover:bg-white/5 hover:text-white"
+            }`}
+          >
+            <LayoutDashboard size={20} />
+            <span className="font-semibold text-sm">Enrolled Courses</span>
+          </button>
+         
         </nav>
 
-        <div className="mt-8 grid grid-cols-2 gap-3">
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-            <TrendingUp size={16} className="text-emerald-400 mb-2" />
-            <p className="text-xl font-bold">{averageProgress}%</p>
-            <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">
-              Avg. Progress
-            </p>
-          </div>
+        {/* ── SIDEBAR STATS ── */}
+        <div className="mt-8 space-y-3">
+          {/* Modules Done — visible to everyone */}
           <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
             <Award size={16} className="text-amber-400 mb-2" />
             <p className="text-xl font-bold">{completedModules}</p>
             <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">
-              Modules
+              Modules Done
             </p>
           </div>
+
+          {/* Avg. Progress button — paid users only */}
+          {studentType !== "free" && (
+            <button
+              onClick={() => router.push("/student/progress")}
+              className="w-full flex items-center justify-between gap-3 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 hover:text-white transition-all px-4 py-3 rounded-2xl group"
+            >
+              <div className="flex items-center gap-2">
+                <TrendingUp size={16} className="text-indigo-400" />
+                <div className="text-left">
+                  <p className="text-[10px] uppercase font-black tracking-wider text-slate-400">
+                    Avg. Progress
+                  </p>
+                  <p className="text-lg font-bold text-white leading-none">{averageProgress}%</p>
+                </div>
+              </div>
+              <ChevronRight size={16} className="group-hover:translate-x-1 transition-transform" />
+            </button>
+          )}
         </div>
 
         <div className="mt-auto pt-8 border-t border-white/5">
@@ -224,9 +239,6 @@ export default function StudentPage() {
             <h2 className="text-3xl font-black text-slate-900 tracking-tight">
               Welcome, {studentName.split(" ")[0]}
             </h2>
-            <p className="text-slate-500 mt-1 font-medium">
-              Monitoring your academic records and course progress.
-            </p>
           </div>
 
           <div className="flex items-center gap-4">
@@ -246,16 +258,7 @@ export default function StudentPage() {
         </div>
 
         <div className="flex items-center gap-1 bg-slate-200/50 p-1.5 rounded-2xl w-fit shadow-inner">
-          <button
-            onClick={() => setActiveTab("my")}
-            className={`flex items-center gap-2 px-8 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.15em] transition-all ${
-              activeTab === "my" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            <Zap size={14} className={activeTab === "my" ? "text-amber-500" : ""} />
-            My Learning
-          </button>
-          <button
+         <button
             onClick={() => setActiveTab("all")}
             className={`flex items-center gap-2 px-8 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.15em] transition-all ${
               activeTab === "all" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
@@ -264,6 +267,16 @@ export default function StudentPage() {
             <Globe size={14} className={activeTab === "all" ? "text-blue-500" : ""} />
             All Courses
           </button>
+          <button
+            onClick={() => setActiveTab("my")}
+            className={`flex items-center gap-2 px-8 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.15em] transition-all ${
+              activeTab === "my" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            <Zap size={14} className={activeTab === "my" ? "text-amber-500" : ""} />
+            Enrolled Courses
+          </button>
+         
         </div>
 
         {loading ? (
