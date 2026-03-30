@@ -7,13 +7,17 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   productionBrowserSourceMaps: false,
 
+  // ✅ THIS IS THE REAL FIX FOR YOUR ERROR
   experimental: {
     serverActions: {
-      bodySizeLimit: "500mb",
+      bodySizeLimit: "500mb", // (optional, not for API)
     },
+
+    // 🔥 IMPORTANT: FIXES 10MB LIMIT
+    proxyClientMaxBodySize: "500mb",
   },
 
-  // Required for mysql on Next.js server
+  // ✅ Required for MySQL on VPS
   serverExternalPackages: ["mysql2"],
 
   webpack(config) {

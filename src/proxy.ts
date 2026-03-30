@@ -1,10 +1,15 @@
-import type { NextRequest } from 'next/server';
-import { NextResponse } from 'next/server';
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 
 // PROXY HANDLER
 export default function proxy(request: NextRequest) {
   const url = request.nextUrl;
   const pathname = url.pathname;
+
+  // ✅ VERY IMPORTANT: SKIP ALL API ROUTES (prevents 10MB issue)
+  if (pathname.startsWith("/api")) {
+    return NextResponse.next();
+  }
 
   // --- 1️⃣ FIX IMAGE URL ENCODING ---
   if (pathname.match(/\.(jpg|jpeg|png|gif|webp|svg)$/i)) {
@@ -23,10 +28,15 @@ export default function proxy(request: NextRequest) {
   return NextResponse.next();
 }
 
-// --- 3️⃣ MATCHERS (same behavior as old middleware.ts) ---
+// --- 3️⃣ MATCHER CONFIG ---
 export const config = {
   matcher: [
-    // Apply proxy to all routes EXCEPT upload-certificate API
-    '/((?!api/lms/upload-certificate|api/lms/upload-certificate/).*)'
+    /*
+      Apply proxy to everything EXCEPT:
+      - ALL API routes (CRITICAL for uploads)
+      - Next.js internal files
+      - favicon
+    */
+    "/((?!api|_next|favicon.ico).*)",
   ],
 };

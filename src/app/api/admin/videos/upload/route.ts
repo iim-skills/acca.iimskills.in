@@ -8,8 +8,12 @@ import path from "path";
 import crypto from "crypto";
 
 const MAX_SIZE = 500 * 1024 * 1024; // 500MB
-const STORAGE_ROOT = "/var/www/storage/videos";
-const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || "https://acca.iimskills.in";
+
+// ✅ SAVE IN PUBLIC/videos
+const STORAGE_DIR = path.join(process.cwd(), "public/videos");
+
+const PUBLIC_BASE_URL =
+  process.env.PUBLIC_BASE_URL || "https://acca.iimskills.in";
 
 /* =====================================================
    Convert File → Buffer
@@ -51,26 +55,26 @@ export async function POST(req: Request) {
     );
 
     /* ================= CREATE DIRECTORY ================= */
-    await fs.mkdir(STORAGE_ROOT, { recursive: true });
+    await fs.mkdir(STORAGE_DIR, { recursive: true });
 
     /* ================= FILE NAME ================= */
     const ext = path.extname(file.name) || ".mp4";
     const fileName = `${Date.now()}-${crypto.randomUUID()}${ext}`;
 
-    const filePath = path.join(STORAGE_ROOT, fileName);
+    const filePath = path.join(STORAGE_DIR, fileName);
 
     /* ================= SAVE FILE ================= */
     const buffer = await fileToBuffer(file);
     await fs.writeFile(filePath, buffer);
 
-    const publicUrl = `${PUBLIC_BASE_URL}/storage/videos/${fileName}`;
+    /* ================= PUBLIC URL ================= */
+    const publicUrl = `${PUBLIC_BASE_URL}/videos/${fileName}`;
 
     console.log("✅ Upload success:", publicUrl);
 
     /* ================= RESPONSE ================= */
     return NextResponse.json({
       success: true,
-      secure_url: publicUrl,
       url: publicUrl,
       file_name: fileName,
       original_name: file.name,
