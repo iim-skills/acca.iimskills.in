@@ -1,7 +1,8 @@
 "use client";
 
 import React from "react";
-import { BookOpen, LogOut, Zap, CheckCircle2 } from "lucide-react";
+import Link from "next/link"; // Change to "next/link" if using Next.js
+import { ChevronRight, LogOut, BookOpen, Zap, ShieldCheck, LayoutGrid } from "lucide-react";
 
 /* ================= TYPES ================= */
 
@@ -17,7 +18,7 @@ type CourseFile = {
 
 type Props = {
   studentName: string;
-  Type?: string; // "paid" or "free"
+  Type?: string; 
   course: CourseFile | null;
   activeModules: string[];
   onLogout: () => void;
@@ -31,114 +32,98 @@ export default function DashboardHero({
   onLogout,
 }: Props) {
   const isPaid = (Type || "free").toLowerCase().trim() === "paid";
-  const totalModules = course?.modules?.length ?? 12;
-
+  const totalModules = course?.modules?.length ?? 0;
   const firstInitial = studentName?.charAt(0).toUpperCase() || "S";
 
   return (
-    <div className="w-full md:pt-10 md:pb-12 p-2 sm:px-6 lg:px-10 bg-[#0F172A]">
-      <div className="relative z-10 max-w-7xl mx-auto">
-        <div className="rounded-3xl p-6 sm:p-8 lg:p-10 flex flex-col md:flex-row items-center justify-between gap-8 bg-[#111C33] border border-white/10 shadow-2xl">
+    <div className="w-full bg-[#0B0F1A] text-slate-200 font-sans selection:bg-indigo-500/30">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        
+        {/* TOP NAVIGATION / BREADCRUMB */}
+        <nav className="flex items-center gap-2 mb-10 text-sm font-medium">
+          <Link 
+            href="/student" 
+            className="flex items-center gap-2 text-slate-500 hover:text-indigo-400 transition-colors"
+          >
+            <LayoutGrid size={16} />
+            <span>Dashboard</span>
+          </Link>
+          <ChevronRight size={14} className="text-slate-700" />
+          <span className="text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-md">LMS</span>
+        </nav>
+
+        {/* HERO CONTENT */}
+        <div className="relative flex flex-col lg:flex-row lg:items-end justify-between gap-8 pb-8 border-b border-white/5">
           
-          {/* LEFT SECTION: AVATAR + STUDENT INFO */}
-          <div className="flex items-center gap-6 grow">
-            
-            {/* AVATAR/INITIAL */}
-            <div className="relative shrink-0">
-              <div className="absolute -inset-1.5 bg-gradient-to-tr from-[#6366f1] to-[#38bdf8] rounded-3xl opacity-30 blur-sm" />
-              <div className="relative w-20 h-20 bg-gradient-to-br from-[#4f46e5] to-[#7c3aed] rounded-3xl border border-indigo-400/30 flex items-center justify-center overflow-hidden shadow-lg">
-                <span className="text-white text-5xl font-extrabold tracking-tighter">
-                  {firstInitial}
-                </span>
+          <div className="flex flex-col md:flex-row items-center md:items-start gap-6">
+            {/* AVATAR - Minimalist Circle */}
+            <div className="relative">
+              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-700 flex items-center justify-center text-3xl font-bold text-white shadow-[0_0_40px_rgba(79,70,229,0.2)]">
+                {firstInitial}
               </div>
+              {isPaid && (
+                <div className="absolute -bottom-1 -right-1 bg-emerald-500 p-1 rounded-full border-4 border-[#0B0F1A]">
+                  <ShieldCheck size={12} className="text-white" />
+                </div>
+              )}
             </div>
 
-            {/* NAME, STATUS, & COURSE */}
-            <div className="space-y-2 flex-grow">
-              <div className="flex items-center gap-3 flex-wrap">
-                <h1 className="text-3xl font-extrabold text-white leading-none">
+            {/* IDENTITY */}
+            <div className="text-center md:text-left space-y-2">
+              <div className="flex items-center justify-center md:justify-start gap-3">
+                <h1 className="text-4xl font-semibold tracking-tight text-white">
                   {studentName || "Student"}
                 </h1>
-                <span
-                  className={`px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide ${
-                    isPaid
-                      ? "bg-emerald-500/15 text-emerald-300 border border-emerald-400/20"
-                      : "bg-sky-500/15 text-sky-300 border border-sky-400/20"
-                  }`}
-                >
-                  {isPaid ? "FULL ACCESS" : "TRIAL ACCESS"}
+                <span className={`text-[10px] tracking-widest font-black px-2 py-1 rounded border ${
+                  isPaid ? "border-emerald-500/20 text-emerald-400" : "border-slate-700 text-slate-500"
+                }`}>
+                  {isPaid ? "PREMIUM" : "FREE TRIAL"}
                 </span>
               </div>
-
-              <div className="flex items-center gap-2.5 text-sm font-semibold text-slate-300 bg-white/5 border border-white/10 px-4 py-2.5 rounded-xl max-w-md">
-                <CheckCircle2 size={16} className="text-emerald-400" />
-                <span className="text-slate-100 font-bold flex-grow">
-                  Course: {course?.name ?? "General Learning Track"}
-                </span>
-              </div>
+              <p className="text-slate-400 flex items-center justify-center md:justify-start gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
+                {course?.name ?? "General Course Path"}
+              </p>
             </div>
           </div>
 
-          {/* RIGHT SECTION: STATS + LOGOUT */}
-          <div className="flex flex-col sm:flex-row items-center gap-6 w-full md:w-auto">
+          {/* STATS & ACTIONS */}
+          <div className="flex flex-col sm:flex-row items-center gap-6">
             
-            {/* STATS AREA */}
-            <div className="grid grid-cols-2 gap-4 w-full sm:w-auto">
-              <StatCard
-                icon={<BookOpen size={20} className="text-white" />}
-                label={totalModules.toString()}
-                sub="Modules"
-                bgColor="bg-gradient-to-br from-[#16a34a] to-[#22c55e]"
-              />
-
-              <StatCard
-                icon={<Zap size={20} className="text-white" />}
-                label={activeModules?.length.toString() || "0"}
-                sub="Active"
-                bgColor="bg-gradient-to-br from-[#7c3aed] to-[#8b5cf6]"
-              />
+            {/* COMPACT STATS */}
+            <div className="flex items-center gap-8 px-6 py-3 bg-white/5 rounded-2xl border border-white/5 backdrop-blur-sm">
+              <div className="text-center">
+                <p className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-1">Modules</p>
+                <div className="flex items-center gap-2 justify-center">
+                  <BookOpen size={14} className="text-indigo-400" />
+                  <span className="text-xl font-mono text-white tracking-tighter">{totalModules}</span>
+                </div>
+              </div>
+              <div className="w-[1px] h-8 bg-white/10" />
+              <div className="text-center">
+                <p className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-1">Active</p>
+                <div className="flex items-center gap-2 justify-center">
+                  <Zap size={14} className="text-amber-400" />
+                  <span className="text-xl font-mono text-white tracking-tighter">{activeModules?.length || 0}</span>
+                </div>
+              </div>
             </div>
 
-            {/* LOGOUT BUTTON */}
-            <button
+            {/* LOGOUT BUTTON - Low profile */}
+            <button 
               onClick={onLogout}
-              className="w-full sm:w-auto flex items-center justify-center gap-3 px-8 py-5 bg-gradient-to-r from-[#ff4b71] to-[#ff42a3] hover:from-[#e14264] hover:to-[#e13b8f] text-white rounded-2xl text-base font-bold transition-all duration-300 shadow-md shadow-pink-900/20 active:scale-[0.97]"
+              className="group flex items-center gap-2 text-slate-500 hover:text-red-400 transition-all font-medium text-sm"
             >
-              <LogOut size={18} />
-              Logout Account
+              <div className="p-2 rounded-lg bg-slate-900 group-hover:bg-red-500/10 transition-colors">
+                <LogOut size={16} />
+              </div>
+              Sign Out
             </button>
           </div>
         </div>
-      </div>
-    </div>
-  );
-}
 
-/* ================= StatCard Component ================= */
-
-function StatCard({
-  icon,
-  label,
-  sub,
-  bgColor,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  sub: string;
-  bgColor: string;
-}) {
-  return (
-    <div className={`p-4 ${bgColor} rounded-2xl flex items-center gap-4 w-full min-w-[140px] shadow-lg shadow-black/10`}>
-      <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center shrink-0 backdrop-blur-sm">
-        {icon}
-      </div>
-      <div>
-        <p className="text-4xl font-extrabold text-white leading-none tracking-tight">
-          {label}
-        </p>
-        <p className="text-[11px] font-bold text-white uppercase opacity-80 tracking-widest mt-1">
-          {sub}
-        </p>
+        {/* SUBTLE DECORATION */}
+        <div className="absolute top-0 right-0 w-1/3 h-64 bg-indigo-600/5 blur-[120px] pointer-events-none" />
       </div>
     </div>
   );

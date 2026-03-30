@@ -15,7 +15,15 @@ export type QuizItem = {
   quizId?: string | number;
 };
 
-export type ItemType = VideoItem | QuizItem;
+export type PdfItem = {
+  type: "pdf";
+  pdfId: string;
+  name: string;
+  fileUrl: string;
+};
+
+/* ✅ UNION TYPE */
+export type ItemType = VideoItem | QuizItem | PdfItem;
 
 /* ================= STRUCTURE ================= */
 
@@ -34,9 +42,9 @@ export type Module = {
 /* ================= COURSE ================= */
 
 export type Course = {
-  id: string | number;            // ✅ REQUIRED (used in list)
-  name: string;                  // ✅ REQUIRED (UI)
-  slug?: string;                 // optional
+  id: string | number;
+  name: string;
+  slug?: string;
 
   courseData: {
     modules: Module[];
