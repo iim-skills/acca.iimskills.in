@@ -7,7 +7,7 @@ import fs from "fs/promises";
 import path from "path";
 import crypto from "crypto";
 
-const MAX_SIZE = 500 * 1024 * 1024; // 500MB
+const MAX_SIZE = 5000 * 1024 * 1024; // 500MB
 
 // ✅ SAVE IN PUBLIC/videos
 const STORAGE_DIR = path.join(process.cwd(), "public/videos");

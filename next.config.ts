@@ -10,11 +10,11 @@ const nextConfig: NextConfig = {
   // ✅ THIS IS THE REAL FIX FOR YOUR ERROR
   experimental: {
     serverActions: {
-      bodySizeLimit: "500mb", // (optional, not for API)
+      bodySizeLimit: "5000mb", // (optional, not for API)
     },
 
     // 🔥 IMPORTANT: FIXES 10MB LIMIT
-    proxyClientMaxBodySize: "500mb",
+    proxyClientMaxBodySize: "5000mb",
   },
 
   // ✅ Required for MySQL on VPS
