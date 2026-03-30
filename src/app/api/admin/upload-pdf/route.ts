@@ -8,15 +8,27 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-const STORAGE_DIR =
-  process.env.NODE_ENV === "production"
-    ? "/home/acca.iimskills.in/acca/public/pdfs"
-    : path.join(process.cwd(), "public/pdfs");
+// ✅ Always save here
+const STORAGE_DIR = "/home/acca.iimskills.in/acca/public/pdfs";
 
-const PUBLIC_BASE_URL =
-  process.env.NODE_ENV === "production"
-    ? "https://acca.iimskills.in"
-    : "http://localhost:3000";
+// ✅ Set this in VPS env:
+// PUBLIC_BASE_URL=https://acca.iimskills.in
+// Fallback also avoids localhost in production
+function getPublicBaseUrl(req: NextRequest) {
+  const envUrl = process.env.PUBLIC_BASE_URL?.trim();
+  if (envUrl) return envUrl.replace(/\/+$/, "");
+
+  const host =
+    req.headers.get("x-forwarded-host") ||
+    req.headers.get("host") ||
+    "acca.iimskills.in";
+
+  const proto =
+    req.headers.get("x-forwarded-proto") ||
+    (host.includes("localhost") ? "http" : "https");
+
+  return `${proto}://${host}`.replace(/\/+$/, "");
+}
 
 function safeFileName(originalName: string) {
   const base = path
@@ -75,6 +87,9 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    console.log("🔥 Upload API HIT");
+    console.log("STORAGE_DIR:", STORAGE_DIR);
+
     await ensureStorageDir();
 
     const formData = await req.formData();
@@ -140,12 +155,13 @@ export async function POST(req: NextRequest) {
     const uniqueName = `${Date.now()}-${randomUUID()}-${safeName}.pdf`;
     const filePath = path.join(STORAGE_DIR, uniqueName);
 
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
+    console.log("Saving file to:", filePath);
 
+    const buffer = Buffer.from(await file.arrayBuffer());
     await fs.writeFile(filePath, buffer);
 
-    const fileUrl = `${PUBLIC_BASE_URL}/pdfs/${uniqueName}`;
+    const baseUrl = getPublicBaseUrl(req);
+    const fileUrl = `${baseUrl}/pdfs/${uniqueName}`;
 
     if (!submodule.items) submodule.items = [];
 
@@ -184,7 +200,10 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     console.error("UPLOAD ERROR:", error);
-    return NextResponse.json({ message: "Upload failed" }, { status: 500 });
+    return NextResponse.json(
+      { message: "Upload failed", error: String(error) },
+      { status: 500 }
+    );
   }
 }
 
