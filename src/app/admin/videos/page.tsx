@@ -36,38 +36,33 @@ type Video = {
   thumbUrl?: string;
   public_id?: string;
   duration?: number;
+  size?: number;
   [k: string]: any;
 };
 
-type CloudinaryUploadResponse = {
-  public_id: string;
-  secure_url: string;
-  duration?: number;
-  format?: string;
-  bytes?: number;
-  [key: string]: any;
+type VPSUploadResponse = {
+  url?: string;
+  secure_url?: string;
+  file_name?: string;
+  size?: number;
+  original_name?: string;
+  mime_type?: string;
+  thumb_url?: string;
 };
-
-const CLOUDINARY_CLOUD_NAME = "dmsyxp14s";
-const CLOUDINARY_UPLOAD_PRESET = "ACCA.iimskills.in"; // change this
 
 const generateId = () =>
   typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
     : Math.random().toString(36).substring(2);
 
-function uploadVideoToCloudinary(
+function uploadVideoToVPS(
   file: File,
   onProgress?: (percent: number) => void
-): Promise<CloudinaryUploadResponse> {
+): Promise<VPSUploadResponse> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
 
-    xhr.open(
-      "POST",
-      `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/video/upload`,
-      true
-    );
+    xhr.open("POST", "/api/admin/videos/upload", true);
 
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable && onProgress) {
@@ -85,22 +80,19 @@ function uploadVideoToCloudinary(
         } else {
           reject(
             new Error(
-              data?.error?.message ||
-                `Cloudinary upload failed with status ${xhr.status}`
+              data?.error || data?.details || "Upload failed"
             )
           );
         }
       } catch {
-        reject(new Error("Invalid Cloudinary response"));
+        reject(new Error("Invalid server response"));
       }
     };
 
-    xhr.onerror = () => reject(new Error("Network error while uploading"));
+    xhr.onerror = () => reject(new Error("Network upload error"));
 
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
-    formData.append("folder", "lms_videos");
 
     xhr.send(formData);
   });
@@ -130,7 +122,9 @@ export default function VideoAdmin(): React.ReactElement {
 
   const loadVideos = async () => {
     try {
-      const res = await fetch("/api/admin/videos");
+      const res = await fetch("/api/admin/videos", {
+        cache: "no-store",
+      });
       if (!res.ok) throw new Error("Failed to load videos");
       const data = await res.json();
       setVideos(Array.isArray(data) ? data : []);
@@ -162,13 +156,7 @@ export default function VideoAdmin(): React.ReactElement {
     v?.secure_url ?? v?.s3_url ?? v?.s3Url ?? v?.url ?? v?.fileUrl ?? "#";
 
   const getThumbUrl = (v: Video) =>
-    v?.thumb_url ??
-    v?.thumbUrl ??
-    v?.secure_url ??
-    v?.s3_url ??
-    v?.s3Url ??
-    v?.url ??
-    "";
+    v?.thumb_url ?? v?.thumbUrl ?? "";
 
   const filteredVideos = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -202,33 +190,39 @@ export default function VideoAdmin(): React.ReactElement {
       setUploading(true);
       setProgress(0);
 
-      const uploadResult = await uploadVideoToCloudinary(file, setProgress);
+      const uploadResult = await uploadVideoToVPS(file, setProgress);
 
-      const publicId = uploadResult?.public_id ?? null;
-      const secureUrl = uploadResult?.secure_url ?? null;
-      const duration = uploadResult?.duration ?? null;
+      const secureUrl =
+        uploadResult?.secure_url ?? uploadResult?.url ?? null;
 
-      if (!publicId || !secureUrl) {
-        throw new Error("Upload response missing public_id or secure_url");
+      if (!secureUrl) {
+        throw new Error("Upload response missing file URL");
       }
-
-      const thumbUrl = `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/video/upload/so_1/${publicId}.jpg`;
 
       const saveRes = await fetch("/api/admin/videos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: videoName.trim(),
-          public_id: publicId,
           secure_url: secureUrl,
-          thumb_url: thumbUrl,
-          duration,
+          url: secureUrl,
+          thumb_url: uploadResult?.thumb_url ?? "",
+          duration: null,
+          size: uploadResult?.size ?? file.size,
+          file_name: uploadResult?.file_name ?? file.name,
+          original_name: uploadResult?.original_name ?? file.name,
+          mime_type: uploadResult?.mime_type ?? file.type,
           uploaded_by: "admin",
         }),
       });
 
       if (!saveRes.ok) {
-        throw new Error("Metadata save failed");
+        let errorText = "Metadata save failed";
+        try {
+          const errData = await saveRes.json();
+          errorText = errData?.error || errorText;
+        } catch {}
+        throw new Error(errorText);
       }
 
       showMsg("Video uploaded successfully!", "success");
@@ -371,11 +365,19 @@ export default function VideoAdmin(): React.ReactElement {
                     key={String(id)}
                     className="group relative overflow-hidden rounded-2xl border bg-white shadow-sm"
                   >
-                    <div className="relative aspect-video bg-slate-100">
+                    <div className="relative aspect-video bg-slate-100 overflow-hidden">
                       {thumbUrl ? (
                         <img
                           src={thumbUrl}
                           alt={name}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : fileUrl !== "#" ? (
+                        <video
+                          src={fileUrl}
+                          muted
+                          playsInline
+                          preload="metadata"
                           className="h-full w-full object-cover"
                         />
                       ) : (
@@ -388,7 +390,9 @@ export default function VideoAdmin(): React.ReactElement {
 
                       <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300">
                         <button
-                          onClick={() => fileUrl !== "#" && window.open(fileUrl, "_blank")}
+                          onClick={() =>
+                            fileUrl !== "#" && window.open(fileUrl, "_blank")
+                          }
                           className="rounded-full bg-white/95 p-3 shadow-md"
                         >
                           <PlayCircle className="w-6 h-6 text-gray-900" />
@@ -600,7 +604,10 @@ export default function VideoAdmin(): React.ReactElement {
                   <div className="space-y-3">
                     <div className="flex justify-between text-sm font-bold">
                       <span className="flex items-center gap-2">
-                        <Loader2 className="animate-spin text-blue-600" size={18} />
+                        <Loader2
+                          className="animate-spin text-blue-600"
+                          size={18}
+                        />
                         Uploading Content...
                       </span>
                       <span>{progress}%</span>

@@ -22,6 +22,7 @@ import ProfilePage from "./profile/page";
 import BatchPage from "./batches/page";
 import Quiz from "./quizzes/page";
 import Course from "./course-builder/page";
+import StudyMT from "./studyMT/page";
 import CouponPage from "./coupons/page";
 import MentorsBooking from "./MentorsBooking/page";
 import Users from "./users/page";
@@ -129,6 +130,7 @@ export default function App() {
     { key: "coupon", name: "Coupons", icon: <Ticket size={20} /> },
     { key: "course", name: "Course", icon: <Ticket size={20} /> },
     { key: "quiz", name: "Quiz", icon: <MdQuiz size={20} /> },
+    { key: "studyMT", name: "studyMT", icon: <MdQuiz size={20} /> },
     { key: "lms", name: "Students", icon: <FolderOpen size={20} /> },
     { key: "batch", name: "Batches", icon: <Calendar size={20} /> },
     { key: "mentors_booking", name: "Mentors Slots", icon: <User size={20} /> },
@@ -309,7 +311,7 @@ export default function App() {
             {active === "lms" && <LMSPage />}
             {active === "videos" && <Videos />}
             {active === "profile" && <ProfilePage />}
-
+            {active === "studyMT" && <StudyMT />}
             {active === "users" && user && <Users currentUser={user} />}
 
             {active === "course" && <Course />}

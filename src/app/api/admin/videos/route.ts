@@ -37,13 +37,12 @@ export async function GET() {
 
     const videos = rows.map((v: any) => ({
       id: v.id,
-
-      /* ⭐ IMPORTANT for dropdown */
       title: v.name,
-
-      /* full info if needed */
       name: v.name,
-      url: v.secure_url || v.s3_url,
+
+      url: v.secure_url,
+      secure_url: v.secure_url,
+
       thumb_url: v.thumb_url,
       duration: v.duration,
 
@@ -60,6 +59,7 @@ export async function GET() {
     return NextResponse.json(videos);
   } catch (err) {
     console.error("GET VIDEOS ERROR:", err);
+
     return NextResponse.json(
       { error: "Failed to fetch videos" },
       { status: 500 }
@@ -82,6 +82,9 @@ export async function POST(req: Request) {
       );
     }
 
+    /* extract VPS file name */
+    const fileName = body.secure_url.split("/").pop();
+
     const [result]: any = await pool.query(
       `INSERT INTO videos
       (name,
@@ -102,8 +105,9 @@ export async function POST(req: Request) {
       [
         body.name,
 
-        /* Cloudinary / CDN */
-        body.public_id || null,
+        /* no cloudinary anymore */
+        null,
+
         body.secure_url,
         body.thumb_url || null,
         body.duration || 0,
@@ -117,9 +121,9 @@ export async function POST(req: Request) {
         JSON.stringify(body.batch_ids || []),
         body.uploaded_by || "admin",
 
-        /* S3 mapping */
-        body.public_id || null,
-        body.secure_url || null,
+        /* VPS file reference */
+        fileName,
+        body.secure_url,
       ]
     );
 
@@ -129,6 +133,7 @@ export async function POST(req: Request) {
     });
   } catch (err) {
     console.error("SAVE VIDEO ERROR:", err);
+
     return NextResponse.json(
       { error: "Failed to save video" },
       { status: 500 }
@@ -170,6 +175,7 @@ export async function DELETE(req: Request) {
     });
   } catch (err) {
     console.error("DELETE VIDEO ERROR:", err);
+
     return NextResponse.json(
       { error: "Failed to delete video" },
       { status: 500 }
