@@ -1,175 +1,185 @@
-// app/admin/quizzes/preview/PreviewClient.tsx
 "use client";
 
-import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import React, { useEffect, useState } from "react";
 
-type Question = {
+type QuestionOption = {
   id: string;
   text: string;
-  options: string[];
-  correctIndex: number;
 };
 
-type Quiz = {
+type PassageSubQuestion = {
+  id: string;
+  text: string;
+  options: QuestionOption[];
+};
+
+type QuestionItem = {
+  id: string;
+  type: "MCQ" | "SHORT" | "LONG" | "PASSAGE";
+  text: string;
+  marks: number;
+  options?: QuestionOption[];
+  passage?: string;
+  passageQuestions?: PassageSubQuestion[];
+};
+
+type QuizData = {
   id: number;
   name: string;
-  time_minutes: number;
-  passing_percent: number;
-  questions: Question[];
+  questions: QuestionItem[];
+  totalMarks: number;
+  totalQuestions: number;
 };
 
-export default function PreviewClient() {
-  const searchParams = useSearchParams();
-  const quizId = searchParams.get("id");
-
-  const [quiz, setQuiz] = useState<Quiz | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const [answers, setAnswers] = useState<{ [key: string]: number }>({});
-  const [submitted, setSubmitted] = useState(false);
-  const [score, setScore] = useState(0);
+export default function PreviewClient({ id }: { id?: string }) {
+  const [quiz, setQuiz] = useState<QuizData | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!quizId) return;
+    console.log("🔥 PREVIEW ID:", id);
 
     const fetchQuiz = async () => {
-      setLoading(true);
-      setError(null);
       try {
-        const res = await fetch("/api/admin/quizzes");
-        if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+        if (!id) {
+          console.log("❌ NO ID");
+          setLoading(false);
+          return;
+        }
+
+        const res = await fetch(`/api/admin/quizzes?id=${id}`);
+
+        if (!res.ok) {
+          console.log("❌ API FAILED");
+          setLoading(false);
+          return;
+        }
+
         const data = await res.json();
-        const found = data.find((q: Quiz) => String(q.id) === String(quizId));
-        setQuiz(found || null);
-      } catch (err: any) {
-        console.error("fetchQuiz error:", err);
-        setError("Failed to load quiz.");
-        setQuiz(null);
+
+        console.log("✅ QUIZ DATA:", data);
+
+        setQuiz(data);
+      } catch (err) {
+        console.error(err);
       } finally {
         setLoading(false);
       }
     };
 
     fetchQuiz();
-  }, [quizId]);
+  }, [id]);
 
-  const handleSelect = (questionId: string, optionIndex: number) => {
-    if (submitted) return;
-    setAnswers((prev) => ({ ...prev, [questionId]: optionIndex }));
-  };
-
-  const handleSubmit = () => {
-    if (!quiz) return;
-
-    let correct = 0;
-
-    quiz.questions.forEach((q) => {
-      if (answers[q.id] === q.correctIndex) correct++;
-    });
-
-    const percent = (correct / quiz.questions.length) * 100;
-    setScore(percent);
-    setSubmitted(true);
-  };
-
-  if (!quizId) {
+  // ❌ NO ID
+  if (!id) {
     return (
-      <div className="p-10 text-center">
-        <h2 className="text-xl font-bold">No quiz selected</h2>
-        <p className="text-sm text-slate-500">Provide an `id` query param (e.g. ?id=123).</p>
+      <div className="h-screen flex items-center justify-center text-red-500">
+        ❌ Missing Quiz ID in URL
       </div>
     );
   }
 
+  // ⏳ LOADING
   if (loading) {
     return (
-      <div className="p-10 text-center">
-        <h2 className="text-xl font-bold">Loading quiz…</h2>
+      <div className="h-screen flex items-center justify-center text-gray-500">
+        Loading preview...
       </div>
     );
   }
 
-  if (error) {
-    return (
-      <div className="p-10 text-center">
-        <h2 className="text-xl font-bold">Error</h2>
-        <p className="text-sm text-rose-600">{error}</p>
-      </div>
-    );
-  }
-
+  // ❌ NO DATA
   if (!quiz) {
     return (
-      <div className="p-10 text-center">
-        <h2 className="text-xl font-bold">Quiz not found</h2>
+      <div className="h-screen flex items-center justify-center text-gray-500">
+        No quiz data found
       </div>
     );
   }
 
+  let globalIndex = 1;
+
   return (
-    <div className="min-h-screen bg-slate-50 p-8">
-      <div className="max-w-3xl mx-auto bg-white rounded-xl shadow p-6">
-        <h1 className="text-2xl font-bold mb-2">{quiz.name}</h1>
-        <p className="text-sm text-slate-500 mb-6">
-          Time: {quiz.time_minutes} mins • Passing: {quiz.passing_percent}%
-        </p>
+    <div className="min-h-screen bg-[#F8FAFC] p-8">
+      <div className="max-w-4xl mx-auto bg-white rounded-2xl shadow border p-8 space-y-10">
 
-        {quiz.questions.map((q, index) => (
-          <div key={q.id} className="mb-6">
-            <h3 className="font-semibold mb-2">
-              {index + 1}. {q.text}
-            </h3>
-            <div className="space-y-2">
-              {q.options.map((opt, i) => {
-                const isCorrect = submitted && i === q.correctIndex;
-                const isWrong = submitted && answers[q.id] === i && i !== q.correctIndex;
+        {/* HEADER */}
+        <div className="border-b pb-4">
+          <h1 className="text-2xl font-bold">{quiz.name}</h1>
+          <p className="text-sm text-gray-500">
+            {quiz.totalQuestions} Questions • {quiz.totalMarks} Marks
+          </p>
+        </div>
 
-                return (
-                  <div
-                    key={i}
-                    onClick={() => handleSelect(q.id, i)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") handleSelect(q.id, i);
-                    }}
-                    className={`p-3 rounded-lg border cursor-pointer transition ${
-                      isCorrect
-                        ? "bg-emerald-100 border-emerald-500"
-                        : isWrong
-                        ? "bg-rose-100 border-rose-500"
-                        : "bg-slate-50"
-                    }`}
-                  >
-                    {String.fromCharCode(65 + i)}. {opt}
+        {/* QUESTIONS */}
+        <div className="space-y-10">
+          {quiz.questions.map((q) => {
+
+            // ✅ PASSAGE
+            if (q.type === "PASSAGE") {
+              return (
+                <div key={q.id} className="space-y-6">
+
+                  <h2 className="text-xl font-bold border-l-4 border-indigo-500 pl-4">
+                    {q.text}
+                  </h2>
+
+                  <div className="bg-slate-50 p-6 rounded border italic">
+                    {q.passage}
                   </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
 
-        {!submitted ? (
-          <button
-            onClick={handleSubmit}
-            className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold"
-          >
-            Submit Quiz
-          </button>
-        ) : (
-          <div className="mt-4">
-            <h2 className="text-lg font-bold">Score: {score.toFixed(2)}%</h2>
-            <p
-              className={`font-semibold ${
-                score >= quiz.passing_percent ? "text-emerald-600" : "text-rose-600"
-              }`}
-            >
-              {score >= quiz.passing_percent ? "PASSED" : "FAILED"}
-            </p>
-          </div>
-        )}
+                  {q.passageQuestions?.map((sq) => {
+                    const num = globalIndex++; // 🔥 COUNT ONLY SUB QUESTIONS
+
+                    return (
+                      <div key={sq.id} className="space-y-3">
+
+                        <p className="font-semibold text-lg">
+                          {num}. {sq.text}
+                        </p>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          {sq.options?.map((opt, i) => (
+                            <div key={opt.id} className="border p-3 rounded flex gap-2">
+                              <span>{String.fromCharCode(65 + i)}.</span>
+                              {opt.text}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            }
+
+            // ✅ NORMAL QUESTION
+            const num = globalIndex++;
+
+            return (
+              <div key={q.id} className="space-y-4">
+
+                <p className="text-lg font-semibold">
+                  {num}. {q.text}
+                </p>
+
+                {q.type === "MCQ" && (
+                  <div className="grid grid-cols-2 gap-3">
+                    {q.options?.map((opt, i) => (
+                      <div key={opt.id} className="border p-3 rounded flex gap-2">
+                        <span>{String.fromCharCode(65 + i)}.</span>
+                        {opt.text}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {(q.type === "SHORT" || q.type === "LONG") && (
+                  <div className="h-12 bg-slate-100 rounded"></div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
