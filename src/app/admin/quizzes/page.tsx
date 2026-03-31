@@ -38,6 +38,16 @@ type Quiz = {
   time_minutes?: number | null;
   total_questions?: number | null;
   createdAt?: string;
+  questions?: any[];
+};
+
+const getQuestionCount = (questions: any[] = []) => {
+  return questions.reduce((acc, q) => {
+    if (q.type === "PASSAGE") {
+      return acc + (q.passageQuestions?.length || 0);
+    }
+    return acc + 1;
+  }, 0);
 };
 
 function normalizeRole(raw?: string) {
@@ -258,7 +268,7 @@ export default function QuizAdmin({ currentUser: propUser }: { currentUser?: any
                               {q.name || "Untitled Quiz"}
                             </div>
                             <div className="text-xs text-slate-400 mt-1 flex items-center gap-2 font-medium">
-                              <Clock size={12} /> {q.total_questions || 0} Qs •{" "}
+                              <Clock size={12} /> {getQuestionCount(q.questions)} Qs •{" "}
                               {q.time_minutes || 0} Mins
                             </div>
                           </td>
@@ -350,7 +360,7 @@ export default function QuizAdmin({ currentUser: propUser }: { currentUser?: any
                         </div>
                         <div className="flex items-center gap-1">
                           <BarChart3 size={13} className="text-slate-400" />{" "}
-                          {q.total_questions || 0} Qs
+                          {getQuestionCount(q.questions)} Qs
                         </div>
                       </div>
 

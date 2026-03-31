@@ -16,21 +16,31 @@ import {
   Plus,
   Type,
   Trash,
+  BookOpen,
+  X,
 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
 /* ================= TYPES ================= */
 
-type QType = "MCQ" | "SHORT" | "LONG" | "COMPREHENSION";
+type QType = "MCQ" | "SHORT" | "LONG" | "PASSAGE";
+
+type Option = {
+  id: string;
+  text: string;
+};
 
 type Question = {
   id: string;
   type: QType;
   text: string;
-  options: { id: string; text: string }[];
-  correctOptionId: string;
-  parentContent?: string;
+  options?: Option[];
+  correctOptionId?: string;
+  answer?: string;
+  marks?: number;
+  passage?: string;
+  passageQuestions?: Question[];
 };
 
 type Quiz = {
@@ -72,38 +82,115 @@ function safeJSONParse<T>(value: unknown, fallback: T): T {
   }
 }
 
-function normalizeQuestions(questions: Question[]) {
-  return questions.map((q, index) => {
-    const questionId = q.id || `q-${Date.now()}-${index}`;
-
-    const options = (q.options || []).map((opt, i) => ({
-      id: opt.id || `${questionId}-opt-${i}`,
-      text: opt.text ?? "",
-    }));
-
-    return {
-      id: questionId,
-      type: q.type || "MCQ",
-      text: q.text ?? "",
-      options,
-      correctOptionId: q.correctOptionId || "",
-      parentContent: q.parentContent || "",
-    };
-  });
+function makeId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return Math.random().toString(36).slice(2, 11);
 }
 
 function createNewQuestion(type: QType = "MCQ"): Question {
+  if (type === "SHORT") {
+    return {
+      id: makeId(),
+      type,
+      text: "",
+      answer: "",
+      marks: 1,
+    };
+  }
+
+  if (type === "LONG") {
+    return {
+      id: makeId(),
+      type,
+      text: "",
+      answer: "",
+      marks: 5,
+    };
+  }
+
+  if (type === "PASSAGE") {
+    return {
+      id: makeId(),
+      type,
+      text: "New Reading Comprehension",
+      passage: "",
+      passageQuestions: [createNewQuestion("MCQ")],
+      marks: 1,
+    };
+  }
+
   return {
-    id: crypto.randomUUID(),
-    type,
+    id: makeId(),
+    type: "MCQ",
     text: "",
     options: [
-      { id: crypto.randomUUID(), text: "" },
-      { id: crypto.randomUUID(), text: "" },
+      { id: makeId(), text: "Option 1" },
+      { id: makeId(), text: "Option 2" },
     ],
     correctOptionId: "",
-    parentContent: "",
+    marks: 1,
   };
+}
+
+function normalizeQuestion(input: any, index: number): Question {
+  const rawType = input?.type === "COMPREHENSION" ? "PASSAGE" : input?.type;
+  const type: QType = rawType || "MCQ";
+  const id = input?.id || `q-${Date.now()}-${index}`;
+
+  const base: Question = {
+    id,
+    type,
+    text: input?.text ?? "",
+    marks: typeof input?.marks === "number" ? input.marks : type === "LONG" ? 5 : 1,
+  };
+
+  if (type === "MCQ") {
+    const options = Array.isArray(input?.options) && input.options.length > 0
+      ? input.options.map((opt: any, i: number) => ({
+          id: opt?.id || `${id}-opt-${i}`,
+          text: opt?.text ?? "",
+        }))
+      : [
+          { id: `${id}-opt-0`, text: "Option 1" },
+          { id: `${id}-opt-1`, text: "Option 2" },
+        ];
+
+    return {
+      ...base,
+      options,
+      correctOptionId: input?.correctOptionId || input?.correctOption || "",
+    };
+  }
+
+  if (type === "SHORT") {
+    return {
+      ...base,
+      answer: input?.answer ?? "",
+    };
+  }
+
+  if (type === "LONG") {
+    return {
+      ...base,
+      answer: input?.answer ?? "",
+    };
+  }
+
+  const passageQuestions = Array.isArray(input?.passageQuestions)
+    ? input.passageQuestions.map((sq: any, i: number) => normalizeQuestion({ ...sq, type: "MCQ" }, i))
+    : [];
+
+  return {
+    ...base,
+    passage: input?.passage ?? input?.parentContent ?? "",
+    passageQuestions: passageQuestions.length > 0 ? passageQuestions : [createNewQuestion("MCQ")],
+  };
+}
+
+function normalizeQuestions(questions: any[]) {
+  return (questions || []).map((q, index) => normalizeQuestion(q, index));
 }
 
 function TypeBtn({
@@ -123,6 +210,7 @@ function TypeBtn({
       className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
         active ? "bg-white shadow-sm text-blue-600" : "text-slate-400 hover:text-slate-600"
       }`}
+      type="button"
     >
       {icon} {label}
     </button>
@@ -162,18 +250,14 @@ function EditQuizPage() {
         const res = await fetch(`/api/admin/quizzes?id=${id}`);
         const data: ApiQuizResponse | null = await res.json();
 
-        if (!res.ok) {
+        if (!res.ok || !data) {
           console.error("Failed to load quiz:", data);
           setQuiz(null);
           return;
         }
 
-        if (!data) {
-          setQuiz(null);
-          return;
-        }
+        const rawQuestions = safeJSONParse<any[]>(data.questions, []);
 
-        const rawQuestions = safeJSONParse<Question[]>(data.questions, []);
         const mappedQuiz: Quiz = {
           id: data.id,
           name: data.name || data.title || "",
@@ -222,6 +306,45 @@ function EditQuizPage() {
     });
   };
 
+  const handleChangeType = (type: QType) => {
+    setQuiz((prev) => {
+      if (!prev || !prev.questions.length) return prev;
+
+      const updatedQuestions = [...prev.questions];
+      const current = updatedQuestions[activeIdx];
+      if (!current) return prev;
+
+      const nextQ = createNewQuestion(type);
+      nextQ.id = current.id;
+      nextQ.text = current.text || nextQ.text;
+
+      if (type === "MCQ") {
+        nextQ.options = current.options?.length ? current.options : nextQ.options;
+        nextQ.correctOptionId = current.correctOptionId || "";
+        nextQ.marks = current.marks ?? 1;
+      }
+
+      if (type === "SHORT" || type === "LONG") {
+        nextQ.answer = current.answer || "";
+        nextQ.marks = current.marks ?? (type === "LONG" ? 5 : 1);
+      }
+
+      if (type === "PASSAGE") {
+        nextQ.passage = current.passage || "";
+        nextQ.passageQuestions =
+          current.passageQuestions?.length ? current.passageQuestions : [createNewQuestion("MCQ")];
+        nextQ.marks = current.marks ?? 1;
+      }
+
+      updatedQuestions[activeIdx] = nextQ;
+
+      return {
+        ...prev,
+        questions: updatedQuestions,
+      };
+    });
+  };
+
   const handleAddQuestion = () => {
     setQuiz((prev) => {
       if (!prev) return prev;
@@ -250,6 +373,83 @@ function EditQuizPage() {
         questions: filtered,
       };
     });
+  };
+
+  const handleAddOption = () => {
+    if (!currentQ || currentQ.type !== "MCQ") return;
+
+    const nextOptions = [
+      ...(currentQ.options || []),
+      { id: makeId(), text: "" },
+    ];
+
+    updateCurrentQuestion({ options: nextOptions });
+  };
+
+  const handleRemoveOption = (optIdx: number) => {
+    if (!currentQ || currentQ.type !== "MCQ") return;
+    const nextOptions = (currentQ.options || []).filter((_, i) => i !== optIdx);
+
+    const nextCorrect =
+      currentQ.correctOptionId &&
+      nextOptions.some((opt) => opt.id === currentQ.correctOptionId)
+        ? currentQ.correctOptionId
+        : "";
+
+    updateCurrentQuestion({
+      options: nextOptions,
+      correctOptionId: nextCorrect,
+    });
+  };
+
+  const handleAddSubQuestion = () => {
+    if (!currentQ || currentQ.type !== "PASSAGE") return;
+
+    const nextSubQuestions = [
+      ...(currentQ.passageQuestions || []),
+      createNewQuestion("MCQ"),
+    ];
+
+    updateCurrentQuestion({ passageQuestions: nextSubQuestions });
+  };
+
+  const handleRemoveSubQuestion = (subIdx: number) => {
+    if (!currentQ || currentQ.type !== "PASSAGE") return;
+
+    const nextSubQuestions = (currentQ.passageQuestions || []).filter((_, i) => i !== subIdx);
+    updateCurrentQuestion({
+      passageQuestions: nextSubQuestions.length ? nextSubQuestions : [createNewQuestion("MCQ")],
+    });
+  };
+
+  const handleUpdateSubQuestion = (subIdx: number, updates: Partial<Question>) => {
+    if (!currentQ || currentQ.type !== "PASSAGE") return;
+
+    const nextSubQuestions = [...(currentQ.passageQuestions || [])];
+    nextSubQuestions[subIdx] = { ...nextSubQuestions[subIdx], ...updates };
+    updateCurrentQuestion({ passageQuestions: nextSubQuestions });
+  };
+
+  const handleUpdateSubOption = (subIdx: number, optIdx: number, text: string) => {
+    if (!currentQ || currentQ.type !== "PASSAGE") return;
+
+    const nextSubQuestions = [...(currentQ.passageQuestions || [])];
+    const nextOptions = [...(nextSubQuestions[subIdx].options || [])];
+    nextOptions[optIdx] = { ...nextOptions[optIdx], text };
+    nextSubQuestions[subIdx] = { ...nextSubQuestions[subIdx], options: nextOptions };
+
+    updateCurrentQuestion({ passageQuestions: nextSubQuestions });
+  };
+
+  const handleAddSubOption = (subIdx: number) => {
+    if (!currentQ || currentQ.type !== "PASSAGE") return;
+
+    const nextSubQuestions = [...(currentQ.passageQuestions || [])];
+    const nextOptions = [...(nextSubQuestions[subIdx].options || [])];
+    nextOptions.push({ id: makeId(), text: "" });
+    nextSubQuestions[subIdx] = { ...nextSubQuestions[subIdx], options: nextOptions };
+
+    updateCurrentQuestion({ passageQuestions: nextSubQuestions });
   };
 
   const handleSave = async () => {
@@ -294,7 +494,7 @@ function EditQuizPage() {
       }
 
       alert("Quiz Saved Successfully!");
-      router.push("/admin");
+      router.push("/admin/quizzes");
     } catch (err) {
       console.error(err);
       alert("Something went wrong while saving.");
@@ -327,6 +527,7 @@ function EditQuizPage() {
           <button
             onClick={() => router.back()}
             className="p-2 hover:bg-slate-100 rounded-full transition-colors"
+            type="button"
           >
             <ChevronLeft size={20} />
           </button>
@@ -340,6 +541,7 @@ function EditQuizPage() {
           onClick={handleSave}
           disabled={isSaving}
           className="bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-6 py-2 rounded-xl font-bold flex items-center gap-2 transition-all"
+          type="button"
         >
           {isSaving ? <Loader2 className="animate-spin" size={18} /> : <Save size={18} />}
           {isSaving ? "Saving..." : "Save Quiz"}
@@ -414,6 +616,7 @@ function EditQuizPage() {
                       ? "bg-blue-600 text-white shadow-lg"
                       : "bg-slate-50 text-slate-400 hover:bg-slate-100"
                   }`}
+                  type="button"
                 >
                   {i + 1}
                 </button>
@@ -422,6 +625,7 @@ function EditQuizPage() {
               <button
                 onClick={handleAddQuestion}
                 className="h-10 rounded-xl border-2 border-dashed border-slate-200 text-slate-400 flex items-center justify-center hover:bg-slate-50 transition-all"
+                type="button"
               >
                 <Plus size={16} />
               </button>
@@ -441,6 +645,7 @@ function EditQuizPage() {
                 onClick={handleDeleteQuestion}
                 className="text-slate-300 hover:text-red-500 transition-colors"
                 disabled={quiz.questions.length <= 1}
+                type="button"
               >
                 <Trash size={20} />
               </button>
@@ -450,54 +655,164 @@ function EditQuizPage() {
             <div className="flex gap-2 mb-8 p-1 bg-slate-50 rounded-2xl w-fit">
               <TypeBtn
                 active={currentQ.type === "MCQ"}
-                onClick={() => updateCurrentQuestion({ type: "MCQ" })}
+                onClick={() => handleChangeType("MCQ")}
                 icon={<Type size={16} />}
                 label="MCQ"
               />
               <TypeBtn
                 active={currentQ.type === "SHORT"}
-                onClick={() => updateCurrentQuestion({ type: "SHORT" })}
+                onClick={() => handleChangeType("SHORT")}
                 icon={<AlignLeft size={16} />}
                 label="Short"
               />
               <TypeBtn
-                active={currentQ.type === "COMPREHENSION"}
-                onClick={() => updateCurrentQuestion({ type: "COMPREHENSION" })}
+                active={currentQ.type === "LONG"}
+                onClick={() => handleChangeType("LONG")}
                 icon={<Layers size={16} />}
-                label="Context"
+                label="Long"
+              />
+              <TypeBtn
+                active={currentQ.type === "PASSAGE"}
+                onClick={() => handleChangeType("PASSAGE")}
+                icon={<BookOpen size={16} />}
+                label="Passage"
               />
             </div>
 
-            {/* Comprehension: Parent Content Area */}
-            {currentQ.type === "COMPREHENSION" && (
-              <div className="mb-6 p-6 bg-amber-50 rounded-3xl border border-amber-100">
-                <label className="text-[10px] font-black text-amber-600 uppercase mb-2 block">
-                  Shared Context / Passage
+            {/* PASSAGE */}
+            {currentQ.type === "PASSAGE" && (
+              <div className="mb-8 p-6 bg-slate-50 rounded-3xl border border-slate-100">
+                <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block">
+                  Passage Content
                 </label>
                 <textarea
-                  value={currentQ.parentContent || ""}
-                  onChange={(e) => updateCurrentQuestion({ parentContent: e.target.value })}
-                  placeholder="Paste the paragraph or content that applies to this question..."
-                  className="w-full bg-transparent border-none focus:ring-0 text-sm italic text-slate-700 resize-none h-24"
+                  value={currentQ.passage || ""}
+                  onChange={(e) => updateCurrentQuestion({ passage: e.target.value })}
+                  placeholder="Paste the passage content here..."
+                  className="w-full bg-transparent border-none focus:ring-0 text-sm text-slate-700 resize-none h-32"
                 />
+
+                <div className="mt-6 border-t border-slate-200 pt-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">
+                      Linked Questions
+                    </h3>
+                    <button
+                      onClick={handleAddSubQuestion}
+                      type="button"
+                      className="text-xs font-bold bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-all flex items-center gap-1.5"
+                    >
+                      <Plus size={14} /> Add Linked Question
+                    </button>
+                  </div>
+
+                  <div className="space-y-4">
+                    {(currentQ.passageQuestions || []).map((sq, sqIdx) => (
+                      <div key={sq.id} className="relative p-4 bg-white rounded-2xl border border-slate-200">
+                        <button
+                          onClick={() => handleRemoveSubQuestion(sqIdx)}
+                          className="absolute top-3 right-3 text-slate-300 hover:text-red-500 transition-all"
+                          type="button"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                          <div className="md:col-span-2 space-y-2">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase">Question Text</label>
+                            <input
+                              value={sq.text}
+                              placeholder="Enter the question related to the passage..."
+                              onChange={(e) => handleUpdateSubQuestion(sqIdx, { text: e.target.value })}
+                              className="w-full border border-slate-200 rounded-xl px-3 py-2 bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase">Marks</label>
+                            <input
+                              type="number"
+                              value={sq.marks ?? 1}
+                              onChange={(e) =>
+                                handleUpdateSubQuestion(sqIdx, { marks: Number(e.target.value) })
+                              }
+                              className="w-full border border-slate-200 rounded-xl px-3 py-2 bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pl-4 border-l-2 border-indigo-100">
+                          {(sq.options || []).map((opt, optIdx) => {
+                            const isCorrect = sq.correctOptionId === opt.id;
+
+                            return (
+                              <div key={opt.id} className="flex items-center gap-2">
+                                <button
+                                  onClick={() => {
+                                    const nextSubs = [...(currentQ.passageQuestions || [])];
+                                    nextSubs[sqIdx] = {
+                                      ...nextSubs[sqIdx],
+                                      correctOptionId: opt.id,
+                                    };
+                                    updateCurrentQuestion({ passageQuestions: nextSubs });
+                                  }}
+                                  className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all ${
+                                    isCorrect
+                                      ? "bg-indigo-600 border-indigo-600"
+                                      : "bg-white border-slate-300"
+                                  }`}
+                                  type="button"
+                                >
+                                  {isCorrect && <div className="w-2 h-2 bg-white rounded-full" />}
+                                </button>
+
+                                <input
+                                  value={opt.text}
+                                  placeholder={`Option ${optIdx + 1}`}
+                                  onChange={(e) => handleUpdateSubOption(sqIdx, optIdx, e.target.value)}
+                                  className="bg-transparent text-sm border-b border-transparent hover:border-slate-300 focus:border-indigo-400 focus:outline-none py-1 flex-1"
+                                />
+
+                                {isCorrect && (
+                                  <CheckCircle2 size={15} className="text-emerald-500 shrink-0" />
+                                )}
+                              </div>
+                            );
+                          })}
+
+                          <button
+                            onClick={() => handleAddSubOption(sqIdx)}
+                            type="button"
+                            className="text-[10px] font-bold text-indigo-500 hover:underline text-left mt-1"
+                          >
+                            + Add Option
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             )}
 
-            <textarea
-              placeholder="Type your question here..."
-              value={currentQ.text}
-              onChange={(e) => updateCurrentQuestion({ text: e.target.value })}
-              className="w-full text-2xl font-bold bg-transparent border-none focus:ring-0 placeholder:text-slate-200 resize-none h-32 mb-8"
-            />
+            {/* QUESTION TEXT */}
+            {currentQ.type !== "PASSAGE" && (
+              <textarea
+                placeholder="Type your question here..."
+                value={currentQ.text}
+                onChange={(e) => updateCurrentQuestion({ text: e.target.value })}
+                className="w-full text-2xl font-bold bg-transparent border-none focus:ring-0 placeholder:text-slate-200 resize-none h-32 mb-8"
+              />
+            )}
 
-            {/* MCQ Options Rendering */}
+            {/* MCQ OPTIONS */}
             {currentQ.type === "MCQ" && (
               <div className="space-y-3">
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">
                   Multiple Choice Options
                 </p>
 
-                {currentQ.options.map((opt, idx) => {
+                {(currentQ.options || []).map((opt, idx) => {
                   const isCorrect = currentQ.correctOptionId === opt.id;
 
                   return (
@@ -522,13 +837,22 @@ function EditQuizPage() {
                       <input
                         value={opt.text}
                         onChange={(e) => {
-                          const newOpts = [...currentQ.options];
-                          newOpts[idx] = { ...newOpts[idx], text: e.target.value };
-                          updateCurrentQuestion({ options: newOpts });
+                          const nextOptions = [...(currentQ.options || [])];
+                          nextOptions[idx] = { ...nextOptions[idx], text: e.target.value };
+                          updateCurrentQuestion({ options: nextOptions });
                         }}
                         placeholder={`Option ${idx + 1}...`}
                         className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-semibold outline-none"
                       />
+
+                      <button
+                        onClick={() => handleRemoveOption(idx)}
+                        type="button"
+                        className="text-slate-300 hover:text-red-500 transition-colors"
+                        title="Remove option"
+                      >
+                        <X size={16} />
+                      </button>
 
                       {isCorrect && <CheckCircle2 size={18} className="text-emerald-500" />}
                     </div>
@@ -537,11 +861,7 @@ function EditQuizPage() {
 
                 <button
                   type="button"
-                  onClick={() =>
-                    updateCurrentQuestion({
-                      options: [...currentQ.options, { id: crypto.randomUUID(), text: "" }],
-                    })
-                  }
+                  onClick={handleAddOption}
                   className="text-xs font-bold text-blue-600 px-4 py-2 hover:bg-blue-50 rounded-lg transition-all"
                 >
                   + Add Option
@@ -549,12 +869,18 @@ function EditQuizPage() {
               </div>
             )}
 
-            {/* Short Answer View */}
-            {currentQ.type === "SHORT" && (
-              <div className="p-12 border-2 border-dashed border-slate-100 rounded-[2rem] text-center">
-                <p className="text-slate-300 font-bold italic">
-                  Students will see a text input field here.
-                </p>
+            {/* SHORT / LONG */}
+            {(currentQ.type === "SHORT" || currentQ.type === "LONG") && (
+              <div className="mt-6 space-y-3">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  Expected Answer Template
+                </label>
+                <textarea
+                  placeholder="Specify what a correct answer should include..."
+                  value={currentQ.answer || ""}
+                  onChange={(e) => updateCurrentQuestion({ answer: e.target.value })}
+                  className="w-full border border-slate-200 rounded-2xl p-4 min-h-[120px] outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                />
               </div>
             )}
           </div>
@@ -579,7 +905,7 @@ function EditQuizPage() {
                 </li>
                 <li className="flex gap-3">
                   <div className="w-1.5 h-1.5 rounded-full bg-blue-400 mt-2 shrink-0" />
-                  Use "Context" type for Reading Comprehension questions.
+                  Use “Passage” for reading comprehension questions.
                 </li>
               </ul>
             </div>

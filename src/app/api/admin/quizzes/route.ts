@@ -13,9 +13,14 @@ function getPool() {
       password: process.env.DB_PASSWORD,
       database: process.env.DB_NAME,
       port: Number(process.env.DB_PORT || 3306),
+
       waitForConnections: true,
       connectionLimit: 10,
       queueLimit: 0,
+
+      connectTimeout: 10000,
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 0,
     });
   }
   return pool;
@@ -33,40 +38,48 @@ function safeJSONParse(value: any, fallback: any) {
   }
 }
 
+/* ================= FIXED NORMALIZER ================= */
+
 function normalizeQuestions(questions: any[]) {
   return questions.map((q, index) => {
     const questionId = q.id || `q-${Date.now()}-${index}`;
 
-    const options = (q.options || []).map((opt: any, i: number) => {
-      if (typeof opt === "string") {
-        return {
-          id: `${questionId}-opt-${i}`,
-          text: opt,
-        };
-      }
+    // ✅ MCQ OPTIONS
+    const options = (q.options || []).map((opt: any, i: number) => ({
+      id: opt.id || `${questionId}-opt-${i}`,
+      text: opt.text || opt,
+    }));
+
+    // ✅ PASSAGE SUB QUESTIONS
+    const passageQuestions = (q.passageQuestions || []).map((sq: any, i: number) => {
+      const subId = sq.id || `${questionId}-sub-${i}`;
 
       return {
-        id: opt.id || `${questionId}-opt-${i}`,
-        text: opt.text,
+        id: subId,
+        text: sq.text,
+        type: sq.type || "MCQ",
+        marks: sq.marks || 1,
+        options: (sq.options || []).map((opt: any, j: number) => ({
+          id: opt.id || `${subId}-opt-${j}`,
+          text: opt.text || opt,
+        })),
+        correctOptionId: sq.correctOptionId || null,
       };
     });
-
-    let correctOption = undefined;
-
-    if (typeof q.correctIndex === "number") {
-      correctOption = options[q.correctIndex]?.id;
-    }
-
-    if (q.correctOptionId) {
-      correctOption = q.correctOptionId;
-    }
 
     return {
       id: questionId,
       text: q.text,
       type: q.type || "MCQ",
+      marks: q.marks || 1,
+
       options,
-      correctOption,
+      correctOptionId: q.correctOptionId || null,
+
+      // ✅ IMPORTANT
+      passage: q.passage || null,
+      passageQuestions,
+
       parentContent: q.parentContent || null,
     };
   });
@@ -125,7 +138,7 @@ export async function GET(req: NextRequest) {
 }
 
 /* =====================================================
-   CREATE QUIZ (FIXED)
+   CREATE QUIZ
 ===================================================== */
 
 export async function POST(req: Request) {
@@ -135,7 +148,6 @@ export async function POST(req: Request) {
 
     console.log("Create Quiz Payload:", body);
 
-    // ✅ Support BOTH frontend & backend formats
     const name = body.name || body.quizName;
     const time_minutes = body.time_minutes || body.time || 10;
     const passing_percent = body.passing_percent || body.passing || 50;
@@ -155,6 +167,8 @@ export async function POST(req: Request) {
     }
 
     const normalizedQuestions = normalizeQuestions(questions);
+
+    console.log("FINAL QUESTIONS:", normalizedQuestions);
 
     const [result]: any = await pool.query(
       `

@@ -1,14 +1,41 @@
 import { NextResponse } from "next/server";
 import mysql from "mysql2/promise";
 
+/* ================= DB ================= */
+
 const pool = mysql.createPool({
   host: process.env.MYSQL_HOST,
   user: process.env.MYSQL_USER,
   password: process.env.MYSQL_PASSWORD,
   database: process.env.MYSQL_DATABASE,
+  waitForConnections: true,
+  connectionLimit: 10,
 });
 
-/* ================= GET (Single Quiz) ================= */
+/* ================= HELPERS ================= */
+
+function safeParse(value: any, fallback: any) {
+  try {
+    if (!value) return fallback;
+    if (typeof value === "string") return JSON.parse(value);
+    return value;
+  } catch {
+    return fallback;
+  }
+}
+
+// ✅ IMPORTANT (correct count including passage)
+function getQuestionCount(questions: any[] = []) {
+  return questions.reduce((acc, q) => {
+    if (q.type === "PASSAGE") {
+      return acc + (q.passageQuestions?.length || 0);
+    }
+    return acc + 1;
+  }, 0);
+}
+
+/* ================= GET ================= */
+
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const id = searchParams.get("id");
@@ -31,23 +58,23 @@ export async function GET(req: Request) {
 
     const quiz = rows[0];
 
-    // parse JSON fields
-    quiz.questions = quiz.questions ? JSON.parse(quiz.questions) : [];
-    quiz.batch_ids = quiz.batch_ids ? JSON.parse(quiz.batch_ids) : [];
+    // ✅ SAFE PARSE (VERY IMPORTANT)
+    quiz.questions = safeParse(quiz.questions, []);
+    quiz.batch_ids = safeParse(quiz.batch_ids, []);
 
     return NextResponse.json(quiz);
   } catch (err) {
-    console.error(err);
+    console.error("GET ERROR:", err);
     return NextResponse.json({ error: "Fetch failed" }, { status: 500 });
   } finally {
     conn.release();
   }
 }
 
-/* ================= PUT (Update Quiz) ================= */
+/* ================= PUT ================= */
+
 export async function PUT(req: Request) {
   const body = await req.json();
-
   const conn = await pool.getConnection();
 
   try {
@@ -66,6 +93,12 @@ export async function PUT(req: Request) {
     if (!id) {
       return NextResponse.json({ error: "Quiz ID required" }, { status: 400 });
     }
+
+    // ✅ FIX COUNT (PASSAGE SUPPORT)
+    const total_questions = getQuestionCount(questions);
+
+    // ✅ ENSURE CLEAN JSON
+    const cleanQuestions = Array.isArray(questions) ? questions : [];
 
     await conn.query(
       `UPDATE quizzes 
@@ -88,15 +121,15 @@ export async function PUT(req: Request) {
         JSON.stringify(batch_ids || []),
         time_minutes,
         passing_percent,
-        questions.length,
-        JSON.stringify(questions),
+        total_questions,
+        JSON.stringify(cleanQuestions),
         id,
       ]
     );
 
     return NextResponse.json({ success: true });
   } catch (err) {
-    console.error(err);
+    console.error("PUT ERROR:", err);
     return NextResponse.json({ error: "Update failed" }, { status: 500 });
   } finally {
     conn.release();
@@ -104,17 +137,22 @@ export async function PUT(req: Request) {
 }
 
 /* ================= DELETE ================= */
-export async function DELETE(
-  req: Request,
-  { params }: { params: { id: string } }
-) {
+
+export async function DELETE(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const id = searchParams.get("id");
+
+  if (!id) {
+    return NextResponse.json({ error: "Quiz ID required" }, { status: 400 });
+  }
+
   const conn = await pool.getConnection();
 
   try {
-    await conn.query("DELETE FROM quizzes WHERE id = ?", [params.id]);
+    await conn.query("DELETE FROM quizzes WHERE id = ?", [id]);
     return NextResponse.json({ success: true });
   } catch (err) {
-    console.error(err);
+    console.error("DELETE ERROR:", err);
     return NextResponse.json({ error: "Delete failed" }, { status: 500 });
   } finally {
     conn.release();
