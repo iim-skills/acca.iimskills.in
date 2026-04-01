@@ -1,282 +1,230 @@
-// src\app\components\Students\QuizPanel.tsx
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { ChevronRight, ChevronLeft } from "lucide-react";
-
-type Option = {
-  id?: string;
-  text?: string;
-};
-
-type Question = {
-  id?: string;
-  text?: string;
-  options?: Option[];
-  correctOption?: string | number;
-};
-
-type Quiz = {
-  id: string;
-  name?: string;
-  time_minutes?: number;
-  questions: Question[];
-};
+import React, { useMemo, useState } from "react";
+import type { Quiz } from "../../../types/types";
 
 type Props = {
-  quiz: Quiz;
-  email: string; // 👈 added email from LMS
+  quiz?: Quiz | null;
   onClose?: () => void;
-  onSubmitted?: (result: any) => void;
+  onSubmit?: (result?: any) => void;
+  onSubmitted?: (result?: any) => void;
+  email?: string;
 };
 
-const QUESTIONS_PER_PAGE = 4;
+/* ================= NORMALIZE QUIZ ================= */
+function normalizeQuestions(quiz: any) {
+  if (!quiz || !Array.isArray(quiz.questions)) return [];
 
-export default function QuizPanel({ quiz, email, onClose, onSubmitted }: Props) {
-  const [answers, setAnswers] = useState<Record<number, string | number>>({});
-  const [page, setPage] = useState(0);
-  const [timeLeft, setTimeLeft] = useState((quiz.time_minutes ?? 30) * 60);
+  const output: any[] = [];
 
-  const totalPages = Math.ceil(
-    (quiz.questions?.length ?? 0) / QUESTIONS_PER_PAGE
-  );
-
-  /* ================= TIMER ================= */
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          handleSubmit();
-          return 0;
-        }
-        return prev - 1;
+  quiz.questions.forEach((q: any, index: number) => {
+    if (q.type === "PASSAGE") {
+      const passage = q.passage || q.text || "";
+      (q.passageQuestions || []).forEach((pq: any, i: number) => {
+        output.push({
+          ...pq,
+          id: pq.id || `p-${index}-${i}`,
+          passage,
+        });
       });
-    }, 1000);
+      return;
+    }
+    output.push({
+      ...q,
+      id: q.id || `q-${index}`,
+    });
+  });
 
-    return () => clearInterval(interval);
-  }, []);
+  return output;
+}
 
-  const formatTime = (sec: number) => {
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return `${m}:${s.toString().padStart(2, "0")}`;
-  };
+/* ================= COMPONENT ================= */
+export default function QuizPanel({
+  quiz,
+  onClose,
+  onSubmit,
+  onSubmitted,
+}: Props) {
+  const questions = useMemo(() => normalizeQuestions(quiz), [quiz]);
 
-  const startIndex = page * QUESTIONS_PER_PAGE;
+  const [index, setIndex] = useState(0);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
 
-  const visibleQuestions = quiz.questions.slice(
-    startIndex,
-    startIndex + QUESTIONS_PER_PAGE
-  );
+  if (!questions.length) {
+    return (
+      <div className="flex flex-col items-center justify-center p-8 text-center bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+        <p className="text-sm font-medium text-gray-500">No quiz content available at this time.</p>
+      </div>
+    );
+  }
 
-  const handleSelect = (qIndex: number, value: string | number) => {
+  const current = questions[index];
+  const isLast = index === questions.length - 1;
+  const progress = ((index + 1) / questions.length) * 100;
+
+  /* ================= HANDLERS ================= */
+  const handleAnswer = (value: string) => {
     setAnswers((prev) => ({
       ...prev,
-      [qIndex]: value,
+      [current.id]: value,
     }));
   };
 
-  /* ================= SUBMIT ================= */
-
-  const handleSubmit = async () => {
-    // Build detailed answers array: [{ q: 1, a: 1, correct: true }, ...]
-    const results: Array<{ q: number; a: number | null; correct: boolean }> = [];
-    let score = 0;
-    let attempted = 0;
-
-    quiz.questions.forEach((q, index) => {
-      const qNo = index + 1;
-      const selectedId = answers[index];
-      let selectedOptionNumber: number | null = null;
-
-      if (selectedId !== undefined && selectedId !== null && String(selectedId) !== "") {
-        const match = String(selectedId).match(/opt-(\d+)/);
-        if (match && match[1]) {
-          selectedOptionNumber = parseInt(match[1], 10);
-        } else if (!Number.isNaN(Number(selectedId))) {
-          // if option stored as numeric
-          selectedOptionNumber = Number(selectedId);
-        } else {
-          // try to map option id to its index+1 if options exist
-          if (Array.isArray(q.options)) {
-            const foundIdx = q.options.findIndex((o) => o.id === selectedId);
-            if (foundIdx !== -1) selectedOptionNumber = foundIdx + 1;
-          }
-        }
-      }
-
-      // determine correct option number
-      let correctOptionNumber: number | null = null;
-      if (q.correctOption !== undefined && q.correctOption !== null && String(q.correctOption) !== "") {
-        const co = String(q.correctOption);
-        const m = co.match(/opt-(\d+)/);
-        if (m && m[1]) {
-          correctOptionNumber = parseInt(m[1], 10);
-        } else if (!Number.isNaN(Number(co))) {
-          correctOptionNumber = Number(co);
-        } else {
-          // try to match by option id to find index
-          if (Array.isArray(q.options)) {
-            const foundIdx = q.options.findIndex((o) => String(o.id) === co);
-            if (foundIdx !== -1) correctOptionNumber = foundIdx + 1;
-          }
-        }
-      }
-
-      const correct = selectedOptionNumber !== null && correctOptionNumber !== null && selectedOptionNumber === correctOptionNumber;
-
-      if (selectedOptionNumber !== null) attempted++;
-      if (correct) score++;
-
-      results.push({
-        q: qNo,
-        a: selectedOptionNumber,
-        correct,
-      });
-    });
-
-    const total = quiz.questions.length;
-    const percentage = total > 0 ? Math.round((score / total) * 100) : 0;
+  const handleSubmit = () => {
+    const result = {
+      submittedAt: Date.now(),
+      quizId: quiz?.id,
+      answers,
+      total: questions.length,
+    };
 
     try {
-      const res = await fetch("/api/admin/quizzes/submit", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          quizId: quiz.id,
-          email, // email from LMS
-          totalQuestions: total,
-          attemptedQuestions: attempted,
-          score,
-          answers: results, // send structured detailed results
-          submittedAt: Date.now(),
-        }),
-      });
-
-      const data = await res.json();
-
-      onSubmitted?.({
-        score,
-        total,
-        percentage,
-        rawResponse: data,
-      });
-
-    } catch (error) {
-      // intentionally no console logs per request
+      onSubmit?.(result);
+      onSubmitted?.(result);
+    } catch (err) {
+      console.warn(err);
     }
+
+    try {
+      window.dispatchEvent(
+        new CustomEvent("lms_quiz_submitted", {
+          detail: { quizId: quiz?.id, result },
+        })
+      );
+    } catch {}
   };
 
+  /* ================= UI ================= */
   return (
-    <div className="w-full h-full flex flex-col bg-gradient-to-br from-indigo-50 to-white p-8 overflow-y-auto">
+    <div className="max-w-2xl mx-auto bg-white shadow-sm border border-gray-100 rounded-2xl overflow-hidden transition-all">
+      {/* PROGRESS BAR */}
+      <div className="h-1.5 w-full bg-gray-100">
+        <div 
+          className="h-full bg-indigo-500 transition-all duration-300 ease-out" 
+          style={{ width: `${progress}%` }}
+        />
+      </div>
 
-      {/* HEADER */}
-
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h2 className="text-2xl font-bold text-indigo-800">
-            {quiz.name ?? "Quiz"}
-          </h2>
-
-          <p className="text-sm text-gray-500">
-            Questions: {quiz.questions.length}
-          </p>
+      <div className="p-6 space-y-6">
+        {/* HEADER */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h4 className="text-lg font-bold text-gray-900 leading-tight">
+              {quiz?.name ?? "Quiz Assessment"}
+            </h4>
+            <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mt-1">
+              Step {index + 1} of {questions.length}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+            title="Close Quiz"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
 
-        <div className="flex items-center gap-6">
-          <div className="text-lg font-semibold text-rose-600">
-            ⏱ {formatTime(timeLeft)}
+        {/* PASSAGE SECTION */}
+        {current.passage && (
+          <div className="relative group">
+            <div className="absolute -left-2 top-0 bottom-0 w-1 bg-indigo-100 rounded-full" />
+            <div className="rounded-xl border border-indigo-50 bg-indigo-50/30 p-4 text-sm text-gray-700 italic leading-relaxed whitespace-pre-line shadow-sm">
+              <span className="font-semibold text-indigo-600 block mb-1 not-italic tracking-wide uppercase text-[10px]">Reference Text:</span>
+              {current.passage}
+            </div>
+          </div>
+        )}
+
+        {/* QUESTION CARD */}
+        <div className="space-y-4">
+          <div className="text-base font-semibold text-gray-800 leading-snug">
+            {current.text || "Please answer the following:"}
           </div>
 
-          {onClose && (
+          {/* MCQ OPTIONS */}
+          {current.type === "MCQ" && (
+            <div className="grid gap-3">
+              {(current.options || []).map((opt: any) => {
+                const isSelected = answers[current.id] === opt.id;
+                return (
+                  <label
+                    key={opt.id}
+                    className={`
+                      flex cursor-pointer items-center gap-3 p-4 rounded-xl border-2 transition-all
+                      ${isSelected 
+                        ? "border-indigo-600 bg-indigo-50 ring-1 ring-indigo-600" 
+                        : "border-gray-100 bg-white hover:border-gray-200 hover:bg-gray-50"}
+                    `}
+                  >
+                    <div className={`
+                      w-5 h-5 rounded-full border-2 flex items-center justify-center
+                      ${isSelected ? "border-indigo-600" : "border-gray-300"}
+                    `}>
+                      {isSelected && <div className="w-2.5 h-2.5 bg-indigo-600 rounded-full" />}
+                    </div>
+                    <input
+                      type="radio"
+                      className="hidden"
+                      name={current.id}
+                      value={opt.id}
+                      checked={isSelected}
+                      onChange={(e) => handleAnswer(e.target.value)}
+                    />
+                    <span className={`text-sm font-medium ${isSelected ? "text-indigo-900" : "text-gray-700"}`}>
+                      {opt.text}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+
+          {/* SHORT ANSWER */}
+          {current.type === "SHORT" && (
+            <textarea
+              className="w-full rounded-xl border-2 border-gray-100 p-4 text-sm focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none min-h-[120px] placeholder:text-gray-300"
+              value={answers[current.id] || ""}
+              onChange={(e) => handleAnswer(e.target.value)}
+              placeholder="Write your response here..."
+            />
+          )}
+        </div>
+
+        {/* ACTIONS */}
+        <div className="flex items-center justify-between pt-6 border-t border-gray-50">
+          <button
+            onClick={() => setIndex((i) => Math.max(0, i - 1))}
+            disabled={index === 0}
+            className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-gray-600 hover:text-gray-900 disabled:opacity-30 transition-all"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+            </svg>
+            Previous
+          </button>
+
+          {!isLast ? (
             <button
-              onClick={onClose}
-              className="text-sm text-gray-600 hover:text-black"
+              onClick={() => setIndex((i) => i + 1)}
+              className="flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all"
             >
-              Close
+              Next
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          ) : (
+            <button
+              onClick={handleSubmit}
+              className="rounded-xl bg-emerald-600 px-8 py-2.5 text-sm font-bold text-white shadow-lg shadow-emerald-200 hover:bg-emerald-700 active:scale-95 transition-all"
+            >
+              Finish & Submit
             </button>
           )}
         </div>
-      </div>
-
-      {/* QUESTIONS */}
-
-      <div className="space-y-6 flex-1">
-        {visibleQuestions.map((q, i) => {
-          const actualIndex = startIndex + i;
-
-          return (
-            <div
-              key={actualIndex}
-              className="bg-white p-6 rounded-xl shadow-md border border-gray-200"
-            >
-              <h4 className="font-semibold mb-4 text-gray-800">
-                {actualIndex + 1}. {q.text}
-              </h4>
-
-              <div className="space-y-3">
-                {q.options?.map((opt, idx) => (
-                  <label
-                    key={idx}
-                    className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition ${
-                      answers[actualIndex] === opt.id
-                        ? "bg-indigo-100 border-indigo-400"
-                        : "hover:bg-gray-50"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name={`question-${actualIndex}`}
-                      value={opt.id}
-                      checked={answers[actualIndex] === opt.id}
-                      onChange={() =>
-                        handleSelect(actualIndex, opt.id ?? idx)
-                      }
-                    />
-
-                    <span>{opt.text}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* FOOTER NAVIGATION */}
-
-      <div className="mt-8 flex justify-between items-center">
-        <button
-          disabled={page === 0}
-          onClick={() => setPage((p) => p - 1)}
-          className="flex items-center gap-2 px-4 py-2 bg-gray-200 rounded-lg disabled:opacity-50"
-        >
-          <ChevronLeft size={16} /> Previous
-        </button>
-
-        <div className="text-sm text-gray-500">
-          Page {page + 1} of {totalPages}
-        </div>
-
-        {page < totalPages - 1 ? (
-          <button
-            onClick={() => setPage((p) => p + 1)}
-            className="flex items-center gap-2 px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
-          >
-            Next <ChevronRight size={16} />
-          </button>
-        ) : (
-          <button
-            onClick={handleSubmit}
-            className="px-6 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700"
-          >
-            Submit Quiz
-          </button>
-        )}
       </div>
     </div>
   );

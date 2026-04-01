@@ -1,3 +1,4 @@
+// src/components/YourPlayerFile.tsx
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
@@ -73,6 +74,24 @@ type SavedProgress = {
   updatedAt: number;
 };
 
+function getQuizKey(activeQuiz: any | null) {
+  if (!activeQuiz) return "no-quiz";
+
+  if (Array.isArray(activeQuiz)) {
+    return activeQuiz
+      .map((q: any) => `${q?.id ?? ""}:${q?.type ?? ""}`)
+      .join("|");
+  }
+
+  if (Array.isArray(activeQuiz.questions)) {
+    return activeQuiz.questions
+      .map((q: any) => `${q?.id ?? ""}:${q?.type ?? ""}`)
+      .join("|");
+  }
+
+  return String(activeQuiz.id ?? JSON.stringify(activeQuiz));
+}
+
 export default function App({
   course,
   student,
@@ -106,6 +125,8 @@ export default function App({
         activeVideoUrl
       )}`
     : null;
+
+  const quizKey = getQuizKey(activeQuiz);
 
   useEffect(() => {
     quizResultRef.current = quizResult;
@@ -243,17 +264,12 @@ export default function App({
       );
     };
 
-    /**
-     * Clamps video.currentTime to the maximum watched position.
-     * Returns true if a correction was applied.
-     */
     const clampToMaxWatched = (): boolean => {
       if (isCorrectingSeekRef.current) return false;
       const allowedMax = Math.max(0, maxWatchedTimeRef.current);
       if (video.currentTime > allowedMax + 0.25) {
         isCorrectingSeekRef.current = true;
         video.currentTime = allowedMax;
-        // Release the guard after the browser has settled
         requestAnimationFrame(() => {
           isCorrectingSeekRef.current = false;
         });
@@ -265,7 +281,6 @@ export default function App({
     const handleTimeUpdate = () => {
       if (!video.duration || Number.isNaN(video.duration)) return;
 
-      // Clamp any forward drift that wasn't caught by seeking/seeked events
       if (clampToMaxWatched()) return;
 
       if (video.currentTime > maxWatchedTimeRef.current) {
@@ -284,21 +299,11 @@ export default function App({
       }
     };
 
-    /**
-     * `seeking` fires the instant the user initiates a seek, before the
-     * browser has actually moved the playhead. We capture the intended
-     * destination in video.currentTime and clamp it immediately.
-     */
     const handleSeeking = () => {
       if (!video.duration || Number.isNaN(video.duration)) return;
       clampToMaxWatched();
     };
 
-    /**
-     * `seeked` fires once the browser has finished the seek. This is a
-     * second safety net in case the browser ignored our correction during
-     * the `seeking` event.
-     */
     const handleSeeked = () => {
       if (!video.duration || Number.isNaN(video.duration)) return;
       clampToMaxWatched();
@@ -357,7 +362,6 @@ export default function App({
     };
   }, [videoKey, activeModuleId, activeSubmoduleTitle, activeVideoUrl]);
 
-  // Block all keyboard shortcuts that can seek the video
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const video = videoRef.current;
@@ -392,7 +396,7 @@ export default function App({
   useEffect(() => {
     setQuizResult(null);
     setAdvanceCountdown(0);
-  }, [activeQuiz?.id]);
+  }, [quizKey]);
 
   useEffect(() => {
     if (advanceCountdown <= 0) return;
@@ -433,7 +437,7 @@ export default function App({
           const uid = String(q.id ?? "");
           const user = String(result.answers[uid] ?? "");
           const ok = String(
-            q.correctOption ?? q.correctAnswer ?? q.answer ?? ""
+            q.correctOption ?? q.correctOptionId ?? q.correctAnswer ?? q.answer ?? ""
           );
           if (user && user === ok) score++;
         });
@@ -599,6 +603,7 @@ export default function App({
                     setAdvanceCountdown(0);
                     onCloseQuiz();
                   }}
+                  onSubmit={handleQuizSubmit}
                   onSubmitted={handleQuizSubmit}
                   email={student.email}
                 />
@@ -683,58 +688,7 @@ export default function App({
             </div>
           )}
         </div>
-
-        <div className="hidden grid-cols-1 gap-4 md:grid md:grid-cols-2">
-          <div className="group rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition-all hover:shadow-md">
-            <div className="mb-4 flex items-center gap-3">
-              <div className="rounded-lg bg-blue-50 p-2 transition-colors group-hover:bg-blue-600 group-hover:text-white">
-                <Layers size={18} />
-              </div>
-              <h3 className="text-sm font-black uppercase tracking-tight text-slate-800">
-                Module Summary
-              </h3>
-            </div>
-            <h4 className="mb-1 text-sm font-bold text-blue-600">
-              {activeModule?.name ?? "General Studies"}
-            </h4>
-            <p className="text-xs font-medium leading-relaxed text-slate-500">
-              {activeModule?.description ??
-                "Select a learning module from the list to begin your professional certification journey."}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-white shadow-sm">
-            <div className="mb-4 flex items-center gap-3 text-slate-400">
-              <User size={18} />
-              <span className="text-[10px] font-black uppercase tracking-widest">
-                Student Profile
-              </span>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600 text-lg font-bold">
-                {student.name.charAt(0)}
-              </div>
-              <div>
-                <p className="text-base font-bold tracking-tight">
-                  {student.name}
-                </p>
-                <p className="text-xs font-medium text-slate-400">
-                  {student.email}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-4">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                Enrollment Status
-              </span>
-              <span className="rounded border border-blue-500/30 bg-blue-500/20 px-2 py-0.5 text-[10px] font-bold uppercase text-blue-400">
-                Active Batch: {student.batch_id ?? "2026-X"}
-              </span>
-            </div>
-          </div>
-        </div>
+ 
       </div>
     </div>
   );
