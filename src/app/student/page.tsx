@@ -3,6 +3,8 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import Modal from "@/components/Modal";
+import BookingApp from "@/components/MentorsMeetForm";
 import {
   BookOpen,
   ArrowRight,
@@ -17,7 +19,6 @@ import {
   ChevronRight,
   Bell,
   Zap,
-  TrendingUp,
   Globe,
 } from "lucide-react";
 
@@ -29,6 +30,13 @@ type Course = {
   completed_modules?: number;
   progress?: number;
   last_accessed?: string;
+};
+
+type NotificationItem = {
+  id: number;
+  title: string;
+  message: string;
+  created_at?: string;
 };
 
 /* ================= COURSE CONFIG ================= */
@@ -59,6 +67,8 @@ const courseMeta: Record<
   },
 };
 
+const NOTIFICATION_SEEN_KEY = "student_seen_notifications";
+
 export default function StudentPage() {
   const router = useRouter();
 
@@ -69,6 +79,11 @@ export default function StudentPage() {
   const [studentEmail, setStudentEmail] = useState("");
   const [studentType, setStudentType] = useState("user");
   const [loading, setLoading] = useState(true);
+  const [meetModalOpen, setMeetModalOpen] = useState(false);
+
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   /* ================= HELPERS ================= */
   const getChartProgress = (course: Course) => {
@@ -79,6 +94,62 @@ export default function StudentPage() {
         : 0;
     const value = directProgress > 0 ? directProgress : moduleProgress;
     return Math.max(5, Math.min(100, value));
+  };
+
+  const getSeenNotificationIds = () => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = localStorage.getItem(NOTIFICATION_SEEN_KEY);
+      return raw ? (JSON.parse(raw) as number[]) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const saveSeenNotificationIds = (ids: number[]) => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem(NOTIFICATION_SEEN_KEY, JSON.stringify(Array.from(new Set(ids))));
+  };
+
+  const refreshUnreadCount = (items: NotificationItem[]) => {
+    const seenIds = getSeenNotificationIds();
+    const unread = items.filter((item) => !seenIds.includes(item.id)).length;
+    setUnreadCount(unread);
+  };
+
+  const fetchNotifications = async () => {
+    try {
+      const res = await fetch("/api/student/notifications", {
+        cache: "no-store",
+      });
+      const data = await res.json();
+      const list = Array.isArray(data) ? data : [];
+      setNotifications(list);
+      refreshUnreadCount(list);
+    } catch (error) {
+      console.error("ERROR FETCHING NOTIFICATIONS:", error);
+      setNotifications([]);
+      setUnreadCount(0);
+    }
+  };
+
+  const handleBellClick = () => {
+    setShowNotifications((prev) => {
+      const next = !prev;
+
+      if (!prev) {
+        const ids = notifications.map((item) => item.id);
+        const seenIds = getSeenNotificationIds();
+        saveSeenNotificationIds([...seenIds, ...ids]);
+        setUnreadCount(0);
+      }
+
+      return next;
+    });
+  };
+
+  const handleCloseNotifications = () => {
+    setShowNotifications(false);
   };
 
   /* ================= FETCH DATA ================= */
@@ -119,6 +190,14 @@ export default function StudentPage() {
         setAllCourses([]);
       })
       .finally(() => setLoading(false));
+
+    fetchNotifications();
+
+    const interval = setInterval(() => {
+      fetchNotifications();
+    }, 20000);
+
+    return () => clearInterval(interval);
   }, [router]);
 
   /* ================= CALCULATED STATS ================= */
@@ -139,7 +218,7 @@ export default function StudentPage() {
   return (
     <div className="min-h-screen bg-slate-50 flex font-sans text-slate-900">
       {/* SIDEBAR */}
-      <aside className="hidden lg:flex flex-col w-80 bg-slate-950 p-8 text-white sticky top-0 h-screen shadow-2xl">
+      <aside className="hidden lg:flex flex-col w-80 bg-slate-950 p-8 text-white sticky top-0 shadow-2xl">
         <div className="mb-12 flex items-center gap-3">
           <div className="w-10 h-10 bg-indigo-500 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/30">
             <GraduationCap size={24} className="text-white" />
@@ -153,7 +232,7 @@ export default function StudentPage() {
           <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-bold mb-4 px-2">
             Dashboard
           </div>
-           <button
+          <button
             onClick={() => setActiveTab("all")}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
               activeTab === "all"
@@ -175,33 +254,41 @@ export default function StudentPage() {
             <LayoutDashboard size={20} />
             <span className="font-semibold text-sm">Enrolled Courses</span>
           </button>
-         
         </nav>
 
-        {/* ── SIDEBAR STATS ── */}
         <div className="mt-8 space-y-3">
-          {/* Modules Done — visible to everyone */}
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-            <Award size={16} className="text-amber-400 mb-2" />
-            <p className="text-xl font-bold">{completedModules}</p>
-            <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">
-              Modules Done
-            </p>
-          </div>
-
-          {/* Avg. Progress button — paid users only */}
-          {studentType !== "free" && (
+          {studentType !== "free" ? (
             <button
-              onClick={() => router.push("/student/progress")}
+              onClick={() => setMeetModalOpen(true)}
               className="w-full flex items-center justify-between gap-3 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 hover:text-white transition-all px-4 py-3 rounded-2xl group"
             >
               <div className="flex items-center gap-2">
-                <TrendingUp size={16} className="text-indigo-400" />
+                <Compass size={16} className="text-indigo-400" />
                 <div className="text-left">
                   <p className="text-[10px] uppercase font-black tracking-wider text-slate-400">
-                    Avg. Progress
+                    Support
                   </p>
-                  <p className="text-lg font-bold text-white leading-none">{averageProgress}%</p>
+                  <p className="text-sm font-bold text-white leading-none">
+                    Book A Meet with Mentors
+                  </p>
+                </div>
+              </div>
+              <ChevronRight size={16} className="group-hover:translate-x-1 transition-transform" />
+            </button>
+          ) : (
+            <button
+              onClick={() => router.push("/enroll?type=expert")}
+              className="w-full flex items-center justify-between gap-3 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:text-white transition-all px-4 py-3 rounded-2xl group"
+            >
+              <div className="flex items-center gap-2">
+                <Zap size={16} className="text-amber-400" />
+                <div className="text-left">
+                  <p className="text-[10px] uppercase font-black tracking-wider text-slate-400">
+                    Access
+                  </p>
+                  <p className="text-sm font-bold text-white leading-none">
+                    Upgrade Your Access
+                  </p>
                 </div>
               </div>
               <ChevronRight size={16} className="group-hover:translate-x-1 transition-transform" />
@@ -250,15 +337,62 @@ export default function StudentPage() {
                 className="bg-white border border-slate-200 rounded-2xl py-3 pl-12 pr-6 text-sm font-medium focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none w-full md:w-64 transition-all shadow-sm"
               />
             </div>
-            <button className="relative w-12 h-12 bg-white border border-slate-200 rounded-2xl flex items-center justify-center text-slate-600 hover:bg-slate-50 shadow-sm transition-all">
-              <Bell size={20} />
-              <span className="absolute top-3 right-3 w-2 h-2 bg-rose-500 rounded-full border-2 border-white"></span>
-            </button>
+
+            <div className="relative">
+              <button
+                onClick={handleBellClick}
+                className="relative w-12 h-12 bg-white border border-slate-200 rounded-2xl flex items-center justify-center text-slate-600 hover:bg-slate-50 shadow-sm transition-all"
+              >
+                <Bell size={20} />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 bg-rose-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-white">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {showNotifications && (
+                <div className="absolute right-0 mt-3 w-80 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                    <h4 className="text-sm font-bold text-slate-800">Notifications</h4>
+                    <button
+                      onClick={handleCloseNotifications}
+                      className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                    >
+                      Close
+                    </button>
+                  </div>
+
+                  <div className="max-h-[50%] overflow-y-auto">
+                    {notifications.length > 0 ? (
+                      notifications.map((item) => (
+                        <div
+                          key={item.id}
+                          className="px-4 py-3 border-b border-slate-50 last:border-b-0 hover:bg-slate-50 transition-colors"
+                        >
+                          <p className="text-sm font-bold text-slate-900">{item.title}</p>
+                          <p className="text-xs text-slate-600 mt-1 leading-relaxed">{item.message}</p>
+                          {item.created_at && (
+                            <p className="text-[10px] text-slate-400 mt-2">
+                              {new Date(item.created_at).toLocaleString()}
+                            </p>
+                          )}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="px-4 py-10 text-center text-sm text-slate-500">
+                        No notifications found.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
         <div className="flex items-center gap-1 bg-slate-200/50 p-1.5 rounded-2xl w-fit shadow-inner">
-         <button
+          <button
             onClick={() => setActiveTab("all")}
             className={`flex items-center gap-2 px-8 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.15em] transition-all ${
               activeTab === "all" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
@@ -276,7 +410,6 @@ export default function StudentPage() {
             <Zap size={14} className={activeTab === "my" ? "text-amber-500" : ""} />
             Enrolled Courses
           </button>
-         
         </div>
 
         {loading ? (
@@ -429,7 +562,7 @@ export default function StudentPage() {
 
                           <div className="flex items-center gap-2 mb-8">
                             <div className="bg-slate-50 rounded-xl px-4 py-2 text-[10px] font-black text-slate-700 uppercase">
-                              Fee: ₹{(meta.fee).toLocaleString()}
+                              Fee: ₹{meta.fee.toLocaleString()}
                             </div>
                             <div className="bg-slate-50 rounded-xl px-4 py-2 text-[10px] font-black text-slate-700 uppercase">
                               12+ Modules
@@ -462,6 +595,9 @@ export default function StudentPage() {
                 </div>
               </section>
             )}
+            <Modal isOpen={meetModalOpen} onClose={() => setMeetModalOpen(false)}>
+              <BookingApp onSuccess={() => setMeetModalOpen(false)} />
+            </Modal>
           </div>
         )}
       </main>

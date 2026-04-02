@@ -1180,7 +1180,7 @@ export default function CourseModules({
       </div>
 
       {/* Modules */}
-      <div className="space-y-2">
+      <div className="space-y-5">
         {course.modules.map((module, moduleIndex) => {
           const moduleKey = module.moduleId ?? `module-${moduleIndex}`;
           const moduleKeyStr = String(moduleKey);
@@ -1244,10 +1244,10 @@ export default function CourseModules({
                     {(moduleIndex + 1).toString().padStart(2, "0")}
                   </span>
                   <div>
-                    <h3 className="text-sm font-bold text-slate-900">
+                    <h3 className="text-sm md:text-[18px] font-bold text-slate-900">
                       {module.name}
                     </h3>
-                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
+                    <p className="text-[12px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
                       {module.submodules?.length || 0} lessons
                     </p>
 
@@ -1496,9 +1496,9 @@ export default function CourseModules({
                                 : ""
                             }`}
                           >
-                            <div className="space-y-0.5 text-left">
+                            <div className="space-y-1 text-left">
                               <h4
-                                className={`text-xs font-bold ${
+                                className={`text-sm font-bold ${
                                   subIsOpen
                                     ? "text-indigo-900"
                                     : "text-gray-700"

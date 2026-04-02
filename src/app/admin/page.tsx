@@ -14,6 +14,7 @@ import {
   User,
   Menu,
   X,
+  Bell,
 } from "lucide-react";
 
 import LMSPage from "./StudentLIst";
@@ -28,6 +29,7 @@ import MentorsBooking from "./MentorsBooking/page";
 import Users from "./users/page";
 import Videos from "./videos/page";
 import { MdQuiz } from "react-icons/md";
+import AdminNotificationPage from "./notifications/page";
 
 /* ================= TYPES ================= */
 export interface UserType {
@@ -133,6 +135,7 @@ export default function App() {
     { key: "studyMT", name: "studyMT", icon: <MdQuiz size={20} /> },
     { key: "lms", name: "Students", icon: <FolderOpen size={20} /> },
     { key: "batch", name: "Batches", icon: <Calendar size={20} /> },
+    { key: "notifications", name: "Notifications", icon: <Bell size={20} /> },
     { key: "mentors_booking", name: "Mentors Slots", icon: <User size={20} /> },
     { key: "users", name: "User", icon: <User size={20} /> },
     { key: "videos", name: "Videos", icon: <Video size={20} /> },
@@ -309,6 +312,7 @@ export default function App() {
             {active === "batch" && <BatchPage />}
             {active === "mentors_booking" && <MentorsBooking />}
             {active === "lms" && <LMSPage />}
+            {active === "notifications" && <AdminNotificationPage />}
             {active === "videos" && <Videos />}
             {active === "profile" && <ProfilePage />}
             {active === "studyMT" && <StudyMT />}
