@@ -77,7 +77,7 @@ export default function StudentPage() {
   const [allCourses, setAllCourses] = useState<Course[]>([]);
   const [studentName, setStudentName] = useState("Student");
   const [studentEmail, setStudentEmail] = useState("");
-  const [studentType, setStudentType] = useState("user");
+  const [studentType, setStudentType] = useState<"free" | "paid">("free");
   const [loading, setLoading] = useState(true);
   const [meetModalOpen, setMeetModalOpen] = useState(false);
 
@@ -164,7 +164,14 @@ export default function StudentPage() {
     const user = JSON.parse(raw);
     setStudentName(user.name);
     setStudentEmail(user.email);
-    setStudentType(user.type || "user");
+    // ✅ FIXED (match DB column)
+console.log("USER DATA:", user);
+
+const type = (user.student_type || "free").toLowerCase().trim();
+
+console.log("FINAL TYPE:", type);
+
+setStudentType(type === "paid" ? "paid" : "free");
 
     fetch("/api/student/course", {
       headers: { "x-user-email": user.email },
@@ -257,7 +264,7 @@ export default function StudentPage() {
         </nav>
 
         <div className="mt-8 space-y-3">
-          {studentType !== "free" ? (
+          {studentType === "paid" ? (
             <button
               onClick={() => setMeetModalOpen(true)}
               className="w-full flex items-center justify-between gap-3 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 hover:text-white transition-all px-4 py-3 rounded-2xl group"

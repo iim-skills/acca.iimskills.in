@@ -1292,12 +1292,14 @@ export default function CourseModules({
                          Each subsequent submodule requires the previous one
                          to have all videos + quizzes completed.
                       */
-                      const subUnlocked =
-                        !moduleUnlocked
-                          ? false
-                          : subIndex === 0
-                          ? true
-                          : isSubmoduleCompleted(moduleIndex, subIndex - 1);
+         const subUnlocked =
+  !moduleUnlocked
+    ? false
+    : isFreeLoggedIn
+    ? moduleIndex === 0 && subIndex === 0
+    : subIndex === 0
+    ? true
+    : isSubmoduleCompleted(moduleIndex, subIndex - 1);
 
                       // derive videos / quizzes, supporting `items[]`
                       const videos: VideoItem[] = Array.isArray(sub.videos)
@@ -1511,9 +1513,11 @@ export default function CourseModules({
                               </p>
                               {/* Lock hint for locked submodules */}
                               {!subUnlocked && (
-                                <p className="text-[10px] text-red-400 mt-0.5">
-                                  Complete the previous chapter to unlock
-                                </p>
+                               <p className="text-[10px] text-red-400 mt-0.5">
+  {isFreeLoggedIn
+    ? "Upgrade your access to unlock"
+    : "Complete the previous chapter to unlock"}
+</p>
                               )}
                             </div>
                             {/* Icon: lock or check */}

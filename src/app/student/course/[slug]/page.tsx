@@ -11,6 +11,7 @@ type Student = {
   id: number;
   name: string;
   email: string;
+  student_type?: string;
   phone?: string;
   modules: string[];
   progress: any;
@@ -92,7 +93,7 @@ export default function CoursePage() {
       {/* HERO */}
       <DashboardHero
         studentName={student.name}
-        Type="paid"
+        student_type={student.student_type}
         course={course}
         activeModules={student.modules}
         onLogout={() => {
