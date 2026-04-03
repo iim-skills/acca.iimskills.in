@@ -167,11 +167,18 @@ export default function StudentPage() {
     // ✅ FIXED (match DB column)
 console.log("USER DATA:", user);
 
-const type = (user.student_type || "free").toLowerCase().trim();
+// ✅ FIX: correct key + safe handling
+console.log("USER DATA:", user);
 
-console.log("FINAL TYPE:", type);
+const rawType =
+  user.studentType || user.student_type || user.type || "";
 
-setStudentType(type === "paid" ? "paid" : "free");
+const normalizedType = rawType.toString().toLowerCase().trim();
+
+console.log("RAW TYPE:", rawType);
+console.log("NORMALIZED TYPE:", normalizedType);
+
+setStudentType(normalizedType === "paid" ? "paid" : "free");
 
     fetch("/api/student/course", {
       headers: { "x-user-email": user.email },
