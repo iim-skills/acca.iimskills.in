@@ -44,18 +44,20 @@ type ItemType = VideoItem | QuizItem;
 
 type Props = {
   isOpen: boolean;
-  onClose: () => void;
   target: TargetType | null;
+  editItem?: ItemType; // ✅ ADD THIS LINE
   editingCourse: Course;
-  setEditingCourse: Dispatch<SetStateAction<Course | null>>;
+  setEditingCourse: any;
+  onClose: () => void;
 };
 
 export default function AddSessionQuiz({
   isOpen,
-  onClose,
   target,
+  editItem, // ✅ ADD THIS
   editingCourse,
   setEditingCourse,
+  onClose,
 }: Props) {
   const [type, setType] = useState<"Session Recording" | "Quiz">("Session Recording");
   const [name, setName] = useState("");

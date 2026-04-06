@@ -1309,7 +1309,7 @@ export default function CourseModules({
                             .filter((it: any) => it?.type === "video")
                             .map((it: any) => ({
                               id: it.sessionId ?? it.videoId ?? it.id,
-                              title: it.videoTitle ?? it.name,
+                              title: it.name ?? it.videoTitle,
                               url:
                                 it.url ?? it.s3_url ?? it.secure_url ?? null,
                               thumb: it.thumb ?? undefined,
@@ -1397,7 +1397,7 @@ export default function CourseModules({
                                   v: {
                                     id:
                                       it.videoId ?? it.sessionId ?? it.id,
-                                    title: it.videoTitle ?? it.name,
+                                    title: it.name ?? it.videoTitle,
                                     url:
                                       getMergedForKey(key)?.url ??
                                       it.url ??

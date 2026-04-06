@@ -36,6 +36,14 @@ export default function EditCourse({
   const [editingModuleId, setEditingModuleId] = useState<string | null>(null);
   const [editingSubId, setEditingSubId] = useState<string | null>(null);
 
+  const [dragItem, setDragItem] = useState<{
+    moduleId: string;
+    submoduleId: string;
+    index: number;
+  } | null>(null);
+
+  const [editingItemKey, setEditingItemKey] = useState<string | null>(null);
+
   useEffect(() => {
     setEditingCourse(course);
   }, [course]);
@@ -55,6 +63,32 @@ export default function EditCourse({
     setOpenModules((prev) =>
       prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
     );
+  };
+
+  const getItemId = (item: ItemType): string => {
+    if (item.type === "video") return item.sessionId;
+    if (item.type === "quiz") return item.quizRefId;
+    if (item.type === "pdf") return item.pdfId;
+    return "";
+  };
+
+  const getItemKey = (item: ItemType): string => {
+    return `${item.type}-${getItemId(item)}`;
+  };
+
+  const isSameItem = (a: ItemType, b: ItemType): boolean => {
+    return getItemKey(a) === getItemKey(b);
+  };
+
+  const reorderItems = (
+    list: ItemType[],
+    startIndex: number,
+    endIndex: number
+  ) => {
+    const result = Array.from(list);
+    const [removed] = result.splice(startIndex, 1);
+    result.splice(endIndex, 0, removed);
+    return result;
   };
 
   /* ================= MODULE ================= */
@@ -141,6 +175,33 @@ export default function EditCourse({
   };
 
   /* ================= ITEMS ================= */
+
+  const updateItemName = (
+    moduleId: string,
+    subId: string,
+    item: ItemType,
+    name: string
+  ) => {
+    updateModules(
+      editingCourse.courseData.modules.map((m) =>
+        m.moduleId === moduleId
+          ? {
+              ...m,
+              submodules: m.submodules.map((s) =>
+                s.submoduleId === subId
+                  ? {
+                      ...s,
+                      items: (s.items || []).map((i) =>
+                        isSameItem(i, item) ? { ...i, name } : i
+                      ),
+                    }
+                  : s
+              ),
+            }
+          : m
+      )
+    );
+  };
 
   const deleteItem = (moduleId: string, subId: string, item: ItemType) => {
     updateModules(
@@ -370,47 +431,120 @@ export default function EditCourse({
 
                           {/* ITEMS */}
                           <div className="flex flex-wrap gap-2">
-                            {s.items.map((it: ItemType) => (
-                              <div
-                                key={
-                                  it.type === "video"
-                                    ? it.sessionId
-                                    : it.type === "quiz"
-                                    ? it.quizRefId
-                                    : it.pdfId
-                                }
-                                className="bg-white border border-slate-200 pl-2 pr-1 py-1 text-xs rounded-md flex items-center gap-2 text-slate-600 shadow-sm group/item"
-                              >
-                                {it.type === "video" && (
-                                  <Video size={12} className="text-blue-500" />
-                                )}
-                                {it.type === "quiz" && (
-                                  <FileQuestion
-                                    size={12}
-                                    className="text-orange-500"
-                                  />
-                                )}
-                                {it.type === "pdf" && (
-                                  <FileText
-                                    size={12}
-                                    className="text-emerald-500"
-                                  />
-                                )}
+                            {s.items.map((it: ItemType, index: number) => {
+                              const itemKey = getItemKey(it);
 
-                                <span className="max-w-[150px] truncate">
-                                  {it.name}
-                                </span>
-
-                                <button
-                                  onClick={() =>
-                                    deleteItem(m.moduleId, s.submoduleId, it)
+                              return (
+                                <div
+                                  key={itemKey}
+                                  draggable
+                                  onDragStart={() =>
+                                    setDragItem({
+                                      moduleId: m.moduleId,
+                                      submoduleId: s.submoduleId,
+                                      index,
+                                    })
                                   }
-                                  className="p-1 hover:bg-red-50 hover:text-red-500 rounded transition-colors text-slate-300"
+                                  onDragOver={(e) => e.preventDefault()}
+                                  onDrop={() => {
+                                    if (
+                                      !dragItem ||
+                                      dragItem.moduleId !== m.moduleId ||
+                                      dragItem.submoduleId !== s.submoduleId ||
+                                      dragItem.index === index
+                                    ) {
+                                      return;
+                                    }
+
+                                    updateModules(
+                                      editingCourse.courseData.modules.map(
+                                        (mod) =>
+                                          mod.moduleId === m.moduleId
+                                            ? {
+                                                ...mod,
+                                                submodules: mod.submodules.map(
+                                                  (sub) =>
+                                                    sub.submoduleId ===
+                                                    s.submoduleId
+                                                      ? {
+                                                          ...sub,
+                                                          items: reorderItems(
+                                                            sub.items,
+                                                            dragItem.index,
+                                                            index
+                                                          ),
+                                                        }
+                                                      : sub
+                                                ),
+                                              }
+                                            : mod
+                                      )
+                                    );
+
+                                    setDragItem(null);
+                                  }}
+                                  className="bg-white border border-slate-200 pl-2 pr-1 py-1 text-xs rounded-md flex items-center gap-2 text-slate-600 shadow-sm group/item"
                                 >
-                                  <X size={10} />
-                                </button>
-                              </div>
-                            ))}
+                                  {it.type === "video" && (
+                                    <Video
+                                      size={12}
+                                      className="text-blue-500"
+                                    />
+                                  )}
+                                  {it.type === "quiz" && (
+                                    <FileQuestion
+                                      size={12}
+                                      className="text-orange-500"
+                                    />
+                                  )}
+                                  {it.type === "pdf" && (
+                                    <FileText
+                                      size={12}
+                                      className="text-emerald-500"
+                                    />
+                                  )}
+
+                                  {editingItemKey === itemKey ? (
+                                    <input
+                                      value={it.name}
+                                      onChange={(e) =>
+                                        updateItemName(
+                                          m.moduleId,
+                                          s.submoduleId,
+                                          it,
+                                          e.target.value
+                                        )
+                                      }
+                                      onBlur={() => setEditingItemKey(null)}
+                                      onKeyDown={(e) =>
+                                        e.key === "Enter" &&
+                                        setEditingItemKey(null)
+                                      }
+                                      className="max-w-[150px] outline-none bg-transparent"
+                                      autoFocus
+                                    />
+                                  ) : (
+                                    <span
+                                      className="max-w-[150px] truncate"
+                                      onDoubleClick={() =>
+                                        setEditingItemKey(itemKey)
+                                      }
+                                    >
+                                      {it.name}
+                                    </span>
+                                  )}
+
+                                  <button
+                                    onClick={() =>
+                                      deleteItem(m.moduleId, s.submoduleId, it)
+                                    }
+                                    className="p-1 hover:bg-red-50 hover:text-red-500 rounded transition-colors text-slate-300"
+                                  >
+                                    <X size={10} />
+                                  </button>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       ))}
