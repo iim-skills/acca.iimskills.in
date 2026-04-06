@@ -69,7 +69,11 @@ type Props = {
     title?: string,
     moduleId?: string,
     videoIndex?: number,
-    options?: { resumeSeconds?: number; autoplay?: boolean }
+    options?: {
+      resumeSeconds?: number;
+      autoplay?: boolean;
+      allowSeek?: boolean;
+    }
   ) => void;
   onReportPlayerProgress?: (
     globalIndex: number,
@@ -244,6 +248,7 @@ export default function CourseModules({
   const [activeVideoKey, setActiveVideoKey] = useState<string | null>(null);
   const [meetModalOpen, setMeetModalOpen] = useState(false);
   const [isFreeLoggedIn, setIsFreeLoggedIn] = useState(false);
+  const [allowSeek, setAllowSeek] = useState(false);
 
   const [isEmailUser] = useState<boolean>(() => {
     try {
@@ -734,14 +739,13 @@ export default function CourseModules({
     );
   }
 
-  /* ── NEW: isSubmoduleCompleted ── */
+  /* ── isSubmoduleCompleted ── */
   function isSubmoduleCompleted(moduleIndex: number, subIndex: number): boolean {
     const mod = course?.modules?.[moduleIndex];
     if (!mod) return false;
     const sub = mod.submodules?.[subIndex];
     if (!sub) return false;
 
-    // Check all videos in this submodule are completed
     const videoDone = flatVideos
       .filter(
         (fv) =>
@@ -754,11 +758,9 @@ export default function CourseModules({
 
     if (!videoDone) return false;
 
-    // Check all quizzes in this submodule are completed
     const subId = String(sub.submoduleId ?? "");
     const quizList = quizzesBySubmodule[subId] ?? [];
 
-    // Also check inline items quizzes
     let allQuizIds: string[] = quizList.map((q) => q.id);
     if (Array.isArray((sub as any).items)) {
       const inlineQuizIds = (sub as any).items
@@ -813,12 +815,16 @@ export default function CourseModules({
             ? Math.floor(merg.duration)
             : 0;
 
+        const alreadyCompleted =
+          serverProgressRef.current.get(globalIndex)?.completed ||
+          completedSetRef.current.has(globalIndex);
+
         const payload: any = {
           userKey: getUserKey(),
           courseId,
           positionSeconds: Math.floor(Math.max(0, positionSeconds)),
           duration: dur,
-          completed,
+          completed: alreadyCompleted ? true : completed,
           videoId: fv?.videoId ?? `idx_${globalIndex}`,
         };
 
@@ -831,9 +837,13 @@ export default function CourseModules({
         if (res.ok) {
           setServerProgress((prev) => {
             const n = new Map(prev);
+            const alreadyCompleted =
+              prev.get(globalIndex)?.completed ||
+              completedSetRef.current.has(globalIndex);
+
             n.set(globalIndex, {
               positionSeconds: Math.floor(Math.max(0, positionSeconds)),
-              completed,
+              completed: alreadyCompleted ? true : completed,
             });
             return n;
           });
@@ -862,6 +872,8 @@ export default function CourseModules({
   };
 
   const reportProgress = onReportPlayerProgress ?? saveToServer;
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const lastAllowedTimeRef = useRef(0);
 
   const getResume = (gi: number) => {
     const e = serverProgressRef.current.get(gi);
@@ -869,6 +881,34 @@ export default function CourseModules({
       ? e.positionSeconds
       : undefined;
   };
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const handleTimeUpdate = () => {
+      if (video.currentTime > lastAllowedTimeRef.current) {
+        lastAllowedTimeRef.current = video.currentTime;
+      }
+    };
+
+    const handleSeeking = () => {
+      // allowSeek true = completed or has prior progress → no restriction
+      if (!allowSeek) {
+        if (video.currentTime > lastAllowedTimeRef.current + 1) {
+          video.currentTime = lastAllowedTimeRef.current;
+        }
+      }
+    };
+
+    video.addEventListener("timeupdate", handleTimeUpdate);
+    video.addEventListener("seeking", handleSeeking);
+
+    return () => {
+      video.removeEventListener("timeupdate", handleTimeUpdate);
+      video.removeEventListener("seeking", handleSeeking);
+    };
+  }, [allowSeek]);
 
   /* ── playGlobalIndex, computePendingNextVideo, handleVideoCompleted ── */
   const playGlobalIndex = (globalIndex: number, autoplay = false) => {
@@ -881,16 +921,33 @@ export default function CourseModules({
 
     const mod = course?.modules?.[fv.moduleIndex];
 
+    const resumeSecs = getResume(globalIndex) ?? 0;
+    const alreadyCompleted = completedSetRef.current.has(globalIndex);
+
+    // ── FIX: if video is already completed, remove the seek fence entirely ──
+    lastAllowedTimeRef.current = alreadyCompleted
+      ? Number.MAX_SAFE_INTEGER
+      : resumeSecs;
+
     (window as any).currentVideoIndex = globalIndex;
-    (window as any).currentVideoResumeSeconds =
-      getResume(globalIndex) ?? 0;
+    (window as any).currentVideoResumeSeconds = resumeSecs;
+    // expose max seekable seconds so external players can enforce the fence
+    (window as any).currentVideoMaxSeekSeconds = alreadyCompleted
+      ? Number.MAX_SAFE_INTEGER
+      : resumeSecs;
 
     setActiveVideoKey(fv.key);
     activeVideoKeyRef.current = fv.key;
 
+    // Allow seek if completed (full range) OR if the user has watched any
+    // portion before (up to their last position).
+    const canSeek = alreadyCompleted || resumeSecs > 0;
+    setAllowSeek(canSeek);
+
     onPlayVideo(url, fv.title, mod?.moduleId ?? "", fv.videoIndex, {
-      resumeSeconds: getResume(globalIndex),
+      resumeSeconds: resumeSecs,
       autoplay,
+      allowSeek: canSeek,
     });
   };
 
@@ -1086,12 +1143,18 @@ export default function CourseModules({
       const pos = dur > 0 ? dur : e?.positionSeconds ?? 0;
       const fv = flatVideos[gi];
 
+      const alreadyCompleted =
+        serverProgressRef.current.get(gi)?.completed ||
+        completedSetRef.current.has(gi);
+
       const payload: any = {
         userKey: getUserKey(),
         courseId,
         positionSeconds: Math.floor(Math.max(0, pos)),
         duration: dur,
-        completed: Boolean(dur > 0 && pos >= dur),
+        completed: alreadyCompleted
+          ? true
+          : Boolean(dur > 0 && pos >= dur),
         videoId: fv?.videoId ?? `idx_${gi}`,
       };
 
@@ -1287,19 +1350,14 @@ export default function CourseModules({
                       const subKey = `${moduleKey}-sub-${subIndex}`;
                       const subIsOpen = openSubKey === subKey;
 
-                      /* ── NEW: submodule unlock logic ──
-                         First submodule is always open (if module unlocked).
-                         Each subsequent submodule requires the previous one
-                         to have all videos + quizzes completed.
-                      */
-         const subUnlocked =
-  !moduleUnlocked
-    ? false
-    : isFreeLoggedIn
-    ? moduleIndex === 0 && subIndex === 0
-    : subIndex === 0
-    ? true
-    : isSubmoduleCompleted(moduleIndex, subIndex - 1);
+                      const subUnlocked =
+                        !moduleUnlocked
+                          ? false
+                          : isFreeLoggedIn
+                          ? moduleIndex === 0 && subIndex === 0
+                          : subIndex === 0
+                          ? true
+                          : isSubmoduleCompleted(moduleIndex, subIndex - 1);
 
                       // derive videos / quizzes, supporting `items[]`
                       const videos: VideoItem[] = Array.isArray(sub.videos)
@@ -1511,16 +1569,14 @@ export default function CourseModules({
                               <p className="text-[10px] text-gray-400">
                                 {sub.description}
                               </p>
-                              {/* Lock hint for locked submodules */}
                               {!subUnlocked && (
-                               <p className="text-[10px] text-red-400 mt-0.5">
-  {isFreeLoggedIn
-    ? "Upgrade your access to unlock"
-    : "Complete the previous chapter to unlock"}
-</p>
+                                <p className="text-[10px] text-red-400 mt-0.5">
+                                  {isFreeLoggedIn
+                                    ? "Upgrade your access to unlock"
+                                    : "Complete the previous chapter to unlock"}
+                                </p>
                               )}
                             </div>
-                            {/* Icon: lock or check */}
                             {subUnlocked ? (
                               <CheckCircle2
                                 size={14}
@@ -1584,7 +1640,6 @@ export default function CourseModules({
                                       typeof globalIndex === "number" &&
                                       globalIndex === 0;
 
-                                    // Use subUnlocked instead of moduleUnlocked
                                     const unlocked = Boolean(
                                       subUnlocked &&
                                         (isFirst ||
@@ -1734,14 +1789,10 @@ export default function CourseModules({
                                     q.id
                                   );
 
-                                  // Use subUnlocked: quiz requires submodule
-                                  // to be unlocked AND previous video done
                                   const quizUnlocked = (() => {
                                     if (!subUnlocked) return false;
                                     if (prevVideoGi >= 0)
                                       return completedSet.has(prevVideoGi);
-                                    // No preceding video in this submodule —
-                                    // check the last video before this submodule
                                     const firstVideoOfSubKey = `${moduleKeyPart}-sub-${subIndex}-vid-0`;
                                     const firstVideoOfSubGi =
                                       videoKeyToGlobalIndex.get(
