@@ -33,6 +33,8 @@
     QuizPanel: React.ComponentType<any>;
   };
 
+   
+
   export default function App({
     course, student,
     activeModuleId, activeVideoUrl, activeSubmoduleTitle,
@@ -248,9 +250,20 @@
                 <ChevronRight size={12} className="text-slate-300" />
                 <span className="text-slate-500">{activeModule?.name || "Select a module"}</span>
               </div>
-              <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight leading-tight">
-                {activeSubmoduleTitle || "Welcome back, Accountant"}
-              </h1>
+<h1 className="text-2xl font-extrabold text-slate-900 tracking-tight leading-tight">
+  {(() => {
+    if (!activeVideoUrl) {
+      return `Welcome ${student?.name || "Student"}`;
+    }
+
+    if (activeSubmoduleTitle?.includes("||")) {
+      const [chapter, lesson] = activeSubmoduleTitle.split("||");
+      return `${chapter} - ${lesson}`;
+    }
+
+    return activeSubmoduleTitle || "Chapter";
+  })()}
+</h1>
             </div>
 
             {/* Player/Quiz Container */}

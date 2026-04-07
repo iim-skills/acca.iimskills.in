@@ -910,6 +910,27 @@ export default function CourseModules({
     };
   }, [allowSeek]);
 
+  function formatLessonTitle(title?: string) {
+  if (!title) return "Lesson";
+
+  const lower = title.toLowerCase();
+
+  // If already clean
+  if (lower.includes("lesson")) {
+    return title;
+  }
+
+  // Extract number from slug like chapter-01-lesson-1
+  const match = title.match(/(\d+)/g);
+
+  if (match && match.length > 0) {
+    const lessonNumber = match[match.length - 1]; // last number
+    return `Lesson ${parseInt(lessonNumber)}`;
+  }
+
+  return title;
+}
+
   /* ── playGlobalIndex, computePendingNextVideo, handleVideoCompleted ── */
   const playGlobalIndex = (globalIndex: number, autoplay = false) => {
     const fv = flatVideos[globalIndex];
@@ -944,11 +965,17 @@ export default function CourseModules({
     const canSeek = alreadyCompleted || resumeSecs > 0;
     setAllowSeek(canSeek);
 
-    onPlayVideo(url, fv.title, mod?.moduleId ?? "", fv.videoIndex, {
-      resumeSeconds: resumeSecs,
-      autoplay,
-      allowSeek: canSeek,
-    });
+   onPlayVideo(
+  url,
+  `${course?.modules?.[fv.moduleIndex]?.submodules?.[fv.subIndex]?.title}||${formatLessonTitle(fv.title)}`,
+  mod?.moduleId ?? "",
+  fv.videoIndex,
+  {
+    resumeSeconds: resumeSecs,
+    autoplay,
+    allowSeek: canSeek,
+  }
+);
   };
 
   const computePendingNextVideo = (
