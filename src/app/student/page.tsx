@@ -152,66 +152,73 @@ export default function StudentPage() {
     setShowNotifications(false);
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem("user");
+    localStorage.removeItem("visitedCourses");
+    localStorage.removeItem(NOTIFICATION_SEEN_KEY);
+
+    // Full reload is the most reliable logout method
+    window.location.href = "/";
+  };
+
   /* ================= FETCH DATA ================= */
   useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | undefined;
+
     const raw = localStorage.getItem("user");
 
     if (!raw) {
-      router.push("/");
+      window.location.href = "/";
       return;
     }
 
-    const user = JSON.parse(raw);
-    setStudentName(user.name);
-    setStudentEmail(user.email);
-    // ✅ FIXED (match DB column)
-console.log("USER DATA:", user);
+    try {
+      const user = JSON.parse(raw);
 
-// ✅ FIX: correct key + safe handling
-console.log("USER DATA:", user);
+      setStudentName(user.name || "Student");
+      setStudentEmail(user.email || "");
 
-const rawType =
-  user.studentType || user.student_type || user.type || "";
+      const rawType = user.studentType || user.student_type || user.type || "";
+      const normalizedType = rawType.toString().toLowerCase().trim();
+      setStudentType(normalizedType === "paid" ? "paid" : "free");
 
-const normalizedType = rawType.toString().toLowerCase().trim();
-
-console.log("RAW TYPE:", rawType);
-console.log("NORMALIZED TYPE:", normalizedType);
-
-setStudentType(normalizedType === "paid" ? "paid" : "free");
-
-    fetch("/api/student/course", {
-      headers: { "x-user-email": user.email },
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        console.log("RECEIVED MY COURSES:", data);
-        setMyCourses(data || []);
+      fetch("/api/student/course", {
+        headers: { "x-user-email": user.email },
       })
-      .catch((err) => {
-        console.error("ERROR FETCHING STUDENT COURSES:", err);
-        setMyCourses([]);
-      });
+        .then((res) => res.json())
+        .then((data) => {
+          setMyCourses(data || []);
+        })
+        .catch((err) => {
+          console.error("ERROR FETCHING STUDENT COURSES:", err);
+          setMyCourses([]);
+        });
 
-    fetch("/api/courses")
-      .then((res) => res.json())
-      .then((data) => {
-        console.log("RECEIVED ALL COURSES:", data);
-        setAllCourses(data || []);
-      })
-      .catch((err) => {
-        console.error("ERROR FETCHING COURSE CATALOG:", err);
-        setAllCourses([]);
-      })
-      .finally(() => setLoading(false));
+      fetch("/api/courses")
+        .then((res) => res.json())
+        .then((data) => {
+          setAllCourses(data || []);
+        })
+        .catch((err) => {
+          console.error("ERROR FETCHING COURSE CATALOG:", err);
+          setAllCourses([]);
+        })
+        .finally(() => setLoading(false));
 
-    fetchNotifications();
-
-    const interval = setInterval(() => {
       fetchNotifications();
-    }, 20000);
 
-    return () => clearInterval(interval);
+      interval = setInterval(() => {
+        fetchNotifications();
+      }, 20000);
+    } catch (error) {
+      console.error("INVALID USER DATA:", error);
+      window.location.href = "/";
+      return;
+    }
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
   }, [router]);
 
   /* ================= CALCULATED STATS ================= */
@@ -233,6 +240,20 @@ setStudentType(normalizedType === "paid" ? "paid" : "free");
     <div className="min-h-screen bg-slate-50 flex font-sans text-slate-900">
       {/* SIDEBAR */}
       <aside className="hidden lg:flex flex-col w-80 bg-slate-950 p-8 text-white sticky top-0 shadow-2xl">
+        <div className="absolute inset-0 z-0">
+          {/* Soft Radial Center Light */}
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(51,65,85,0.4)_0%,transparent_70%)]" />
+
+          {/* Very Subtle Slate Grid */}
+          <div
+            className="absolute inset-0 opacity-[0.05]"
+            style={{
+              backgroundImage:
+                "linear-gradient(#94a3b8 1px, transparent 1px), linear-gradient(90deg, #94a3b8 1px, transparent 1px)",
+              backgroundSize: "50px 50px",
+            }}
+          />
+        </div>
         <div className="mb-12 flex items-center gap-3">
           <div className="w-10 h-10 bg-indigo-500 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/30">
             <GraduationCap size={24} className="text-white" />
@@ -321,10 +342,7 @@ setStudentType(normalizedType === "paid" ? "paid" : "free");
             </div>
           </div>
           <button
-            onClick={() => {
-              localStorage.removeItem("user");
-              router.push("/");
-            }}
+            onClick={handleLogout}
             className="w-full flex items-center justify-center gap-2 bg-rose-500/10 hover:bg-rose-50 text-rose-500 hover:text-white transition-all py-3 rounded-xl text-xs font-bold border border-rose-500/20"
           >
             <LogOut size={16} />

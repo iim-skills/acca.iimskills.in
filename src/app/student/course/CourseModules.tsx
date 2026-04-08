@@ -1619,8 +1619,8 @@ export default function CourseModules({
                           >
                             <div className="space-y-1 text-left flex gap-4 items-center">
                               <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm">
-                  <Tag size={14} strokeWidth={1.5} />
-                </div>
+                  <Tag size={14} strokeWidth={1.5} /></div>
+                <div className="flex flex-col">
                               <h4
                                 className={`text-sm font-bold ${
                                   subIsOpen
@@ -1640,6 +1640,7 @@ export default function CourseModules({
                                     : "Complete the previous chapter to unlock"}
                                 </p>
                               )}
+                              </div>
                             </div>
                             {subUnlocked ? (
                               <CheckCircle2
