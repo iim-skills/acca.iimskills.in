@@ -36,6 +36,25 @@ export default function CoursePage() {
   const [activeSubmoduleTitle, setActiveSubmoduleTitle] = useState<string | null>(null);
   const [activeQuiz, setActiveQuiz] = useState<any | null>(null);
 
+  /* ================= LOGOUT ================= */
+  const handleLogout = () => {
+    try {
+      console.log("Logout clicked");
+
+      // clear user data
+      localStorage.removeItem("user");
+      localStorage.removeItem("course_user_key");
+
+      // optional full clear
+      // localStorage.clear();
+
+      // redirect to home/login
+      router.push("/");
+    } catch (err) {
+      console.error("Logout error:", err);
+    }
+  };
+
   /* ================= STUDENT ================= */
   useEffect(() => {
     const raw = localStorage.getItem("user");
@@ -55,6 +74,9 @@ export default function CoursePage() {
       .then((res) => res.json())
       .then((data) => {
         setStudent(data);
+      })
+      .catch((err) => {
+        console.error("Student fetch error:", err);
       });
   }, [router, slug]);
 
@@ -64,6 +86,9 @@ export default function CoursePage() {
       .then((res) => res.json())
       .then((data) => {
         setCourse(data.course);
+      })
+      .catch((err) => {
+        console.error("Course fetch error:", err);
       });
   }, [slug]);
 
@@ -96,17 +121,13 @@ export default function CoursePage() {
         student_type={student.student_type}
         course={course}
         activeModules={student.modules}
-        onLogout={() => {
-          localStorage.removeItem("user");
-          router.push("/");
-        }}
+         // ✅ FIXED
       />
 
       {/* MAIN GRID */}
-      <div className="max-w-7xl mx-auto md:px-6 py-8 grid grid-cols-12 gap-6">
+      <div className="relative z-10 max-w-7xl mx-auto md:px-6 py-8 grid grid-cols-12 gap-6 md:-mt-20 bg-[#fbffff] rounded-2xl shadow-lg">
 
         {/* LEFT SIDE (Modules) */}
-        {/* Mobile: bottom | Desktop: left */}
         <div className="col-span-12 order-last lg:order-first lg:col-span-5 xl:col-span-5">
           <CourseModules
             course={course}
@@ -120,7 +141,6 @@ export default function CoursePage() {
         </div>
 
         {/* RIGHT SIDE (Player + Quiz) */}
-        {/* Mobile: top | Desktop: right */}
         <div
           className="
             col-span-12

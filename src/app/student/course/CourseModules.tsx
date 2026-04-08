@@ -11,9 +11,17 @@ import {
   CheckCircle2,
   FileText,
   BookOpen,
+  Tag,
+  ExternalLink,
+  RotateCcw,
+  PlayIcon,
 } from "lucide-react";
 import Modal from "@/components/Modal";
+import Link from "next/link";
+ 
+
 import { MdDisplaySettings } from "react-icons/md";
+import { Play } from "next/font/google";
 
 /* ===== TYPES ===== */
 export type VideoItem = {
@@ -57,6 +65,15 @@ export type Course = {
   description?: string;
   modules?: Module[];
 };
+
+const gradients = [
+  "from-indigo-500 to-purple-500",
+  "from-pink-500 to-rose-500",
+  "from-green-400 to-emerald-600",
+  "from-blue-400 to-cyan-500",
+  "from-orange-400 to-red-500",
+  "from-violet-500 to-fuchsia-500",
+];
 
 type ProgressEntry = { positionSeconds: number; completed: boolean };
 
@@ -1213,12 +1230,24 @@ export default function CourseModules({
   }
 
   return (
-    <div className="w-full space-y-6">
+    <div className="w-full space-y-6 relaitve z-10">
       {/* Header */}
       <div className="p-4 border-b border-gray-100 bg-white border-indigo-100 shadow-md ring-1 ring-indigo-50">
-        <h2 className="text-2xl font-black text-slate-900 leading-tight mb-2">
-          {course.name}
-        </h2>
+       <h2 className="text-2xl font-black leading-tight mb-2">
+  {(() => {
+    const words = course.name?.split(" ") || [];
+
+    const firstPart = words.slice(0, 2).join(" ");
+    const secondPart = words.slice(2).join(" ");
+
+    return (
+      <>
+        <span className="text-[#00008b]">{firstPart}</span>{" "}
+        <span className="text-slate-900">{secondPart}</span>
+      </>
+    );
+  })()}
+</h2>
 
         <p className="text-xs text-gray-500 mt-1">{course.description}</p>
 
@@ -1238,7 +1267,7 @@ export default function CourseModules({
             <button
               onClick={() => setMeetModalOpen(true)}
               type="button"
-              className="w-full mt-6 py-3.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-sm transition-all shadow-lg shadow-indigo-100 flex items-center justify-center gap-2"
+              className="w-fit mt-6 py-3.5 px-4 bg-linear-to-r from-green-600 to-emerald-800 hover:bg-indigo-700 text-white rounded-2xl font-bold text-xs transition-all shadow-lg shadow-indigo-100 flex items-center justify-center gap-2"
             >
               Book A Meet with Mentors
             </button>
@@ -1273,6 +1302,7 @@ export default function CourseModules({
       <div className="space-y-5">
         {course.modules.map((module, moduleIndex) => {
           const moduleKey = module.moduleId ?? `module-${moduleIndex}`;
+          const gradient = gradients[moduleIndex % gradients.length];
           const moduleKeyStr = String(moduleKey);
           const isOpen = openModuleId === moduleKey;
 
@@ -1330,14 +1360,18 @@ export default function CourseModules({
                   ${!moduleUnlocked ? "cursor-not-allowed opacity-70" : ""}`}
               >
                 <div className="flex items-center gap-3">
-                  <span className="w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm bg-indigo-600 text-white shadow-lg shadow-indigo-100">
-                    {(moduleIndex + 1).toString().padStart(2, "0")}
-                  </span>
+                  <span
+  className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-sm text-white shadow-lg
+    bg-gradient-to-r ${gradient}
+  `}
+>
+  {(moduleIndex + 1).toString().padStart(2, "0")}
+</span>
                   <div>
-                    <h3 className="text-sm md:text-[18px] font-bold text-slate-900">
+                    <h3 className="text-sm md:text-[16px] font-bold text-slate-900">
                       {module.name}
                     </h3>
-                    <p className="text-[12px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
+                    <p className="text-[10px] text-slate-400 font-bold tracking-widest mt-0.5">
                       {module.submodules?.length || 0} lessons
                     </p>
 
@@ -1352,9 +1386,9 @@ export default function CourseModules({
                 <div className="flex items-center gap-2">
                   {moduleUnlocked ? (
                     isOpen ? (
-                      <ChevronUp size={16} className="text-gray-400" />
+                      <ChevronUp size={16} className="text-red-400" />
                     ) : (
-                      <ChevronDown size={16} className="text-gray-400" />
+                      <ChevronDown size={16} className="text-green-600 font-bold" />
                     )
                   ) : (
                     <div className="group/lock relative p-1">
@@ -1576,14 +1610,17 @@ export default function CourseModules({
                               setOpenSubKey(subIsOpen ? null : subKey);
                             }}
                             className={`w-full flex items-center justify-between p-3.5 rounded-xl transition-colors ${
-                              subIsOpen ? "bg-blue-100" : "hover:bg-slate-50"
+                              subIsOpen ? "bg-blue-50" : "hover:bg-slate-50"
                             } ${
                               !subUnlocked
                                 ? "opacity-50 cursor-not-allowed"
                                 : ""
                             }`}
                           >
-                            <div className="space-y-1 text-left">
+                            <div className="space-y-1 text-left flex gap-4 items-center">
+                              <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-all shadow-sm">
+                  <Tag size={14} strokeWidth={1.5} />
+                </div>
                               <h4
                                 className={`text-sm font-bold ${
                                   subIsOpen
@@ -1729,10 +1766,7 @@ export default function CourseModules({
                                                 }`}
                                             >
                                               <div className="flex items-center gap-3">
-                                                <MdDisplaySettings
-                                                  size={16}
-                                                  className="text-indigo-600"
-                                                />
+                                                 
                                                 <p className="text-xs font-semibold flex items-center gap-2">
                                                   {vv.title}
                                                   {done && (
@@ -1741,9 +1775,7 @@ export default function CourseModules({
                                                         size={12}
                                                         className="text-emerald-500"
                                                       />
-                                                      <span className="ml-1 text-emerald-700">
-                                                        Completed
-                                                      </span>
+                                                      
                                                     </span>
                                                   )}
                                                 </p>
@@ -1755,9 +1787,14 @@ export default function CourseModules({
                                                     Locked
                                                   </span>
                                                 ) : (
-                                                  <span className="px-3 py-1 bg-indigo-600 text-white text-[10px] font-bold rounded">
-                                                    {done ? "Replay" : "Play"}
-                                                  </span>
+                                                  <span className=" text-white text-[10px] font-bold rounded flex items-center gap-1">
+  {done ? (
+  <RotateCcw size={18} className="text-yellow-300" />
+) : (
+  <PlayIcon size={18} className="text-green-300" />
+)}
+   
+</span>
                                                 )}
                                               </div>
                                             </button>
@@ -1777,35 +1814,28 @@ export default function CourseModules({
                                     const pdf = pdfItem.p;
 
                                     return (
-                                      <a
-                                        key={
-                                          pdfItem.key ||
-                                          `${subKey}-pdf-${itemIndex}`
-                                        }
-                                        href={pdf.fileUrl || "#"}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-100 bg-white hover:border-indigo-100 hover:text-indigo-600 transition-all"
-                                      >
-                                        <div className="flex items-center gap-3">
-                                          <FileText
-                                            size={16}
-                                            className="text-red-500"
-                                          />
-                                          <div className="text-left">
-                                            <p className="text-xs font-semibold">
-                                              {pdf.name || "PDF"}
-                                            </p>
-                                            <p className="text-[10px] text-gray-400">
-                                              Open study material
-                                            </p>
-                                          </div>
-                                        </div>
+                                      
+                                     <Link
+  href={pdf.fileUrl || "#"}
+  target="_blank"
+  rel="noreferrer"
+  key={pdfItem.key || `${subKey}-pdf-${itemIndex}`}
+  className="flex items-center justify-between gap-3 p-3 rounded-xl"
+>
+  <div className="w-full flex justify-between items-center gap-3 p-3 rounded-xl border transition-all bg-white  border-slate-100 hover:border-indigo-100 text-slate-600 hover:text-indigo-600 cursor-pointer">
+  <div className="flex items-center gap-3">
+    <div className="text-left">
+      <p className="text-xs font-semibold">
+        {pdf.name || "PDF"}
+      </p>
+    </div>
+  </div>
 
-                                        <span className="px-3 py-1 bg-red-500 text-white text-[10px] font-bold rounded">
-                                          PDF
-                                        </span>
-                                      </a>
+  <span className="text-red-500 text-[14px] font-bold rounded">
+    <ExternalLink size={18} />
+  </span>
+  </div>
+</Link>
                                     );
                                   }
 
@@ -1836,12 +1866,8 @@ export default function CourseModules({
                                   return (
                                     <div
                                       key={q.id}
-                                      className={`flex items-center gap-3 p-3 rounded-xl border border-dashed transition-all
-                                        ${
-                                          quizUnlocked
-                                            ? "border-amber-200 bg-amber-50/30 hover:bg-amber-50 cursor-pointer"
-                                            : "border-gray-200 bg-gray-50/30 opacity-60 cursor-not-allowed"
-                                        }`}
+                                      className={`flex items-center gap-3 p-3 rounded-xl  
+                                         `}
                                     >
                                       <button
                                         disabled={!quizUnlocked}
@@ -1858,27 +1884,19 @@ export default function CourseModules({
                                             );
                                           onOpenQuiz(q);
                                         }}
-                                        className="flex w-full items-center justify-between p-1"
+                                        className="w-full flex justify-between items-center gap-3 p-3 rounded-xl border transition-all bg-white border-slate-100 hover:border-indigo-100 text-slate-600 hover:text-indigo-600 cursor-pointer"
                                       >
                                         <div className="flex items-center gap-3">
-                                          <FileText
-                                            size={16}
-                                            className={
-                                              quizDone
-                                                ? "text-emerald-500"
-                                                : quizUnlocked
-                                                ? "text-indigo-600"
-                                                : "text-gray-400"
-                                            }
-                                          />
+                                          
                                           <div className="text-left">
-                                            <p className="text-xs font-semibold">
-                                              {q.name}
-                                            </p>
+                                            
                                             {quizDone ? (
                                               <p className="text-[10px] text-emerald-600 flex items-center gap-1 mt-0.5">
+                                                <p className="text-xs font-semibold">
+                                              {q.name}
+                                            </p>
                                                 <CheckCircle2 size={10} />{" "}
-                                                Completed
+                                                 
                                               </p>
                                             ) : (
                                               !quizUnlocked && (

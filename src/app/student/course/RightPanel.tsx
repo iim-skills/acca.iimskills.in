@@ -247,8 +247,8 @@
               <div className="flex items-center gap-2 text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-1">
                 <Layers size={14} />
                 <span>{course?.name || "Professional Certification"}</span>
-                <ChevronRight size={12} className="text-slate-300" />
-                <span className="text-slate-500">{activeModule?.name || "Select a module"}</span>
+                <ChevronRight size={12} className="text-rose-600" />
+                <span className="text-rose-600">{activeModule?.name || "Select a module"}</span>
               </div>
 <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight leading-tight">
   {(() => {
@@ -411,7 +411,7 @@
             {/* Notifications Hub */}
             <div className="space-y-3">
               <div className="flex items-center justify-between px-2">
-                <h5 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 flex items-center gap-2">
+                <h5 className="text-[11px] font-black uppercase tracking-[0.2em] text-rose-400 flex items-center gap-2">
                   <Bell size={12} /> News & Alerts
                 </h5>
                 <div className="w-2 h-2 rounded-full bg-blue-500 animate-ping" />

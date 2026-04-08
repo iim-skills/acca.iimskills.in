@@ -1,8 +1,12 @@
-"use client";
-
 import React from "react";
-import Link from "next/link";
-import { ChevronRight, LogOut, BookOpen, Zap, ShieldCheck, LayoutGrid } from "lucide-react";
+import { 
+  ChevronRight, 
+  LogOut, 
+  LayoutGrid, 
+  ShieldCheck, 
+  Layers, 
+  Activity 
+} from "lucide-react";
 
 /* ================= TYPES ================= */
 
@@ -18,140 +22,154 @@ type CourseFile = {
 
 type Props = {
   studentName: string;
-  student_type?: string; // ✅ FIXED (was Type)
+  student_type?: string;
   course: CourseFile | null;
   activeModules: string[];
-  onLogout: () => void;
 };
 
+/**
+ * DashboardHero Component - Slate & Cyan Edition
+ * A professional, enterprise-grade color scheme.
+ */
 export default function DashboardHero({
   studentName,
   student_type,
   course,
   activeModules,
-  onLogout,
 }: Props) {
 
-  // ✅ DEBUG LOGS (IMPORTANT)
-  console.log("Student Type Raw:", student_type);
+  const handleLogout = () => {
+    try {
+      console.log("Logout clicked");
+      localStorage.removeItem("user");
+      localStorage.removeItem("course_user_key");
+      window.location.href = "/"; 
+    } catch (err) {
+      console.error("Logout error:", err);
+    }
+  };
 
   const normalizedType = (student_type || "free").toLowerCase().trim();
-
-  console.log("Normalized Type:", normalizedType);
-
   const isPaid = normalizedType === "paid";
-
   const totalModules = course?.modules?.length ?? 0;
   const firstInitial = studentName?.charAt(0).toUpperCase() || "S";
 
   return (
-    <div className="w-full bg-[#0B0F1A] text-slate-200 font-sans selection:bg-indigo-500/30">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    /* --- NEW COLOR SCHEME: DEEP SLATE BASE --- */
+    <div className="relative w-full overflow-hidden bg-[#0F172A] border-b border-slate-800 font-sans selection:bg-cyan-500/30 md:pb-22">
+      
+      {/* --- BACKGROUND DESIGN: CLEAN & PROFESSIONAL --- */}
+      <div className="absolute inset-0 z-0">
+        {/* Soft Radial Center Light */}
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(51,65,85,0.4)_0%,transparent_70%)]" />
         
-        {/* TOP NAVIGATION */}
-        <nav className="flex items-center gap-2 mb-10 text-sm font-medium">
-          <Link 
+        {/* Very Subtle Slate Grid */}
+        <div 
+          className="absolute inset-0 opacity-[0.05]" 
+          style={{ 
+            backgroundImage: 'linear-gradient(#94a3b8 1px, transparent 1px), linear-gradient(90deg, #94a3b8 1px, transparent 1px)', 
+            backgroundSize: '50px 50px' 
+          }} 
+        />
+      </div>
+
+      <div className="relative max-w-7xl mx-auto px-6 sm:px-8 lg:px-10 py-10">
+        
+        {/* NAV / BREADCRUMBS - Slate Theme */}
+        <nav className="flex items-center gap-3 mb-12 text-[11px] font-bold uppercase tracking-[0.2em]">
+          <a 
             href="/student" 
-            className="flex items-center gap-2 text-slate-500 hover:text-indigo-400 transition-colors"
+            className="flex items-center gap-2 text-slate-400 hover:text-cyan-400 transition-colors no-underline"
           >
-            <LayoutGrid size={16} />
+            <LayoutGrid size={14} />
             <span>Dashboard</span>
-          </Link>
-          <ChevronRight size={14} className="text-slate-700" />
-          <span className="text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-md">LMS</span>
+          </a>
+          <ChevronRight size={12} className="text-slate-600" />
+          <span className="text-cyan-400 flex items-center gap-1.5 px-3 py-1 bg-cyan-500/5 rounded-md border border-cyan-500/20">
+            <span className="w-1 h-1 bg-cyan-400 rounded-full" />
+            LMS
+          </span>
         </nav>
 
-        {/* HERO */}
-        <div className="relative flex flex-col lg:flex-row lg:items-end justify-between gap-8 pb-8 border-b border-white/5">
+        {/* HERO MAIN CONTAINER */}
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-10">
           
-          <div className="flex flex-col md:flex-row items-center md:items-start gap-6">
-            
-            {/* AVATAR */}
+          {/* LEFT SECTION: PROFILE & COURSE */}
+          <div className="flex items-center gap-8">
+            {/* Avatar - Slate/Cyan Look */}
             <div className="relative">
-              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-700 flex items-center justify-center text-3xl font-bold text-white shadow-[0_0_40px_rgba(79,70,229,0.2)]">
-                {firstInitial}
+              <div className="w-20 h-20 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-3xl font-black text-white shadow-xl">
+                <span className="text-slate-200">
+                  {firstInitial}
+                </span>
               </div>
-
               {isPaid && (
-                <div className="absolute -bottom-1 -right-1 bg-emerald-500 p-1 rounded-full border-4 border-[#0B0F1A]">
-                  <ShieldCheck size={12} className="text-white" />
+                <div className="absolute -top-2 -right-2 p-1.5 bg-cyan-600 text-white rounded-lg shadow-lg ring-4 ring-[#0F172A]">
+                  <ShieldCheck size={14} />
                 </div>
               )}
             </div>
 
-            {/* USER INFO */}
-            <div className="text-center md:text-left space-y-2">
-              <div className="flex items-center justify-center md:justify-start gap-3">
-                <h1 className="text-4xl font-semibold tracking-tight text-white">
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-3">
+                <h1 className="text-3xl font-bold tracking-tight text-slate-50">
                   {studentName || "Student"}
                 </h1>
-
-                <span
-                  className={`text-[10px] tracking-widest font-black px-2 py-1 rounded border ${
-                    isPaid
-                      ? "border-emerald-500/20 text-emerald-400"
-                      : "border-slate-700 text-slate-500"
-                  }`}
-                >
-                  {isPaid ? "PREMIUM" : "FREE TRIAL"}
+                <span className={`text-[10px] font-black px-2.5 py-1 rounded border transition-all ${
+                  isPaid 
+                    ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/30" 
+                    : "bg-slate-700/50 text-slate-400 border-slate-600"
+                }`}>
+                  {isPaid ? "PRO ACCESS" : "STANDARD"}
                 </span>
               </div>
 
-              <p className="text-slate-400 flex items-center justify-center md:justify-start gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
-                {course?.name ?? "General Course Path"}
-              </p>
+              <div className="flex items-center gap-2 text-slate-400">
+                <div className="w-4 h-[1px] bg-cyan-500/40"></div>
+                <p className="text-sm font-medium tracking-wide">
+                  {course?.name ?? "Course Library"}
+                </p>
+              </div>
             </div>
           </div>
 
-          {/* RIGHT SIDE */}
-          <div className="flex flex-col sm:flex-row items-center gap-6">
+          {/* RIGHT SECTION: STATS & LOGOUT */}
+          <div className="flex flex-wrap items-center gap-10 w-full lg:w-auto">
             
-            {/* STATS */}
-            <div className="flex items-center gap-8 px-6 py-3 bg-white/5 rounded-2xl border border-white/5 backdrop-blur-sm">
-              
-              <div className="text-center">
-                <p className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-1">
-                  Modules
-                </p>
-                <div className="flex items-center gap-2 justify-center">
-                  <BookOpen size={14} className="text-indigo-400" />
-                  <span className="text-xl font-mono text-white">
-                    {totalModules}
-                  </span>
+            {/* STATS CARDS - Clean Slate Style */}
+            <div className="flex items-center gap-4 bg-slate-800/40 p-1.5 rounded-xl border border-slate-700/50">
+              <div className="flex items-center gap-4 px-6 py-3 border-r border-slate-700/50">
+                <div className="p-2.5 bg-slate-700 text-slate-300 rounded-lg">
+                  <Layers size={18} />
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Modules</p>
+                  <p className="text-xl font-bold text-slate-100 leading-tight">{totalModules}</p>
                 </div>
               </div>
 
-              <div className="w-[1px] h-8 bg-white/10" />
-
-              <div className="text-center">
-                <p className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-1">
-                  Active
-                </p>
-                <div className="flex items-center gap-2 justify-center">
-                  <Zap size={14} className="text-amber-400" />
-                  <span className="text-xl font-mono text-white">
-                    {activeModules?.length || 0}
-                  </span>
+              <div className="flex items-center gap-4 px-6 py-3">
+                <div className="p-2.5 bg-cyan-500/10 text-cyan-400 rounded-lg">
+                  <Activity size={18} />
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Progress</p>
+                  <p className="text-xl font-bold text-slate-100 leading-tight">{activeModules?.length || 0}</p>
                 </div>
               </div>
             </div>
 
-            {/* LOGOUT */}
+            {/* LOGOUT BUTTON */}
             <button
-              onClick={onLogout}
-              className="group flex items-center gap-2 text-slate-500 hover:text-red-400 transition-all font-medium text-sm"
+              onClick={handleLogout}
+              className="group flex items-center gap-3 px-5 py-2.5 text-slate-400 hover:text-rose-400 font-bold text-xs uppercase tracking-widest transition-all rounded-lg hover:bg-rose-500/5"
             >
-              <div className="p-2 rounded-lg bg-slate-900 group-hover:bg-red-500/10 transition-colors">
-                <LogOut size={16} />
-              </div>
-              Sign Out
+              <LogOut size={16} className="opacity-50 group-hover:opacity-100 transition-opacity" />
+              Logout
             </button>
           </div>
-        </div>
 
-        {/* BG EFFECT */}
-        <div className="absolute top-0 right-0 w-1/3 h-64 bg-indigo-600/5 blur-[120px]" />
+        </div>
       </div>
     </div>
   );
