@@ -6,6 +6,7 @@
     BookOpen, Calculator, Landmark, ShieldCheck, ChevronRight,
     Clock, Award, Bell, MonitorPlay, Info
   } from "lucide-react";
+  import Image from "next/image";
 
   /* ================= TYPES ================= */
   type VideoItem   = { id?: string; title?: string; url?: string };
@@ -367,37 +368,17 @@
                   <div className="absolute inset-0 pointer-events-none border-[12px] border-white/5 opacity-40" />
                 </div>
               ) : (
-                <div className="relative aspect-video bg-slate-950 flex items-center justify-center">
-                  <div className="absolute inset-0 overflow-hidden">
-                    <div className="absolute top-[-10%] left-[-5%] opacity-10 animate-pulse"><Calculator size={240} className="text-white rotate-12" /></div>
-                    <div className="absolute bottom-[-10%] right-[-5%] opacity-10"><Landmark size={280} className="text-white -rotate-12" /></div>
-                  </div>
-                  
-                  <div className="absolute inset-0 bg-gradient-to-tr from-blue-900/40 via-transparent to-slate-950/80" />
-                  
-                  <div className="relative z-10 text-center px-8 space-y-8 animate-in fade-in zoom-in-95 duration-700">
-                    <div className="relative inline-block group cursor-pointer">
-                        <div className="absolute -inset-4 bg-blue-600/20 rounded-full blur-2xl group-hover:bg-blue-600/40 transition-all duration-500" />
-                        <div className="relative p-7 bg-blue-600 text-white rounded-full shadow-2xl shadow-blue-600/50 group-hover:scale-110 transition-all duration-300">
-                          <Play size={40} fill="currentColor" className="ml-1.5" />
-                        </div>
-                    </div>
-                    
-                    <div className="space-y-4">
-                      <h2 className="text-3xl font-black text-white tracking-tighter uppercase sm:text-4xl">
-                        Ready for the <span className="text-blue-400 italic">Next Level?</span>
-                      </h2>
-                      <div className="flex flex-wrap items-center justify-center gap-6">
-                        <div className="flex items-center gap-2 text-slate-300 text-[11px] font-bold tracking-widest uppercase bg-white/5 px-4 py-2 rounded-full backdrop-blur-sm border border-white/10">
-                          <ShieldCheck size={14} className="text-blue-400" /> Verified Content
-                        </div>
-                        <div className="flex items-center gap-2 text-slate-300 text-[11px] font-bold tracking-widest uppercase bg-white/5 px-4 py-2 rounded-full backdrop-blur-sm border border-white/10">
-                          <BookOpen size={14} className="text-blue-400" /> ACCA Standards
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                
+
+<div className="relative aspect-video bg-slate-950 overflow-hidden border-2 border-slate-800 rounded-xl">
+  <Image
+    src="/acca-lms-image.jpg" // 👉 put your image in /public folder
+    alt="Preview"
+    fill
+    className="object-cover"
+    priority
+  />
+</div>
               )}
             </div>
           </div>
