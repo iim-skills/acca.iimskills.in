@@ -312,14 +312,34 @@ export default function AdminMentorSlotsPage() {
   }, [rows]);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans overflow-x-hidden">
+    <div className="  bg-slate-50 text-slate-900 font-sans overflow-x-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8 lg:py-10">
         {/* HEADER */}
         <div className="flex flex-col gap-4 mb-6 sm:mb-8">
            
 
-          <div className="flex items-center gap-3 w-full">
-            <div className="relative flex-1 min-w-0 group">
+          
+        </div>
+
+        {/* STATS */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-8">
+          <StatCard label="Active Sessions" value={rows.length} icon={<Calendar />} />
+          <StatCard label="Total Capacity" value={totalCapacity} icon={<Users />} />
+          <StatCard label="Mentors Listed" value={mentorCount} icon={<User />} />
+          <StatCard label="Total Time Slots" value={totalSlots} icon={<Clock />} />
+        </div>
+
+        {/* CONTENT */}
+        <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
+          <div className="w-full p-4 sm:p-6 border-b border-slate-50 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="font-black text-slate-900 text-lg">Slot Management</h2>
+              
+            </div>
+
+           
+            <div className="flex items-center gap-3">
+            <div className="relative w-full sm:w-[320px]">
               <Search
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors"
                 size={16}
@@ -338,36 +358,11 @@ export default function AdminMentorSlotsPage() {
             >
               <Plus size={18} />
               <span className="hidden sm:inline">
-                {editingRow ? "Update Session" : "Create Mentor Slots"}
+                {editingRow ? "Update Session" : "Create Slots"}
               </span>
               <span className="sm:hidden">{editingRow ? "Update" : "Create"}</span>
             </button>
           </div>
-        </div>
-
-        {/* STATS */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6 sm:mb-8">
-          <StatCard label="Active Sessions" value={rows.length} icon={<Calendar />} />
-          <StatCard label="Total Capacity" value={totalCapacity} icon={<Users />} />
-          <StatCard label="Mentors Listed" value={mentorCount} icon={<User />} />
-          <StatCard label="Total Time Slots" value={totalSlots} icon={<Clock />} />
-        </div>
-
-        {/* CONTENT */}
-        <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
-          <div className="p-4 sm:p-6 border-b border-slate-50 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h2 className="font-black text-slate-900 text-lg">Current Availability</h2>
-              <p className="text-sm text-slate-500 mt-1">
-                Manage mentor sessions, meeting links, and slot occupancy.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2 text-xs sm:text-sm text-slate-500">
-              <span className="px-3 py-1 rounded-full bg-slate-100 font-semibold">
-                {filteredRows.length} results
-              </span>
-            </div>
           </div>
 
           {/* Desktop table */}

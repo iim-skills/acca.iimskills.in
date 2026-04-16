@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Modal from "@/components/Modal";
+import Image from "next/image";
 import BookingApp from "@/components/MentorsMeetForm";
 import {
   BookOpen,
@@ -254,19 +255,24 @@ export default function StudentPage() {
             }}
           />
         </div>
-        <div className="mb-12 flex items-center gap-3">
-          <div className="w-10 h-10 bg-indigo-500 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/30">
-            <GraduationCap size={24} className="text-white" />
-          </div>
+        <div className="mb-12 flex items-center gap-3 pb-8 border-b-2">
+          <div className="w-14 h-10 bg-white rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/30">
+  <Image
+    src="/iim-skills-official.png"
+    alt="Preview"
+    width={40}
+    height={32}
+    className="object-contain"
+    priority
+  />
+</div>
           <span className="text-xl font-bold tracking-tight">
-            Student<span className="text-indigo-400">Portal</span>
+            Student <span className="text-indigo-400">Dashboard </span>
           </span>
         </div>
 
         <nav className="flex-1 space-y-2">
-          <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500 font-bold mb-4 px-2">
-            Dashboard
-          </div>
+ 
           <button
             onClick={() => setActiveTab("all")}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
@@ -300,11 +306,9 @@ export default function StudentPage() {
               <div className="flex items-center gap-2">
                 <Compass size={16} className="text-indigo-400" />
                 <div className="text-left">
-                  <p className="text-[10px] uppercase font-black tracking-wider text-slate-400">
-                    Support
-                  </p>
+                   
                   <p className="text-sm font-bold text-white leading-none">
-                    Book A Meet with Mentors
+                    Book Mentor Meet
                   </p>
                 </div>
               </div>

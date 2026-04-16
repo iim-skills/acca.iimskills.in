@@ -278,14 +278,30 @@ export default function AdminUsersPage({ currentUser }: { currentUser: any }) {
   }
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] px-4 sm:px-6 lg:px-8 py-5 sm:py-8 lg:py-10 overflow-x-hidden">
+    <div className="  bg-[#f8fafc] px-4 sm:px-6 lg:px-8 py-5 sm:py-8 lg:py-10 overflow-x-hidden">
       <div className="mx-auto max-w-7xl">
         {/* HEADER */}
-        <div className="flex flex-col gap-4 mb-6 sm:mb-8">
          
 
-          <div className="flex items-center gap-3 w-full">
-            <div className="relative flex-1 min-w-0 group">
+        {/* STATS */}
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-6 sm:mb-8">
+          <StatCard title="Total Users" value={stats.total} />
+          <StatCard title="Super Admins" value={stats.superAdmins} />
+          <StatCard title="Admins" value={stats.admins} />
+          
+        </div>
+
+        {/* CONTENT */}
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden">
+        <div className="flex flex-col justify-between gap-4 border-b border-gray-50 p-6 md:flex-row md:items-center bg-white rounded-t-[2rem] border border-slate-200/60 border-b-0">
+          <div>
+            <h2 className="text-lg font-bold text-gray-800">
+              Admin Management
+            </h2>
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative w-full sm:w-[320px]">
               <Search
                 size={16}
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-indigo-500 transition-colors"
@@ -316,16 +332,6 @@ export default function AdminUsersPage({ currentUser }: { currentUser: any }) {
             )}
           </div>
         </div>
-
-        {/* STATS */}
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-6 sm:mb-8">
-          <StatCard title="Total Users" value={stats.total} />
-          <StatCard title="Admins" value={stats.admins} />
-          <StatCard title="Super Admins" value={stats.superAdmins} />
-        </div>
-
-        {/* CONTENT */}
-        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden">
           {/* Desktop Table */}
           <div className="hidden lg:block overflow-x-auto">
             <table className="w-full text-left border-collapse">

@@ -2,7 +2,20 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Ticket, CheckCircle2, XCircle, X, Edit3, Trash2, Plus } from "lucide-react";
+import {
+  Ticket,
+  CheckCircle2,
+  XCircle,
+  X,
+  Edit3,
+  Trash2,
+  Plus,
+  Search,
+  Calendar,
+  Percent,
+  CircleDollarSign,
+  Info,
+} from "lucide-react";
 
 /* ================= TYPES ================= */
 
@@ -26,6 +39,7 @@ export default function CouponPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingCoupon, setEditingCoupon] = useState<Coupon | null>(null);
   const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState("");
 
   const [form, setForm] = useState({
     code: "",
@@ -37,8 +51,6 @@ export default function CouponPage() {
     minModules: "3",
     notes: "",
   });
-
-  /* ================= FETCH ================= */
 
   async function fetchCoupons() {
     try {
@@ -55,13 +67,13 @@ export default function CouponPage() {
     fetchCoupons();
   }, []);
 
-  /* ================= STATS ================= */
+  const filteredCoupons = coupons.filter((c) =>
+    c.code.toLowerCase().includes(search.toLowerCase())
+  );
 
   const totalCoupons = coupons.length;
   const activeCoupons = coupons.filter((c) => new Date(c.expiry) >= new Date()).length;
   const expiredCoupons = coupons.filter((c) => new Date(c.expiry) < new Date()).length;
-
-  /* ================= FORM HELPERS ================= */
 
   function openCreateDrawer() {
     setEditingCoupon(null);
@@ -92,8 +104,6 @@ export default function CouponPage() {
     });
     setDrawerOpen(true);
   }
-
-  /* ================= SUBMIT ================= */
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -126,159 +136,139 @@ export default function CouponPage() {
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
-
       if (!res.ok) {
-        alert(data.error || "Failed to save coupon");
+        alert("Failed to save coupon");
         return;
       }
 
       await fetchCoupons();
       setDrawerOpen(false);
       setEditingCoupon(null);
-    } catch (err) {
-      console.error(err);
-      alert("Something went wrong");
     } finally {
       setSaving(false);
     }
   }
 
-  /* ================= DELETE ================= */
-
   async function handleDelete(code: string) {
-    if (!confirm("Delete coupon?")) return;
-
-    try {
-      const res = await fetch(`/api/admin/coupons?code=${encodeURIComponent(code)}`, {
-        method: "DELETE",
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        alert(data.error || "Failed to delete coupon");
-        return;
-      }
-
-      await fetchCoupons();
-    } catch (err) {
-      console.error(err);
-      alert("Something went wrong");
-    }
+    if (!confirm("Are you sure you want to delete this coupon?")) return;
+    await fetch(`/api/admin/coupons?code=${code}`, { method: "DELETE" });
+    await fetchCoupons();
   }
 
-  const formatExpiry = (expiry?: string) => {
-    if (!expiry) return "-";
-    const d = new Date(expiry);
-    if (Number.isNaN(d.getTime())) return expiry.slice(0, 10);
-    return d.toLocaleDateString();
-  };
+  const formatExpiry = (expiry?: string) =>
+    expiry ? new Date(expiry).toLocaleDateString("en-IN", { day: '2-digit', month: 'short', year: 'numeric' }) : "-";
 
   const isExpired = (coupon: Coupon) => new Date(coupon.expiry) < new Date();
 
   return (
-    <div className="space-y-4 sm:space-y-6">
-      {/* ================= TOP STATS ================= */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
-        <StatCard title="Total Coupons" value={totalCoupons} icon={<Ticket />} />
-        <StatCard title="Active Coupons" value={activeCoupons} icon={<CheckCircle2 />} />
-        <StatCard title="Expired Coupons" value={expiredCoupons} icon={<XCircle />} />
-      </div>
-
-      {/* ================= HEADER ================= */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-bold text-slate-900">Coupon Management</h2>
-          <p className="text-sm text-slate-500 mt-1">
-            Create, edit, and manage discount coupons.
-          </p>
-        </div>
-
-        <button
+    <div className="max-w-6xl mx-auto space-y-8 p-6">
+      {/* HEADER */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+         <button
           onClick={openCreateDrawer}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-colors w-full sm:w-auto"
+          className="flex items-center justify-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded font-semibold shadow-sm transition-all active:scale-95"
         >
           <Plus size={18} />
-          New Coupon
+          <span>New Coupon</span>
         </button>
+         <div className="relative">
+        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+        <input
+          type="text"
+          placeholder="Search by coupon code..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full md:max-w-sm pl-11 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-blue-50 focus:border-blue-400 transition-all text-sm"
+        />
+      </div>
+       
       </div>
 
-      {/* ================= DESKTOP TABLE ================= */}
-      <div className="hidden md:block bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+      {/* STATS */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <StatCard title="Total" value={totalCoupons} icon={<Ticket className="text-blue-600" />} />
+        <StatCard title="Active" value={activeCoupons} icon={<CheckCircle2 className="text-emerald-500" />} />
+        <StatCard title="Expired" value={expiredCoupons} icon={<XCircle className="text-rose-500" />} />
+      </div>
+
+      {/* FILTERS & SEARCH */}
+    
+
+      {/* TABLE */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-100">
+          <table className="w-full text-sm text-left">
+            <thead className="bg-slate-50/80 border-b border-slate-200">
               <tr>
-                <th className="px-5 py-4 text-left text-xs font-bold uppercase text-slate-400">Code</th>
-                <th className="px-5 py-4 text-left text-xs font-bold uppercase text-slate-400">Type</th>
-                <th className="px-5 py-4 text-left text-xs font-bold uppercase text-slate-400">Value</th>
-                <th className="px-5 py-4 text-left text-xs font-bold uppercase text-slate-400">Expiry</th>
-                <th className="px-5 py-4 text-left text-xs font-bold uppercase text-slate-400">
-                  Applicability
-                </th>
-                <th className="px-5 py-4 text-left text-xs font-bold uppercase text-slate-400">
-                  Module / Min
-                </th>
-                <th className="px-5 py-4 text-right text-xs font-bold uppercase text-slate-400">
-                  Actions
-                </th>
+                <th className="px-6 py-4 font-semibold text-slate-700">Code</th>
+                <th className="px-6 py-4 font-semibold text-slate-700">Type</th>
+                <th className="px-6 py-4 font-semibold text-slate-700">Value</th>
+                <th className="px-6 py-4 font-semibold text-slate-700">Expiry</th>
+                <th className="px-6 py-4 font-semibold text-slate-700">Status</th>
+                <th className="px-6 py-4 text-right">Actions</th>
               </tr>
             </thead>
-
-            <tbody>
-              {coupons.length === 0 ? (
+            <tbody className="divide-y divide-slate-100">
+              {filteredCoupons.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
-                    No coupons found.
+                  <td colSpan={6} className="px-6 py-12 text-center text-slate-400">
+                    <div className="flex flex-col items-center gap-3">
+                      <div className="p-4 bg-slate-50 rounded-full">
+                        <Ticket size={32} className="text-slate-300" />
+                      </div>
+                      <p className="text-base font-medium">No coupons found</p>
+                    </div>
                   </td>
                 </tr>
               ) : (
-                coupons.map((coupon) => (
-                  <tr
-                    key={coupon.code}
-                    className={`border-t border-slate-100 ${isExpired(coupon) ? "bg-rose-50/30" : ""}`}
-                  >
-                    <td className="px-5 py-4 font-semibold text-slate-900">
+                filteredCoupons.map((c) => (
+                  <tr key={c.code} className="hover:bg-slate-50/50 transition-colors group">
+                    <td className="px-6 py-4">
+                      <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-1 rounded text-xs">
+                        {c.code}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 capitalize text-slate-600">
                       <div className="flex items-center gap-2">
-                        <span>{coupon.code}</span>
-                        {isExpired(coupon) && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-100 text-rose-600 font-bold">
-                            Expired
-                          </span>
-                        )}
+                        {c.type === 'percent' ? <Percent size={14} /> : <CircleDollarSign size={14} />}
+                        {c.type}
                       </div>
                     </td>
-                    <td className="px-5 py-4 capitalize text-slate-700">{coupon.type}</td>
-                    <td className="px-5 py-4 text-slate-700">
-                      {coupon.type === "percent" ? `${coupon.value}%` : `₹${coupon.value}`}
+                    <td className="px-6 py-4 font-semibold text-slate-900">
+                      {c.type === "percent" ? `${c.value}%` : `₹${c.value}`}
                     </td>
-                    <td className="px-5 py-4 text-slate-700">{formatExpiry(coupon.expiry)}</td>
-                    <td className="px-5 py-4 capitalize text-slate-700">
-                      {coupon.applicability ?? "all"}
+                    <td className="px-6 py-4 text-slate-600">
+                      <div className="flex items-center gap-2">
+                        <Calendar size={14} className="text-slate-400" />
+                        {formatExpiry(c.expiry)}
+                      </div>
                     </td>
-                    <td className="px-5 py-4 text-slate-700">
-                      {coupon.applicability === "single"
-                        ? coupon.moduleId || "Any Single"
-                        : coupon.applicability === "min_modules"
-                        ? `>= ${coupon.minModules ?? 0}`
-                        : "All"}
+                    <td className="px-6 py-4">
+                      {isExpired(c) ? (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-rose-50 text-rose-600">
+                          <XCircle size={12} /> Expired
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-600">
+                          <CheckCircle2 size={12} /> Active
+                        </span>
+                      )}
                     </td>
-                    <td className="px-5 py-4 text-right">
-                      <div className="inline-flex items-center gap-2">
-                        <button
-                          onClick={() => handleEdit(coupon)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors"
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex justify-end gap-1">
+                        <button 
+                          onClick={() => handleEdit(c)}
+                          className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Edit"
                         >
-                          <Edit3 size={14} />
-                          Edit
+                          <Edit3 size={16} />
                         </button>
-                        <button
-                          onClick={() => handleDelete(coupon.code)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+                        <button 
+                          onClick={() => handleDelete(c.code)}
+                          className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                          title="Delete"
                         >
-                          <Trash2 size={14} />
-                          Delete
+                          <Trash2 size={16} />
                         </button>
                       </div>
                     </td>
@@ -290,87 +280,7 @@ export default function CouponPage() {
         </div>
       </div>
 
-      {/* ================= MOBILE CARDS ================= */}
-      <div className="grid grid-cols-1 gap-3 md:hidden">
-        {coupons.length === 0 ? (
-          <div className="bg-white border border-slate-100 rounded-2xl p-6 text-center text-slate-500">
-            No coupons found.
-          </div>
-        ) : (
-          coupons.map((coupon) => (
-            <div
-              key={coupon.code}
-              className={`bg-white border border-slate-100 rounded-2xl p-4 shadow-sm ${isExpired(coupon) ? "ring-1 ring-rose-100" : ""}`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="font-bold text-slate-900">{coupon.code}</h3>
-                    {isExpired(coupon) && (
-                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-100 text-rose-600 font-bold">
-                        Expired
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-sm text-slate-500 capitalize mt-1">
-                    {coupon.type} • {coupon.applicability ?? "all"}
-                  </p>
-                </div>
-
-                <div className="text-right">
-                  <p className="font-bold text-slate-900">
-                    {coupon.type === "percent" ? `${coupon.value}%` : `₹${coupon.value}`}
-                  </p>
-                  <p className="text-xs text-slate-500">{formatExpiry(coupon.expiry)}</p>
-                </div>
-              </div>
-
-              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                <div className="bg-slate-50 rounded-xl p-3">
-                  <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">
-                    Module / Min
-                  </p>
-                  <p className="font-medium text-slate-700 mt-1">
-                    {coupon.applicability === "single"
-                      ? coupon.moduleId || "Any Single"
-                      : coupon.applicability === "min_modules"
-                      ? `>= ${coupon.minModules ?? 0}`
-                      : "All"}
-                  </p>
-                </div>
-
-                <div className="bg-slate-50 rounded-xl p-3">
-                  <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">
-                    Notes
-                  </p>
-                  <p className="font-medium text-slate-700 mt-1 line-clamp-2">
-                    {coupon.notes || "—"}
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-4 flex gap-2">
-                <button
-                  onClick={() => handleEdit(coupon)}
-                  className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-blue-50 text-blue-700 font-semibold"
-                >
-                  <Edit3 size={14} />
-                  Edit
-                </button>
-                <button
-                  onClick={() => handleDelete(coupon.code)}
-                  className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-rose-50 text-rose-600 font-semibold"
-                >
-                  <Trash2 size={14} />
-                  Delete
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* ================= DRAWER ================= */}
+      {/* DRAWER */}
       <AnimatePresence>
         {drawerOpen && (
           <>
@@ -378,176 +288,99 @@ export default function CouponPage() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-slate-900/40 backdrop-blur-[2px] z-40"
               onClick={() => setDrawerOpen(false)}
-              className="fixed inset-0 bg-black/40 z-40"
             />
-
             <motion.div
               initial={{ x: "100%" }}
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
-              transition={{ duration: 0.28, ease: "easeOut" }}
-              className="fixed top-0 right-0 h-full w-full sm:w-[420px] bg-white shadow-2xl z-50 p-4 sm:p-6 overflow-y-auto sm:rounded-l-2xl"
+              transition={{ type: "spring", damping: 25, stiffness: 200 }}
+              className="fixed right-0 top-0 h-full w-full max-w-[420px] bg-white z-50 shadow-2xl flex flex-col"
             >
-              <div className="flex items-center justify-between gap-4 mb-5">
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                 <div>
                   <h3 className="text-lg font-bold text-slate-900">
-                    {editingCoupon ? "Edit Coupon" : "Create Coupon"}
+                    {editingCoupon ? "Edit Coupon" : "Create New Coupon"}
                   </h3>
-                  <p className="text-sm text-slate-500">
-                    Fill in the details below to save the coupon.
-                  </p>
+                  <p className="text-xs text-slate-500 font-medium">Configure discount parameters</p>
                 </div>
-
                 <button
                   onClick={() => setDrawerOpen(false)}
-                  className="p-2 rounded-lg hover:bg-slate-100 text-slate-500"
-                  aria-label="Close drawer"
+                  className="p-2 hover:bg-slate-200 rounded-full transition-colors"
                 >
-                  <X size={18} />
+                  <X size={20} className="text-slate-500" />
                 </button>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                    Coupon Code
-                  </label>
+              <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto flex-1">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">Coupon Code</label>
                   <input
                     required
                     value={form.code}
                     onChange={(e) => setForm({ ...form, code: e.target.value })}
-                    placeholder="Coupon Code"
-                    className="w-full border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none p-3 rounded-xl"
+                    placeholder="E.g. SAVE50"
+                    className="w-full border border-slate-200 p-2.5 rounded-xl focus:ring-4 focus:ring-blue-50 focus:border-blue-400 outline-none transition-all font-mono"
                   />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                      Type
-                    </label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">Type</label>
                     <select
+                      className="w-full border border-slate-200 p-2.5 rounded-xl outline-none focus:border-blue-400 bg-white"
                       value={form.type}
-                      onChange={(e) =>
-                        setForm({
-                          ...form,
-                          type: e.target.value as "percent" | "fixed",
-                        })
-                      }
-                      className="w-full border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none p-3 rounded-xl bg-white"
+                      onChange={(e: any) => setForm({ ...form, type: e.target.value })}
                     >
-                      <option value="percent">Percent</option>
-                      <option value="fixed">Fixed</option>
+                      <option value="percent">Percentage (%)</option>
+                      <option value="fixed">Fixed (₹)</option>
                     </select>
                   </div>
-
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                      Value
-                    </label>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">Value</label>
                     <input
                       required
                       type="number"
                       value={form.value}
                       onChange={(e) => setForm({ ...form, value: e.target.value })}
-                      placeholder="Value"
-                      className="w-full border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none p-3 rounded-xl"
+                      placeholder="0"
+                      className="w-full border border-slate-200 p-2.5 rounded-xl focus:border-blue-400 outline-none"
                     />
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                    Expiry
-                  </label>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">Expiry Date</label>
                   <input
                     required
                     type="date"
                     value={form.expiry}
                     onChange={(e) => setForm({ ...form, expiry: e.target.value })}
-                    className="w-full border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none p-3 rounded-xl"
+                    className="w-full border border-slate-200 p-2.5 rounded-xl focus:border-blue-400 outline-none"
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                    Applicability
-                  </label>
-                  <select
-                    value={form.applicability}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        applicability: e.target.value as "all" | "single" | "min_modules",
-                      })
-                    }
-                    className="w-full border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none p-3 rounded-xl bg-white"
-                  >
-                    <option value="all">All Courses / Modules</option>
-                    <option value="single">Single Module</option>
-                    <option value="min_modules">Minimum Modules</option>
-                  </select>
-                </div>
-
-                {form.applicability === "single" && (
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                      Module ID
-                    </label>
-                    <input
-                      value={form.moduleId}
-                      onChange={(e) => setForm({ ...form, moduleId: e.target.value })}
-                      placeholder="Module ID"
-                      className="w-full border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none p-3 rounded-xl"
-                    />
-                  </div>
-                )}
-
-                {form.applicability === "min_modules" && (
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                      Minimum Modules
-                    </label>
-                    <input
-                      type="number"
-                      value={form.minModules}
-                      onChange={(e) => setForm({ ...form, minModules: e.target.value })}
-                      className="w-full border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none p-3 rounded-xl"
-                    />
-                  </div>
-                )}
-
-                <div className="space-y-2">
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                    Notes
-                  </label>
+                <div className="space-y-1.5 pt-2">
+                  <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">Notes (Internal)</label>
                   <textarea
-                    placeholder="Notes"
+                    rows={3}
                     value={form.notes}
                     onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                    className="w-full border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none p-3 rounded-xl min-h-[110px] resize-y"
+                    placeholder="Add a reason or description..."
+                    className="w-full border border-slate-200 p-2.5 rounded-xl focus:border-blue-400 outline-none resize-none text-sm"
                   />
                 </div>
-
-                <div className="flex flex-col-reverse sm:flex-row sm:justify-between gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setDrawerOpen(false)}
-                    className="px-4 py-3 border border-slate-200 rounded-xl font-semibold text-slate-700 hover:bg-slate-50"
-                  >
-                    Cancel
-                  </button>
-
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="px-4 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-xl font-semibold"
-                  >
-                    {saving ? "Saving..." : editingCoupon ? "Update Coupon" : "Create Coupon"}
-                  </button>
-                </div>
               </form>
+
+              <div className="p-6 border-t border-slate-100">
+                <button 
+                  disabled={saving}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-md transition-all active:scale-[0.98] disabled:opacity-50"
+                >
+                  {saving ? "Saving Changes..." : editingCoupon ? "Update Coupon" : "Create Coupon"}
+                </button>
+              </div>
             </motion.div>
           </>
         )}
@@ -568,11 +401,13 @@ function StatCard({
   icon: React.ReactNode;
 }) {
   return (
-    <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4">
-      <div className="text-blue-600 text-2xl shrink-0">{icon}</div>
-      <div className="min-w-0">
-        <p className="text-sm text-gray-500">{title}</p>
-        <p className="text-2xl font-bold text-slate-900">{value}</p>
+    <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-4 hover:border-blue-200 transition-colors">
+      <div className="p-3 bg-slate-50 rounded-xl">
+        {icon}
+      </div>
+      <div>
+        <p className="text-xs font-bold text-slate-500 uppercase tracking-widest leading-tight">{title}</p>
+        <p className="text-2xl font-black text-slate-900 leading-none mt-1">{value}</p>
       </div>
     </div>
   );

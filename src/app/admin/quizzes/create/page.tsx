@@ -377,7 +377,6 @@ const handlePublish = async () => {
       totalQuestions: getTotalQuestionCount(),
     };
 
-    // ✅ CALL API
     const res = await fetch("/api/admin/quizzes", {
       method: "POST",
       headers: {
@@ -392,11 +391,8 @@ const handlePublish = async () => {
       throw new Error(data?.message || "Publish failed");
     }
 
-    // ✅ SAVE FOR PREVIEW (FIXED)
-    localStorage.setItem("previewQuiz", JSON.stringify(payload));
-
-    // ✅ REDIRECT
-    router.push("/admin/quizzes/preview");
+    // ✅ SUCCESS (NO PREVIEW)
+    alert("Quiz published successfully!");
 
   } catch (err: any) {
     console.error(err);
@@ -481,7 +477,7 @@ const handlePublish = async () => {
   ) : (
     <>
       <Rocket size={18} />
-      <span>Publish & Preview</span>
+      <span>Publish</span>
     </>
   )}
 </button>

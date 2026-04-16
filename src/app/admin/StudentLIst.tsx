@@ -279,12 +279,19 @@ export default function LMSPage() {
             />
           </div>
         </div>
+ 
 
-        {/* ---------- ACTION BAR ---------- */}
-        <div className="mb-5 sm:mb-6 flex flex-col gap-3">
-          <div className="flex items-center gap-3 w-full">
-            <div className="relative flex-1 group">
-              <Search
+        {/* ---------- TABLE / LIST ---------- */}
+        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden">
+          
+         <div className="flex flex-col justify-between gap-4 border-b border-gray-50 p-6 md:flex-row md:items-center bg-white rounded-t-[2rem] border border-slate-200/60 border-b-0">
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-800">Student Management</h2>
+                  </div>
+        
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <div className="relative w-full sm:w-[320px]">
+                      <Search
                 size={16}
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-indigo-500 transition-colors"
               />
@@ -295,20 +302,17 @@ export default function LMSPage() {
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full pl-10 pr-3 py-2.5 sm:py-3 text-sm sm:text-base border border-slate-200 bg-white rounded-xl sm:rounded-2xl shadow-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/10"
               />
-            </div>
-
-            <button
-              onClick={() => setIsDrawerOpen(true)}
-              className="shrink-0 inline-flex items-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 rounded-xl sm:rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold text-sm sm:text-base shadow-lg active:scale-[0.98] min-h-[44px]"
-            >
-              <Plus size={16} />
-              <span>Enrol</span>
-            </button>
-          </div>
-        </div>
-
-        {/* ---------- TABLE / LIST ---------- */}
-        <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden">
+                    </div>
+        
+                    <button
+                      onClick={() => setIsDrawerOpen(true)}
+                      className="flex items-center justify-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-xl font-semibold shadow-sm transition-all active:scale-95"
+                    >
+                      <Plus size={18} strokeWidth={3} />
+                      <span>New Enrol</span>
+                    </button>
+                  </div>
+                </div>
           {loading ? (
             <div className="py-24 flex flex-col items-center justify-center gap-3">
               <Loader2 className="animate-spin text-blue-600" size={32} />

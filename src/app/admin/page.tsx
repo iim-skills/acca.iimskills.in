@@ -19,6 +19,7 @@ import {
 
 import LMSPage from "./StudentLIst";
 import DashboardHome from "./components/DashboardHome";
+import Image from "next/image";
 import ProfilePage from "./profile/page";
 import BatchPage from "./batches/page";
 import Quiz from "./quizzes/page";
@@ -170,10 +171,17 @@ export default function App() {
         <div className="p-6 lg:p-8 flex-1 overflow-y-auto hide-scrollbar">
           <div className="flex items-center justify-between gap-3 mb-2">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20 shrink-0">
-                <Settings className="text-white" size={24} />
-              </div>
-              <h1 className="text-xl font-bold tracking-tight">IIM SKILLS</h1>
+              <div className="w-14 h-10 bg-white rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/30">
+  <Image
+    src="/iim-skills-official.png"
+    alt="Preview"
+    width={40}
+    height={32}
+    className="object-contain"
+    priority
+  />
+</div>
+              <h1 className="text-xl font-bold tracking-tight">Admin</h1>
             </div>
 
             <button

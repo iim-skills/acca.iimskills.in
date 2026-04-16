@@ -255,24 +255,8 @@ export default function VideoAdmin(): React.ReactElement {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
-      <header className="bg-white border-b z-30">
-        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="bg-blue-600 p-2 rounded-lg text-white">
-              <Film size={20} />
-            </div>
-            <h1 className="text-xl font-bold tracking-tight">Video Central</h1>
-          </div>
-          <button
-            onClick={() => setIsDrawerOpen(true)}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-all shadow-sm active:scale-95"
-          >
-            <Plus size={18} />
-            <span>Upload Video</span>
-          </button>
-        </div>
-      </header>
+    <div className="  bg-slate-50 text-slate-900 font-sans">
+       
 
       <main className="max-w-7xl mx-auto px-4 py-8">
         <div className="grid grid-cols-2 md:grid-cols-2 gap-6 mb-8">
@@ -298,10 +282,18 @@ export default function VideoAdmin(): React.ReactElement {
             </div>
           </div>
         </div>
+       <div className="bg-white rounded-[2rem] shadow-sm border border-slate-200/60 overflow-hidden">
+        <div className="w-full mb-6 flex flex-col md:flex-row gap-4 items-center justify-between">
+          <div className="w-full flex flex-col justify-between gap-4 border-b border-gray-50 p-6 md:flex-row md:items-center bg-white rounded-t-[2rem] border border-slate-200/60 border-b-0">
+          <div>
+            <h2 className="text-lg font-bold text-gray-800">
+              Video Management
+            </h2>
+          </div>
 
-        <div className="mb-6 flex flex-col md:flex-row gap-4 items-center justify-between">
-          <div className="relative w-full md:w-96">
-            <Search
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative w-full sm:w-[320px]">
+               <Search
               className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
               size={18}
             />
@@ -312,7 +304,18 @@ export default function VideoAdmin(): React.ReactElement {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
+            </div>
+
+            <button
+            onClick={() => setIsDrawerOpen(true)}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-all shadow-sm active:scale-95"
+          >
+            <Plus size={18} />
+            <span>Upload Video</span>
+          </button>
           </div>
+        </div>
+         
 
           {message.text && (
             <motion.div
@@ -333,6 +336,7 @@ export default function VideoAdmin(): React.ReactElement {
             </motion.div>
           )}
         </div>
+        
 
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           {pagedVideos.length === 0 ? (
@@ -442,8 +446,9 @@ export default function VideoAdmin(): React.ReactElement {
                 );
               })}
             </div>
+            
           )}
-
+       </div>
           <div className="px-6 py-4 flex items-center justify-between border-t bg-slate-50">
             <div className="text-sm text-slate-600">
               Showing {totalItems === 0 ? 0 : startIndex + 1} -{" "}

@@ -116,7 +116,7 @@ export default function App() {
     <div className="min-h-screen bg-[#F8FAFC] px-3 py-4 sm:px-6 sm:py-6 lg:p-8 text-slate-900">
       <div className="max-w-7xl mx-auto space-y-6 sm:space-y-8">
         {/* Header Section */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-4 sm:pb-6">
+        {/* <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-4 sm:pb-6">
           <div>
             <h1 className="text-xl sm:text-2xl lg:text-3xl font-extrabold tracking-tight text-slate-900 flex items-center gap-3">
               <div className="p-2 bg-blue-600 rounded-lg text-white shrink-0">
@@ -133,7 +133,7 @@ export default function App() {
             <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
             Live System Status
           </div>
-        </div>
+        </div> */}
 
         {/* ================= PRIMARY STATS ================= */}
         <section>

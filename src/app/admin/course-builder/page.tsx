@@ -11,6 +11,7 @@ import {
   Trash2,
   Check,
   X,
+  Search,
 } from "lucide-react";
 
 import CreateNewCourse from "./createNewCourse";
@@ -23,7 +24,7 @@ export default function CourseBuilderPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-
+  const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<string | number | null>(null);
   const [editName, setEditName] = useState("");
   const [editSlug, setEditSlug] = useState("");
@@ -172,22 +173,24 @@ export default function CourseBuilderPage() {
   /* ================= UI ================= */
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] p-4 sm:p-6 lg:p-8">
+    <div className=" bg-[#F8FAFC] p-4 sm:p-6 lg:p-8">
       <div className="mx-auto max-w-7xl space-y-6 lg:space-y-8">
         {/* HEADER */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">
-              Course Builder
-            </h1>
-            <p className="mt-1 text-sm sm:text-base text-slate-500">
-              Manage courses, modules, and curriculum structure.
-            </p>
-          </div>
+        <div className="relative">
+        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+        <input
+          type="text"
+          placeholder="Search by coupon code..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full md:max-w-sm pl-11 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl outline-none focus:ring-4 focus:ring-blue-50 focus:border-blue-400 transition-all text-sm"
+        />
+      </div>
 
           <button
             onClick={() => setIsCreateOpen(true)}
-            className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-xl font-semibold transition-all shadow-lg shadow-indigo-100 flex items-center justify-center gap-2"
+            className="w-full text-sm sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-semibold transition-all shadow-lg shadow-indigo-100 flex items-center justify-center gap-2"
           >
             <Plus size={20} /> Add New Course
           </button>
@@ -228,12 +231,12 @@ export default function CourseBuilderPage() {
                       <th className="px-6 py-4 text-xs text-left uppercase tracking-wider text-slate-500">
                         Course
                       </th>
-                      <th className="px-6 py-4 text-xs text-left uppercase tracking-wider text-slate-500">
+                      {/* <th className="px-6 py-4 text-xs text-left uppercase tracking-wider text-slate-500">
                         Module
                       </th>
                       <th className="px-6 py-4 text-xs text-left uppercase tracking-wider text-slate-500">
                         Submodules
-                      </th>
+                      </th> */}
                       <th className="px-6 py-4 text-xs text-right uppercase tracking-wider text-slate-500">
                         Actions
                       </th>
@@ -282,13 +285,13 @@ export default function CourseBuilderPage() {
                             )}
                           </td>
 
-                          <td className="px-6 py-4 text-slate-700">
+                          {/* <td className="px-6 py-4 text-slate-700">
                             {course.courseData.modules[0]?.name || "—"}
                           </td>
 
                           <td className="px-6 py-4">
                             {renderSubmodules(course)}
-                          </td>
+                          </td> */}
 
                           <td className="px-6 py-4 text-right">
                             <div className="flex justify-end gap-2">

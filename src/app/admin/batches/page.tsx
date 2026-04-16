@@ -242,6 +242,32 @@ export default function BatchManagement() {
 
         {/* Content */}
         <div className="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
+           <div className="flex flex-col justify-between gap-4 border-b border-gray-50 p-6 md:flex-row md:items-center bg-white rounded-t-[2rem] border border-slate-200/60 border-b-0">
+          <div>
+            <h2 className="text-lg font-bold text-gray-800">Batch Management</h2>
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative w-full sm:w-[320px]">
+             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" size={16} />
+              <input
+                type="text"
+                placeholder="Search batches..."
+                className="w-full pl-10 pr-4 py-2.5 sm:py-3 bg-white border border-slate-200 rounded-xl sm:rounded-2xl text-sm sm:text-base focus:ring-4 focus:ring-blue-500/10 outline-none shadow-sm transition-all"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+
+            <button
+               onClick={openCreateModal}
+              className="flex items-center justify-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-xl font-semibold shadow-sm transition-all active:scale-95"
+            >
+              <Plus size={18} strokeWidth={3} />
+              <span>New Quiz</span>
+            </button>
+          </div>
+        </div>
           {/* Desktop table */}
           <div className="hidden lg:block overflow-x-auto">
             <table className="w-full text-left border-collapse">
