@@ -106,12 +106,12 @@ export default function AddSessionQuiz({
         });
 
         const data = await res.json();
-        if (!res.ok) throw new Error(data?.error || "Upload failed");
+if (!res.ok) throw new Error(data?.error || "Upload failed");
 
-        videoId = data.public_id;
-        videoUrl = data.secure_url;
-        thumbUrl = data.thumb_url;
-        videoTitle = name;
+videoId = data.file_name;   // ✅ FIX
+videoUrl = data.url;        // ✅ FIX
+thumbUrl = "";              // optional
+videoTitle = name;
 
         /* ========= SAVE VIDEO TO DB ========= */
         await fetch("/api/admin/videos", {
