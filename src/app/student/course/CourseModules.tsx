@@ -1889,25 +1889,23 @@ export default function CourseModules({
                                       >
                                         <div className="flex items-center gap-3">
                                           
-                                          <div className="text-left">
-                                            
-                                            {quizDone ? (
-                                              <p className="text-[10px] text-emerald-600 flex items-center gap-1 mt-0.5">
-                                                <p className="text-xs font-semibold">
-                                              {q.name}
-                                            </p>
-                                                <CheckCircle2 size={10} />{" "}
-                                                 
-                                              </p>
-                                            ) : (
-                                              !quizUnlocked && (
-                                                <p className="text-[10px] text-gray-400 mt-0.5">
-                                                  Complete the previous
-                                                  chapter first
-                                                </p>
-                                              )
-                                            )}
-                                          </div>
+                                      <div className="text-left flex items-center gap-3">
+  {/* Always show quiz name */}
+  <p className="text-xs font-semibold">
+    {q.name}
+  </p>
+
+  {/* Status below */}
+  {quizDone ? (
+    <p className="text-[10px] text-emerald-600 flex items-center gap-1 mt-0.5">
+      <CheckCircle2 size={10} />
+    </p>
+  ) : !quizUnlocked ? (
+    <p className="text-[10px] text-gray-400 mt-0.5">
+      Complete the previous chapter first
+    </p>
+  ) : null}
+</div>
                                         </div>
                                         <span
                                           className={`px-3 py-1 text-[10px] font-bold rounded ${
