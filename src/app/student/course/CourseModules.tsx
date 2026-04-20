@@ -75,6 +75,10 @@ const gradients = [
   "from-violet-500 to-fuchsia-500",
 ];
 
+const SUPER_UNLOCK_EMAIL = "parv@iimskills.com";
+
+
+
 type ProgressEntry = { positionSeconds: number; completed: boolean };
 
 type Props = {
@@ -279,6 +283,22 @@ export default function CourseModules({
       return false;
     }
   });
+
+  const [currentUserEmail, setCurrentUserEmail] = useState<string>("");
+
+useEffect(() => {
+  try {
+    const raw = localStorage.getItem("user");
+    if (raw) {
+      const u = JSON.parse(raw);
+      setCurrentUserEmail(String(u?.email ?? "").toLowerCase().trim());
+    }
+  } catch {
+    setCurrentUserEmail("");
+  }
+}, []);
+
+const isSuperUnlockedUser = currentUserEmail === SUPER_UNLOCK_EMAIL;
 
   const [guestProgress, setGuestProgress] = useState<Set<number>>(new Set());
   const [serverProgress, setServerProgress] = useState<
@@ -979,9 +999,14 @@ export default function CourseModules({
 
     // Allow seek if completed (full range) OR if the user has watched any
     // portion before (up to their last position).
-    const canSeek = alreadyCompleted || resumeSecs > 0;
-    setAllowSeek(canSeek);
+    const canSeek = isSuperUnlockedUser || alreadyCompleted || resumeSecs > 0;
+setAllowSeek(canSeek);
 
+lastAllowedTimeRef.current = isSuperUnlockedUser
+  ? Number.MAX_SAFE_INTEGER
+  : alreadyCompleted
+  ? Number.MAX_SAFE_INTEGER
+  : resumeSecs;
    onPlayVideo(
   url,
   `${course?.modules?.[fv.moduleIndex]?.submodules?.[fv.subIndex]?.title}||${formatLessonTitle(fv.title)}`,
@@ -1308,18 +1333,20 @@ export default function CourseModules({
 
           const hasAssignments = allowedSet.size > 0;
 
-          const moduleUnlocked = hasAssignments
-            ? Boolean(
-                module.moduleId && allowedSet.has(String(module.moduleId))
-              )
-            : isFreeLoggedIn
-            ? moduleIndex === 0
-            : Boolean(
-                (module.moduleId &&
-                  (unlockedModulesSet.has(String(module.moduleId)) ||
-                    allowedSet.has(String(module.moduleId)))) ||
-                  (!module.moduleId && unlockedModulesSet.has(moduleKeyStr))
-              );
+         const moduleUnlocked = isSuperUnlockedUser
+  ? true
+  : hasAssignments
+  ? Boolean(
+      module.moduleId && allowedSet.has(String(module.moduleId))
+    )
+  : isFreeLoggedIn
+  ? moduleIndex === 0
+  : Boolean(
+      (module.moduleId &&
+        (unlockedModulesSet.has(String(module.moduleId)) ||
+          allowedSet.has(String(module.moduleId)))) ||
+        (!module.moduleId && unlockedModulesSet.has(moduleKeyStr))
+    );
 
           console.debug(
             `[MODULE_DEBUG] idx=${moduleIndex} id=${String(
@@ -1411,14 +1438,15 @@ export default function CourseModules({
                       const subKey = `${moduleKey}-sub-${subIndex}`;
                       const subIsOpen = openSubKey === subKey;
 
-                      const subUnlocked =
-                        !moduleUnlocked
-                          ? false
-                          : isFreeLoggedIn
-                          ? moduleIndex === 0 && subIndex === 0
-                          : subIndex === 0
-                          ? true
-                          : isSubmoduleCompleted(moduleIndex, subIndex - 1);
+                      const subUnlocked = isSuperUnlockedUser
+  ? true
+  : !moduleUnlocked
+  ? false
+  : isFreeLoggedIn
+  ? moduleIndex === 0 && subIndex === 0
+  : subIndex === 0
+  ? true
+  : isSubmoduleCompleted(moduleIndex, subIndex - 1);
 
                       // derive videos / quizzes, supporting `items[]`
                       const videos: VideoItem[] = Array.isArray(sub.videos)
@@ -1705,12 +1733,14 @@ export default function CourseModules({
                                       typeof globalIndex === "number" &&
                                       globalIndex === 0;
 
-                                    const unlocked = Boolean(
-                                      subUnlocked &&
-                                        (isFirst ||
-                                          done ||
-                                          (prevGlobalDone && quizGatePassed))
-                                    );
+                                    const unlocked = isSuperUnlockedUser
+  ? true
+  : Boolean(
+      subUnlocked &&
+        (isFirst ||
+          done ||
+          (prevGlobalDone && quizGatePassed))
+    );
 
                                     return (
                                       <div
@@ -1847,22 +1877,19 @@ export default function CourseModules({
                                     q.id
                                   );
 
-                                  const quizUnlocked = (() => {
-                                    if (!subUnlocked) return false;
-                                    if (prevVideoGi >= 0)
-                                      return completedSet.has(prevVideoGi);
-                                    const firstVideoOfSubKey = `${moduleKeyPart}-sub-${subIndex}-vid-0`;
-                                    const firstVideoOfSubGi =
-                                      videoKeyToGlobalIndex.get(
-                                        firstVideoOfSubKey
-                                      ) ?? -1;
-                                    if (firstVideoOfSubGi > 0) {
-                                      return completedSet.has(
-                                        firstVideoOfSubGi - 1
-                                      );
-                                    }
-                                    return true;
-                                  })();
+                                const quizUnlocked = isSuperUnlockedUser
+  ? true
+  : (() => {
+      if (!subUnlocked) return false;
+      if (prevVideoGi >= 0) return completedSet.has(prevVideoGi);
+      const firstVideoOfSubKey = `${moduleKeyPart}-sub-${subIndex}-vid-0`;
+      const firstVideoOfSubGi =
+        videoKeyToGlobalIndex.get(firstVideoOfSubKey) ?? -1;
+      if (firstVideoOfSubGi > 0) {
+        return completedSet.has(firstVideoOfSubGi - 1);
+      }
+      return true;
+    })();
 
                                   return (
                                     <div
