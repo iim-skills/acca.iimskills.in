@@ -129,7 +129,7 @@ type OrderedVideoItem = {
   vIndex: number;
   v: VideoItem;
   key: string;
-  gi?: number;
+  gi: number;
 };
 
 type OrderedQuizItem = {
@@ -146,7 +146,10 @@ type OrderedPdfItem = {
 
 type OrderedSubItem = OrderedVideoItem | OrderedQuizItem | OrderedPdfItem;
 
-const FREE_PREVIEW_COUNT = 5;
+const FREE_PREVIEW_COUNT = 4;
+const FREE_PREVIEW_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
+const FREE_PREVIEW_START_KEY = (cid: string) =>
+  `free_preview_start_${cid || "unknown_course"}`;
 const GUEST_PROGRESS_KEY = (cid: string) =>
   `guest_progress_${cid || "unknown_course"}`;
 const QUIZ_PROGRESS_KEY = (cid: string) =>
@@ -270,6 +273,8 @@ export default function CourseModules({
   const [meetModalOpen, setMeetModalOpen] = useState(false);
   const [isFreeLoggedIn, setIsFreeLoggedIn] = useState(false);
   const [allowSeek, setAllowSeek] = useState(false);
+  const [freePreviewStartedAt, setFreePreviewStartedAt] = useState<number | null>(null);
+  const [isFreePreviewExpired, setIsFreePreviewExpired] = useState(false);
 
   const [isEmailUser] = useState<boolean>(() => {
     try {
@@ -387,6 +392,29 @@ const isSuperUnlockedUser = currentUserEmail === SUPER_UNLOCK_EMAIL;
     [allowedModules]
   );
 
+  const isFreePreviewVideo = (globalIndex: number) =>
+    isFreeLoggedIn &&
+    freePreviewStartedAt !== null &&
+    !isFreePreviewExpired &&
+    globalIndex >= 0 &&
+    globalIndex < FREE_PREVIEW_COUNT;
+
+  const hasFreePreviewInModule = (moduleIndex: number) =>
+    flatVideos.some(
+      (fv, gi) => fv.moduleIndex === moduleIndex && isFreePreviewVideo(gi)
+    );
+
+  const hasFreePreviewInSubmodule = (
+    moduleIndex: number,
+    subIndex: number
+  ) =>
+    flatVideos.some(
+      (fv, gi) =>
+        fv.moduleIndex === moduleIndex &&
+        fv.subIndex === subIndex &&
+        isFreePreviewVideo(gi)
+    );
+
   /* ── completedSet ── */
   const completedSet = useMemo(() => {
     const s = new Set<number>();
@@ -455,14 +483,69 @@ const isSuperUnlockedUser = currentUserEmail === SUPER_UNLOCK_EMAIL;
     }
   }, [JSON.stringify(allowedModules ?? [])]);
 
-  /* ── auto-open first module for free users ── */
+  /* ── free preview window ── */
   useEffect(() => {
-    if (!course?.modules?.length || !isFreeLoggedIn) return;
+    if (!isFreeLoggedIn || !courseId) {
+      setFreePreviewStartedAt(null);
+      setIsFreePreviewExpired(false);
+      return;
+    }
+
+    let timeoutId: number | null = null;
+
+    try {
+      const key = FREE_PREVIEW_START_KEY(courseId);
+      const raw = localStorage.getItem(key);
+      let startedAt = raw ? Number(raw) : NaN;
+
+      if (!Number.isFinite(startedAt) || startedAt <= 0) {
+        startedAt = Date.now();
+        localStorage.setItem(key, String(startedAt));
+      }
+
+      setFreePreviewStartedAt(startedAt);
+
+      const elapsed = Date.now() - startedAt;
+      const remaining = FREE_PREVIEW_DURATION_MS - elapsed;
+
+      if (remaining <= 0) {
+        setIsFreePreviewExpired(true);
+      } else {
+        setIsFreePreviewExpired(false);
+        timeoutId = window.setTimeout(() => {
+          setIsFreePreviewExpired(true);
+        }, remaining);
+      }
+    } catch {
+      const startedAt = Date.now();
+      setFreePreviewStartedAt(startedAt);
+      setIsFreePreviewExpired(false);
+    }
+
+    return () => {
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [courseId, isFreeLoggedIn]);
+
+  /* ── auto-open free preview content ── */
+  useEffect(() => {
+    if (!course?.modules?.length || !isFreeLoggedIn || isFreePreviewExpired) return;
+
+    const firstPreview = flatVideos[0];
+    if (firstPreview) {
+      const fk = firstPreview.moduleId ?? `module-${firstPreview.moduleIndex}`;
+      setOpenModuleId(fk);
+      setOpenSubKey(`${fk}-sub-${firstPreview.subIndex}`);
+      return;
+    }
+
     const first = course.modules[0];
     const fk = first.moduleId ?? "module-0";
     setOpenModuleId(fk);
     if (first.submodules?.length) setOpenSubKey(`${fk}-sub-0`);
-  }, [course, isFreeLoggedIn]);
+  }, [course, isFreeLoggedIn, isFreePreviewExpired, flatVideos]);
 
   /* ── guest video progress ── */
   useEffect(() => {
@@ -1107,7 +1190,7 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
         (!nmod?.moduleId && unlockedModulesSet.has(nmKey))
     );
 
-    if (nextAllowed || prevModDone || nextIdx < FREE_PREVIEW_COUNT) {
+    if (nextAllowed || prevModDone || isFreePreviewVideo(nextIdx)) {
       setOpenModuleId(nmKey);
       setOpenSubKey(`${nmKey}-sub-${nfv.subIndex}`);
       setPendingNextIndex(nextIdx);
@@ -1340,7 +1423,7 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
       module.moduleId && allowedSet.has(String(module.moduleId))
     )
   : isFreeLoggedIn
-  ? moduleIndex === 0
+  ? !isFreePreviewExpired && hasFreePreviewInModule(moduleIndex)
   : Boolean(
       (module.moduleId &&
         (unlockedModulesSet.has(String(module.moduleId)) ||
@@ -1443,7 +1526,8 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
   : !moduleUnlocked
   ? false
   : isFreeLoggedIn
-  ? moduleIndex === 0 && subIndex === 0
+  ? !isFreePreviewExpired &&
+    hasFreePreviewInSubmodule(moduleIndex, subIndex)
   : subIndex === 0
   ? true
   : isSubmoduleCompleted(moduleIndex, subIndex - 1);
@@ -1664,7 +1748,9 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
                               {!subUnlocked && (
                                 <p className="text-[10px] text-red-400 mt-0.5">
                                   {isFreeLoggedIn
-                                    ? "Upgrade your access to unlock"
+                                    ? isFreePreviewExpired
+                                    ? "Free preview expired after 7 days"
+                                    : "Upgrade your access to unlock"
                                     : "Complete the previous chapter to unlock"}
                                 </p>
                               )}
@@ -1735,6 +1821,12 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
 
                                     const unlocked = isSuperUnlockedUser
   ? true
+  : isFreeLoggedIn
+  ? Boolean(
+      subUnlocked &&
+      typeof globalIndex === "number" &&
+      isFreePreviewVideo(globalIndex)
+    )
   : Boolean(
       subUnlocked &&
         (isFirst ||

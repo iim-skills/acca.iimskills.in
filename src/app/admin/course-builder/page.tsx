@@ -217,6 +217,7 @@ export default function CourseBuilderPage() {
 
         {/* CONTENT */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          
           {loading ? (
             <div className="py-20 flex items-center justify-center">
               <Loader2 className="animate-spin text-indigo-600" size={28} />
@@ -225,6 +226,7 @@ export default function CourseBuilderPage() {
             <>
               {/* DESKTOP TABLE */}
               <div className="hidden lg:block overflow-x-auto">
+                
                 <table className="w-full">
                   <thead className="border-b bg-slate-50">
                     <tr>
