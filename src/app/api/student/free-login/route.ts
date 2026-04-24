@@ -3,21 +3,22 @@ import db from "../../../../lib/db";
 import nodemailer from "nodemailer";
 
 export async function POST(req: Request) {
-
   try {
+    const body = await req.json();
 
-    const { email } = await req.json();
+    const email = String(body.email || "").trim().toLowerCase();
+    const name = String(body.name || "").trim();
+    const phone = String(body.phone || "").trim();
 
     if (!email) {
-      return NextResponse.json(
-        { error: "Email required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Email required" }, { status: 400 });
     }
 
-    const cleanEmail = email.trim().toLowerCase();
-
-    console.log("Free Login:", cleanEmail);
+    console.log("Free Login Request:", {
+      email,
+      name,
+      phone,
+    });
 
     /* ===============================
        CHECK STUDENT
@@ -25,39 +26,43 @@ export async function POST(req: Request) {
 
     const [rows]: any = await db.query(
       `SELECT * FROM lms_students WHERE email=? LIMIT 1`,
-      [cleanEmail]
+      [email]
     );
 
-    let student;
+    let student: any;
+    let finalName = "";
+    let finalPhone = "";
 
     /* ===============================
        CREATE NEW FREE STUDENT
     =============================== */
 
     if (!rows.length) {
-
-      const name = cleanEmail.split("@")[0];
+      finalName = name || email.split("@")[0];
+      finalPhone = phone || "";
 
       const [insertRes]: any = await db.query(
         `
         INSERT INTO lms_students
         (
           name,
+          phone,
           email,
           login_id,
           password,
           courses,
           student_type
         )
-        VALUES (?,?,?,?,?,?)
+        VALUES (?,?,?,?,?,?,?)
         `,
         [
-          name,
-          cleanEmail,
-          cleanEmail,
-          cleanEmail,
+          finalName,
+          finalPhone,
+          email,
+          email,
+          email,
           JSON.stringify([]),
-          "free"
+          "free",
         ]
       );
 
@@ -68,27 +73,33 @@ export async function POST(req: Request) {
 
       student = newUser[0];
 
-      console.log("New Free Student:", student.email);
-    }
-
-    /* ===============================
-       EXISTING USER LOGIN
-    =============================== */
-
-    else {
+      console.log("New Free Student Created:", student.email);
+    } else {
+      /* ===============================
+         EXISTING USER LOGIN
+      =============================== */
 
       student = rows[0];
 
+      finalName = name || student.name || email.split("@")[0];
+      finalPhone = phone || student.phone || "";
+
       await db.query(
-        `UPDATE lms_students SET password=? WHERE id=?`,
-        [cleanEmail, student.id]
+        `UPDATE lms_students SET password=?, name=?, phone=? WHERE id=?`,
+        [email, finalName, finalPhone || null, student.id]
       );
+
+      student = {
+        ...student,
+        name: finalName,
+        phone: finalPhone,
+      };
 
       console.log("Existing Free Login:", student.email);
     }
 
     /* ===============================
-       SMTP SETUP (ADDED ONLY)
+       SMTP SETUP
     =============================== */
 
     const transporter = nodemailer.createTransport({
@@ -101,78 +112,169 @@ export async function POST(req: Request) {
       },
     });
 
-   
-const userMail = {
-  from: `"ACCA, IIM SKILLS" <${process.env.MAIL_USER}>`,
-  to: cleanEmail,
-  subject: "🚀 Welcome to Your Learning Journey!",
-  html: `
-    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 10px; overflow: hidden;">
-      <div style="background-color: #4F46E5; padding: 20px; text-align: center;">
-        <h1 style="color: #ffffff; margin: 0; font-size: 24px;">Welcome to LMS</h1>
-      </div>
-      
-      <div style="padding: 30px; color: #333333;">
-        <h2 style="color: #4F46E5;">Hi ${student.name},</h2>
-        <p style="font-size: 16px; line-height: 1.5;">Your account has been successfully set up! You can now access our free course materials and start learning immediately.</p>
-        
-        <div style="background-color: #f9fafb; border: 1px dashed #4F46E5; padding: 15px; border-radius: 8px; margin: 20px 0;">
-          <p style="margin: 0; font-weight: bold; color: #374151;">Your Login Credentials:</p>
-          <p style="margin: 5px 0 0; font-size: 14px;"><strong>Email/Username:</strong> ${student.email}</p>
-          <p style="margin: 5px 0 0; font-size: 14px;"><strong>Password:</strong> ${cleanEmail}</p>
-        </div>
+    /* ===============================
+       USER EMAIL TEMPLATE
+    =============================== */
 
-        <div style="text-align: center; margin-top: 30px;">
-          <a href="${process.env.NEXT_PUBLIC_APP_URL}/login" style="background-color: #4F46E5; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Go to Dashboard</a>
-        </div>
-      </div>
+    const userMail = {
+      from: `"ACCA, IIM SKILLS" <${process.env.MAIL_USER}>`,
+      to: email,
+      subject: "🚀 Welcome to Your Learning Journey!",
+      html: `
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Welcome Email</title>
+  </head>
+  <body style="margin:0;padding:0;background-color:#f6f8fc;font-family:Arial,Helvetica,sans-serif;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f6f8fc;padding:30px 0;">
+      <tr>
+        <td align="center">
+          <table width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
+            
+            <tr>
+              <td style="background:#4F46E5;padding:24px 30px;text-align:center;">
+                <h1 style="margin:0;color:#ffffff;font-size:26px;line-height:1.2;">Welcome to LMS</h1>
+                <p style="margin:8px 0 0;color:#e0e7ff;font-size:14px;">Your free access is now ready</p>
+              </td>
+            </tr>
 
-      <div style="background-color: #f3f4f6; padding: 15px; text-align: center; font-size: 12px; color: #6b7280;">
-        <p>© ${new Date().getFullYear()} LMS Academy. All rights reserved.</p>
-      </div>
-    </div>
-  `,
-};
- 
-const adminMail = {
-  from: `"ACCA, IIM SKILLS" <${process.env.MAIL_USER}>`,
-  to: process.env.ADMIN_EMAIL,
-  subject: "🔔 New Free Student Registered",
-  html: `
-    <div style="font-family: Arial, sans-serif; color: #333;">
-      <h3 style="color: #ef4444;">New User Alert</h3>
-      <table style="width: 100%; border-collapse: collapse;">
-        <tr>
-          <td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Name:</strong></td>
-          <td style="padding: 8px; border-bottom: 1px solid #eee;">${student.name}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Email:</strong></td>
-          <td style="padding: 8px; border-bottom: 1px solid #eee;">${student.email}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Timestamp:</strong></td>
-          <td style="padding: 8px; border-bottom: 1px solid #eee;">${new Date().toLocaleString()}</td>
-        </tr>
-        <tr>
-          <td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Status:</strong></td>
-          <td style="padding: 8px; border-bottom: 1px solid #eee;"><span style="background: #dcfce7; color: #166534; padding: 2px 8px; border-radius: 10px; font-size: 12px;">Free User</span></td>
-        </tr>
-      </table>
-    </div>
-  `,
-};
+            <tr>
+              <td style="padding:30px 30px 10px 30px;color:#111827;">
+                <h2 style="margin:0 0 14px 0;font-size:22px;color:#4F46E5;">Hi ${finalName},</h2>
+                <p style="margin:0 0 14px 0;font-size:15px;line-height:1.7;color:#374151;">
+                  Your account has been successfully created. You can now access your free course materials and begin learning right away.
+                </p>
+                <p style="margin:0 0 18px 0;font-size:15px;line-height:1.7;color:#374151;">
+                  Below are your login details:
+                </p>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:0 30px 24px 30px;">
+                <table width="100%" cellpadding="0" cellspacing="0" style="border:1px dashed #4F46E5;border-radius:10px;background:#f9fafb;">
+                  <tr>
+                    <td style="padding:16px 18px;">
+                      <p style="margin:0 0 8px 0;font-size:14px;color:#374151;"><strong>Email/Username:</strong> ${student.email}</p>
+                      <p style="margin:0;font-size:14px;color:#374151;"><strong>Password:</strong> ${email}</p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:0 30px 30px 30px;text-align:center;">
+                <a href="https://acca.iimskills.in/"
+                   style="display:inline-block;background:#4F46E5;color:#ffffff;text-decoration:none;font-size:15px;font-weight:bold;padding:12px 26px;border-radius:8px;">
+                  Go to Dashboard
+                </a>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:18px 24px;background:#f3f4f6;text-align:center;font-size:12px;color:#6b7280;">
+                © ${new Date().getFullYear()} LMS Academy. All rights reserved.
+              </td>
+            </tr>
+
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
+      `,
+    };
 
     /* ===============================
-       SEND MAIL (ADDED ONLY)
+       ADMIN EMAIL TEMPLATE
+    =============================== */
+
+    const adminMail = {
+      from: `"ACCA, IIM SKILLS" <${process.env.MAIL_USER}>`,
+      to: process.env.ADMIN_EMAIL,
+      subject: "🔔 New Free Student Registered",
+      html: `
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>New Free Student Alert</title>
+  </head>
+  <body style="margin:0;padding:0;background-color:#f8fafc;font-family:Arial,Helvetica,sans-serif;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f8fafc;padding:30px 0;">
+      <tr>
+        <td align="center">
+          <table width="650" cellpadding="0" cellspacing="0" style="width:650px;max-width:650px;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">
+            
+            <tr>
+              <td style="background:#ef4444;padding:22px 30px;text-align:center;">
+                <h1 style="margin:0;color:#ffffff;font-size:24px;line-height:1.2;">New User Alert</h1>
+                <p style="margin:8px 0 0;color:#fee2e2;font-size:14px;">A new free student has registered</p>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:30px;color:#111827;">
+                <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+                  <tr>
+                    <td style="padding:12px 10px;border-bottom:1px solid #e5e7eb;width:180px;"><strong>Name:</strong></td>
+                    <td style="padding:12px 10px;border-bottom:1px solid #e5e7eb;">${finalName}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:12px 10px;border-bottom:1px solid #e5e7eb;"><strong>Email:</strong></td>
+                    <td style="padding:12px 10px;border-bottom:1px solid #e5e7eb;">${student.email}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:12px 10px;border-bottom:1px solid #e5e7eb;"><strong>Phone:</strong></td>
+                    <td style="padding:12px 10px;border-bottom:1px solid #e5e7eb;">${finalPhone || "-"}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:12px 10px;border-bottom:1px solid #e5e7eb;"><strong>Timestamp:</strong></td>
+                    <td style="padding:12px 10px;border-bottom:1px solid #e5e7eb;">${new Date().toLocaleString()}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:12px 10px;"><strong>Status:</strong></td>
+                    <td style="padding:12px 10px;">
+                      <span style="display:inline-block;background:#dcfce7;color:#166534;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:bold;">
+                        Free User
+                      </span>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="padding:18px 24px;background:#f3f4f6;text-align:center;font-size:12px;color:#6b7280;">
+                Generated automatically by LMS system
+              </td>
+            </tr>
+
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
+      `,
+    };
+
+    /* ===============================
+       SEND MAIL
     =============================== */
 
     try {
       const userRes = await transporter.sendMail(userMail);
-      console.log("✅ USER MAIL:", userRes.messageId);
+      console.log("✅ USER MAIL SENT:", userRes.messageId);
 
       const adminRes = await transporter.sendMail(adminMail);
-      console.log("✅ ADMIN MAIL:", adminRes.messageId);
+      console.log("✅ ADMIN MAIL SENT:", adminRes.messageId);
     } catch (mailError) {
       console.error("❌ MAIL ERROR:", mailError);
     }
@@ -183,22 +285,15 @@ const adminMail = {
 
     return NextResponse.json({
       id: student.id,
-      name: student.name,
+      name: finalName,
+      phone: finalPhone,
       email: student.email,
       courses: [],
       role: "student",
-      studentType: "free"
+      studentType: "free",
     });
-
   } catch (err) {
-
     console.error("Free login error:", err);
-
-    return NextResponse.json(
-      { error: "Server error" },
-      { status: 500 }
-    );
-
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
-
 }
