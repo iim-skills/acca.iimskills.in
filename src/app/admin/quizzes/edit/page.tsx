@@ -240,7 +240,7 @@ function EditQuizContent() {
   const [isPublishing, setIsPublishing] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [quizTime, setQuizTime] = useState<number>(10);
-
+  const [passingPercent, setPassingPercent] = useState<number>(40);
   const activeQ = questions[activeIdx] ?? questions[0] ?? createMCQ();
 
   /* ================= FETCH QUIZ ================= */
@@ -264,7 +264,8 @@ function EditQuizContent() {
 
         setQuizName(data?.name || "Untitled Assessment");
 setQuestions(normalizeQuestions(data?.questions || []));
-setQuizTime(data?.time_minutes || 10); // ✅ ADD THIS
+setQuizTime(data?.time_minutes || 10);
+setPassingPercent(data?.passing_percent || 40); // ✅ ADD THIS
 
         const loadedQuestions = normalizeQuestions(data?.questions || []);
         setActiveIdx(0);
@@ -515,12 +516,14 @@ setQuizTime(data?.time_minutes || 10); // ✅ ADD THIS
     try {
       setIsPublishing(true);
 
-     const payload = {
+const payload = {
+  id,
   name: quizName,
   questions,
   totalMarks: calculateTotalMarks(),
   totalQuestions: getTotalQuestionCount(),
-  quizTime, // ✅ ADD THIS
+  quizTime, // ✅ ADD
+  passing_percent: passingPercent, // ✅ ADD
 };
 
       const res = await fetch(`/api/admin/quizzes/${id}`, {
@@ -1139,6 +1142,19 @@ setQuizTime(data?.time_minutes || 10); // ✅ ADD THIS
     min={1}
   />
 </div>
+<div className="space-y-2">
+  <label className="text-xs font-semibold text-slate-500">
+    Passing Percentage (%)
+  </label>
+  <input
+    type="number"
+    value={passingPercent}
+    onChange={(e) => setPassingPercent(Number(e.target.value))}
+    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+    min={0}
+    max={100}
+  />
+</div>
             </section>
 
             <section className="bg-slate-900 rounded-2xl p-5 text-white shadow-xl shadow-slate-200 relative overflow-hidden">
@@ -1148,6 +1164,10 @@ setQuizTime(data?.time_minutes || 10); // ✅ ADD THIS
                   <div className="flex justify-between items-end">
   <span className="text-xs font-medium opacity-50">Time</span>
   <span className="text-lg font-bold">{quizTime} min</span>
+</div>
+<div className="flex justify-between items-end">
+  <span className="text-xs opacity-50">Passing</span>
+  <span className="text-lg font-bold">{passingPercent}%</span>
 </div>
                   <div className="flex justify-between items-end">
                     <span className="text-xs font-medium opacity-50">Total Marks</span>

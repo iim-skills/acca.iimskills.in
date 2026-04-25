@@ -6,6 +6,7 @@ import {
   Loader2,
   ChevronLeft,
   RefreshCw,
+  User,
 } from "lucide-react";
 import PhoneInput from "react-phone-input-2";
 import "react-phone-input-2/lib/style.css";
@@ -112,14 +113,16 @@ export default function FreeLoginForm({ onBack, onSuccess }: Props) {
   return (
     <div className="bg-white p-4 rounded-2xl space-y-5">
       {/* NAME */}
+      <div className="relative"> 
+      <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
       <input
         type="text"
         placeholder="Enter your name"
         value={freeName}
         onChange={(e) => setFreeName(e.target.value)}
-        className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 px-3 text-sm"
+        className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2.5 pl-10 px-3 text-sm"
       />
-
+      </div>
       {/* PHONE */}
       <PhoneInput
         country={"in"}
