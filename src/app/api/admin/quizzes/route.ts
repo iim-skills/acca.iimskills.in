@@ -149,7 +149,11 @@ export async function POST(req: Request) {
     console.log("Create Quiz Payload:", body);
 
     const name = body.name || body.quizName;
-    const time_minutes = body.time_minutes || body.time || 10;
+    const time_minutes =
+  body.time_minutes ||
+  body.time ||
+  body.quizTime || // ✅ ADD THIS
+  10;
     const passing_percent = body.passing_percent || body.passing || 50;
     const questions = body.questions || [];
 
@@ -252,7 +256,7 @@ export async function PUT(req: Request) {
         module_id || "MOD_1",
         submodule_id || null,
         JSON.stringify(batch_ids || []),
-        time_minutes || time || 10,
+        time_minutes || time || body.quizTime || 10,
         passing_percent || passing || 50,
         JSON.stringify(normalizedQuestions),
         id,

@@ -124,13 +124,16 @@ export async function GET(
 
       const normalizedQuestions = normalizeQuestions(parsedQuestions);
 
+      const savedTime = Number(quiz.time_minutes || 10);
+
       return NextResponse.json({
         id: quiz.id,
         name: quiz.name,
         course_slug: quiz.course_slug,
         module_id: quiz.module_id,
         submodule_id: quiz.submodule_id,
-        time_minutes: quiz.time_minutes || 10,
+        time_minutes: savedTime,
+        quizTime: savedTime,
         passing_percent: quiz.passing_percent || 40,
         totalMarks: quiz.total_marks || normalizedQuestions.length,
         totalQuestions: getQuestionCount(normalizedQuestions),
@@ -157,11 +160,14 @@ export async function GET(
         parsedQuestions = [];
       }
 
+      const savedTime = Number(quiz.time_minutes || 10);
+
       return {
         id: quiz.id,
         name: quiz.name,
         totalQuestions: getQuestionCount(parsedQuestions),
-        time_minutes: quiz.time_minutes,
+        time_minutes: savedTime,
+        quizTime: savedTime,
         passing_percent: quiz.passing_percent,
       };
     });
@@ -205,6 +211,7 @@ export async function PUT(
       submodule_id,
       batch_ids,
       time_minutes,
+      quizTime,
       passing_percent,
       questions,
     } = body;
@@ -231,7 +238,7 @@ export async function PUT(
         module_id ?? null,
         submodule_id ?? null,
         batch_ids !== undefined ? JSON.stringify(batch_ids || []) : null,
-        time_minutes ?? null,
+        time_minutes ?? quizTime ?? null,
         passing_percent ?? null,
         total_questions,
         JSON.stringify(cleanQuestions),
