@@ -113,7 +113,7 @@ export default function QuizPanel({
               {quiz?.name ?? "Quiz Assessment"}
             </h4>
             <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mt-1">
-              Step {index + 1} of {questions.length}
+              Question {index + 1} of {questions.length}
             </p>
           </div>
           <button
