@@ -35,6 +35,7 @@ export default function CoursePage() {
   const [activeModuleId, setActiveModuleId] = useState<string | null>(null);
   const [activeSubmoduleTitle, setActiveSubmoduleTitle] = useState<string | null>(null);
   const [activeQuiz, setActiveQuiz] = useState<any | null>(null);
+  const [activeLiveSessions, setActiveLiveSessions] = useState<any[] | null>(null);
 
   /* ================= LOGOUT ================= */
   const handleLogout = () => {
@@ -104,6 +105,16 @@ export default function CoursePage() {
     setActiveVideoUrl(url ?? null);
     setActiveModuleId(moduleId ?? null);
     setActiveSubmoduleTitle(title ?? null);
+    setActiveLiveSessions(null);
+  };
+
+  const handleShowLiveSessions = (moduleId: string) => {
+    setActiveQuiz(null);
+    setActiveVideoUrl(null);
+    setActiveModuleId(moduleId);
+    setActiveSubmoduleTitle(null);
+    const mod = course?.modules?.find((m) => m.moduleId === moduleId) ?? null;
+    setActiveLiveSessions(mod?.liveSessions ?? null);
   };
 
   /* ================= OPEN QUIZ ================= */
@@ -137,6 +148,7 @@ export default function CoursePage() {
               handlePlayVideo(url, title, moduleId)
             }
             onOpenQuiz={handleOpenQuiz}
+            onShowLiveSessions={handleShowLiveSessions}
           />
         </div>
 
@@ -160,6 +172,7 @@ export default function CoursePage() {
             activeVideoUrl={activeVideoUrl}
             activeSubmoduleTitle={activeSubmoduleTitle}
             activeQuiz={activeQuiz}
+            activeLiveSessions={activeLiveSessions}
             onCloseQuiz={() => setActiveQuiz(null)}
             onPlayVideo={(url, title, moduleId) =>
               handlePlayVideo(url, title, moduleId)

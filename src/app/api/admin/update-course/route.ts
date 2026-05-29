@@ -23,6 +23,9 @@ function normalizeSubmoduleToItems(sub: any) {
             name: it.name ?? "",
             videoId: it.videoId ?? it.video ?? undefined,
             videoTitle: it.videoTitle ?? it.title ?? undefined,
+            videoUrl:
+              it.videoUrl ?? it.youtubeUrl ?? it.url ?? it.secure_url ?? it.s3_url ?? undefined,
+            thumbUrl: it.thumbUrl ?? it.thumb ?? undefined,
             position:
               typeof it.position !== "undefined"
                 ? Number(it.position)
@@ -69,6 +72,9 @@ function normalizeSubmoduleToItems(sub: any) {
             name: it.name ?? "",
             videoId: it.videoId ?? undefined,
             videoTitle: it.videoTitle ?? undefined,
+            videoUrl:
+              it.videoUrl ?? it.youtubeUrl ?? it.url ?? it.secure_url ?? it.s3_url ?? undefined,
+            thumbUrl: it.thumbUrl ?? it.thumb ?? undefined,
             position:
               typeof it.position !== "undefined"
                 ? Number(it.position)

@@ -126,9 +126,18 @@ export async function GET(req: Request) {
               id: it.id ?? it.sessionId ?? null,
               name: it.name ?? it.videoTitle ?? it.title ?? null,
               videoTitle: it.videoTitle ?? it.title ?? it.name ?? null,
-              url: meta?.url ?? (it.url ?? it.s3_url ?? it.secure_url ?? null),
+              url:
+                meta?.url ??
+                it.videoUrl ??
+                it.youtubeUrl ??
+                it.url ??
+                it.s3_url ??
+                it.secure_url ??
+                null,
               thumb: meta?.thumb ?? (it.thumb ?? null),
-              duration: meta?.duration ?? (typeof it.duration === "number" ? it.duration : undefined),
+              duration:
+                meta?.duration ??
+                (typeof it.duration === "number" ? it.duration : undefined),
             };
           }
 
@@ -162,7 +171,8 @@ export async function GET(req: Request) {
         moduleId: mod.moduleId ?? mod.module_id ?? mod.id ?? null,
         name: mod.name ?? mod.moduleName ?? mod.title ?? null,
         description: mod.description ?? null,
-        submodules: normalizedSubmodules
+        submodules: normalizedSubmodules,
+        liveSessions: Array.isArray(mod.liveSessions) ? mod.liveSessions : (mod.live_sessions ?? [])
       };
     });
 

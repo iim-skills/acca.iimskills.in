@@ -11,21 +11,21 @@ const courseDetails = {
     title: "ACCA",
     url: "acca-applied-knowledge",
     programs: {
-      expert: { name: "Applied Knowledge Program", fee: 1 },
+      expert: { name: "Applied Knowledge Program", fee: 49900 },
     },
   },
   "acca-applied-skills-level": {
     title: "ACCA",
     url: "acca-applied-skills-level",
     programs: {
-      expert: { name: "Applied Skill Program", fee: 1 },
+      expert: { name: "Applied Skill Program", fee: 149900 },
     },
   },
   "acca-professional-level": {
     title: "ACCA",
     url: "acca-professional-level",
     programs: {
-      expert: { name: "Strategic Professional Program", fee: 1 },
+      expert: { name: "Strategic Professional Program", fee: 99900 },
     },
   },
 } as const;

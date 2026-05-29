@@ -35,6 +35,12 @@ export default function EditCourse({
   const [openModules, setOpenModules] = useState<string[]>([]);
   const [editingModuleId, setEditingModuleId] = useState<string | null>(null);
   const [editingSubId, setEditingSubId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"structure" | "live-recording">("structure");
+  const [selectedLiveModuleId, setSelectedLiveModuleId] = useState<string | null>(null);
+  const [liveSessionTitle, setLiveSessionTitle] = useState<string>("");
+  const [liveSessionUrl, setLiveSessionUrl] = useState<string>("");
+  const [editingLiveSessionId, setEditingLiveSessionId] = useState<string | null>(null);
+  const [showLiveSessionForm, setShowLiveSessionForm] = useState<boolean>(false);
 
   const [dragItem, setDragItem] = useState<{
     moduleId: string;
@@ -237,6 +243,101 @@ export default function EditCourse({
     );
   };
 
+  const selectedLiveModule = editingCourse.courseData.modules.find(
+    (m) => m.moduleId === selectedLiveModuleId
+  );
+
+  const resetLiveSessionForm = () => {
+    setLiveSessionTitle("");
+    setLiveSessionUrl("");
+    setEditingLiveSessionId(null);
+    setShowLiveSessionForm(false);
+  };
+
+  const startLiveSessionEdit = (moduleId: string, session: any) => {
+    setSelectedLiveModuleId(moduleId);
+    setLiveSessionTitle(session.title ?? "");
+    setLiveSessionUrl(session.url ?? "");
+    setEditingLiveSessionId(session.id ?? null);
+    setShowLiveSessionForm(true);
+  };
+
+  const updateLiveSession = (moduleId: string, sessionId: string, payload: any) => {
+    updateModules(
+      editingCourse.courseData.modules.map((m) =>
+        m.moduleId === moduleId
+          ? {
+              ...m,
+              liveSessions: (m.liveSessions || []).map((session) =>
+                session.id === sessionId ? { ...session, ...payload } : session
+              ),
+            }
+          : m
+      )
+    );
+  };
+
+  const addLiveSession = (moduleId: string, payload: any) => {
+    updateModules(
+      editingCourse.courseData.modules.map((m) =>
+        m.moduleId === moduleId
+          ? {
+              ...m,
+              liveSessions: [
+                ...(m.liveSessions || []),
+                {
+                  id: `LS_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+                  title: payload.title || "Live Recording",
+                  url: payload.url || "",
+                },
+              ],
+            }
+          : m
+      )
+    );
+  };
+
+  const removeLiveSession = (moduleId: string, sessionId: string) => {
+    updateModules(
+      editingCourse.courseData.modules.map((m) =>
+        m.moduleId === moduleId
+          ? {
+              ...m,
+              liveSessions: (m.liveSessions || []).filter(
+                (session) => session.id !== sessionId
+              ),
+            }
+          : m
+      )
+    );
+  };
+
+  const saveLiveSession = () => {
+    if (!selectedLiveModuleId) return;
+
+    const title = liveSessionTitle.trim();
+    const url = liveSessionUrl.trim();
+
+    if (!url) {
+      alert("Please enter a valid YouTube URL or video link.");
+      return;
+    }
+
+    if (editingLiveSessionId) {
+      updateLiveSession(selectedLiveModuleId, editingLiveSessionId, {
+        title: title || "Live Recording",
+        url,
+      });
+    } else {
+      addLiveSession(selectedLiveModuleId, {
+        title: title || "Live Recording",
+        url,
+      });
+    }
+
+    resetLiveSessionForm();
+  };
+
   /* ================= SAVE ================= */
 
   const saveCourse = async () => {
@@ -290,7 +391,39 @@ export default function EditCourse({
             </button>
           </div>
 
-          <div className="space-y-4">
+          {/* Tabs */}
+          <div className="flex gap-2 border-b border-slate-200">
+            <button
+              onClick={() => setActiveTab("structure")}
+              className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-all border-b-2 whitespace-nowrap ${
+                activeTab === "structure"
+                  ? "bg-indigo-50 text-indigo-700 border-indigo-600"
+                  : "text-slate-500 hover:text-slate-700 border-transparent"
+              }`}
+            >
+              Course Structure
+            </button>
+            <button
+              onClick={() => setActiveTab("live-recording")}
+              className={`px-4 py-2.5 text-sm font-medium rounded-t-lg transition-all border-b-2 whitespace-nowrap ${
+                activeTab === "live-recording"
+                  ? "bg-indigo-50 text-indigo-700 border-indigo-600"
+                  : "text-slate-500 hover:text-slate-700 border-transparent"
+              }`}
+            >
+              Live Recording Session
+            </button>
+          </div>
+
+          {/* Course Structure Tab */}
+          {activeTab === "structure" && (
+            <div className="space-y-4">
+              <button
+                onClick={addModule}
+                className="text-sm bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-all"
+              >
+                <Plus size={16} /> Add Module
+              </button>
             {editingCourse.courseData.modules.map((m) => {
               const isOpen = openModules.includes(m.moduleId);
 
@@ -520,12 +653,12 @@ export default function EditCourse({
                                         e.key === "Enter" &&
                                         setEditingItemKey(null)
                                       }
-                                      className="max-w-[150px] outline-none bg-transparent"
+                                      className="max-w-37.5 outline-none bg-transparent"
                                       autoFocus
                                     />
                                   ) : (
                                     <span
-                                      className="max-w-[150px] truncate"
+                                      className="max-w-37.5 truncate"
                                       onDoubleClick={() =>
                                         setEditingItemKey(itemKey)
                                       }
@@ -553,7 +686,189 @@ export default function EditCourse({
                 </div>
               );
             })}
-          </div>
+            </div>
+          )}
+
+          {/* Live Recording Session Tab */}
+          {activeTab === "live-recording" && (
+            <div className="space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <h4 className="font-semibold text-slate-700">Live Recording Session</h4>
+                  <p className="text-sm text-slate-500">
+                    Manage each module and add one or more YouTube/video links per module.
+                  </p>
+                </div>
+                <button
+                  onClick={addModule}
+                  className="text-sm bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-all"
+                >
+                  <Plus size={16} /> Add Module
+                </button>
+              </div>
+
+              {editingCourse.courseData.modules.length === 0 ? (
+                <p className="text-sm text-slate-400 italic">No modules yet. Add a module to start creating live recording sessions.</p>
+              ) : (
+                <div className="grid gap-4 lg:grid-cols-[1.15fr_1.85fr]">
+                  <div className="space-y-3">
+                    {editingCourse.courseData.modules.map((mod: any) => {
+                      const sessions: any[] = mod.liveSessions || [];
+                      const selected = selectedLiveModuleId === mod.moduleId;
+
+                      return (
+                        <button
+                          key={mod.moduleId}
+                          type="button"
+                          onClick={() => {
+                            setSelectedLiveModuleId(mod.moduleId);
+                            resetLiveSessionForm();
+                          }}
+                          className={`w-full text-left rounded-3xl border p-4 transition-all ${
+                            selected
+                              ? "border-indigo-500 bg-indigo-50 shadow-sm"
+                              : "border-slate-200 bg-white hover:border-indigo-200"
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-slate-900 truncate">{mod.name}</p>
+                              <p className="text-xs text-slate-500 mt-1">
+                                {sessions.length} live session{sessions.length === 1 ? "" : "s"}
+                              </p>
+                            </div>
+                            <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600">
+                              Module
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                    {!selectedLiveModule ? (
+                      <div className="flex h-full min-h-55 flex-col items-center justify-center text-center text-slate-500">
+                        <p className="text-sm font-semibold">Select a module to add or edit live recording URLs.</p>
+                        <p className="text-sm text-slate-400 mt-2">The session list appears here as soon as you select a module.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-5">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">{selectedLiveModule.name}</p>
+                            <p className="text-xs text-slate-500 mt-1">Add YouTube/video sessions for this module.</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowLiveSessionForm(true);
+                              setEditingLiveSessionId(null);
+                              setLiveSessionTitle("");
+                              setLiveSessionUrl("");
+                            }}
+                            className="text-sm bg-indigo-600 text-white hover:bg-indigo-700 px-4 py-2 rounded-xl transition-all"
+                          >
+                            + Add Session
+                          </button>
+                        </div>
+
+                        <div className="space-y-3">
+                          {(selectedLiveModule.liveSessions || []).length === 0 ? (
+                            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
+                              No live recording sessions added yet for this module.
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              {(selectedLiveModule.liveSessions || []).map((session: any) => (
+                                <div
+                                  key={session.id}
+                                  className="rounded-3xl border border-slate-200 bg-slate-50 p-4"
+                                >
+                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div className="min-w-0">
+                                      <p className="font-semibold text-slate-900 truncate">{session.title || "Untitled session"}</p>
+                                      <a
+                                        href={session.url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-xs text-indigo-600 hover:text-indigo-800 wrap-break-word"
+                                      >
+                                        {session.url}
+                                      </a>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => startLiveSessionEdit(selectedLiveModule.moduleId, session)}
+                                        className="text-sm bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 px-3 py-2 rounded-xl transition-all"
+                                      >
+                                        Edit
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => removeLiveSession(selectedLiveModule.moduleId, session.id)}
+                                        className="text-sm bg-red-50 border border-red-200 text-red-600 hover:bg-red-100 px-3 py-2 rounded-xl transition-all"
+                                      >
+                                        Remove
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {showLiveSessionForm && (
+                          <div className="rounded-3xl border border-indigo-100 bg-indigo-50 p-5">
+                            <div className="space-y-4">
+                              <div>
+                                <label className="block text-sm font-medium text-slate-700">Session Title</label>
+                                <input
+                                  value={liveSessionTitle}
+                                  onChange={(e) => setLiveSessionTitle(e.target.value)}
+                                  placeholder="Enter a title for the session"
+                                  className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-indigo-500"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="block text-sm font-medium text-slate-700">YouTube / Video URL</label>
+                                <input
+                                  value={liveSessionUrl}
+                                  onChange={(e) => setLiveSessionUrl(e.target.value)}
+                                  placeholder="https://www.youtube.com/watch?v=..."
+                                  className="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-indigo-500"
+                                />
+                              </div>
+
+                              <div className="flex flex-wrap gap-3 justify-end">
+                                <button
+                                  type="button"
+                                  onClick={resetLiveSessionForm}
+                                  className="text-sm bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 px-4 py-2 rounded-xl transition-all"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={saveLiveSession}
+                                  className="text-sm bg-indigo-600 text-white hover:bg-indigo-700 px-4 py-2 rounded-xl transition-all"
+                                >
+                                  Save Session
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* FOOTER */}

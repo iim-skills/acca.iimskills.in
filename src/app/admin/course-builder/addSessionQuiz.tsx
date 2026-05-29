@@ -64,12 +64,17 @@ export default function AddSessionQuiz({
   const [videos, setVideos] = useState<VideoData[]>([]);
   const [quizzes, setQuizzes] = useState<QuizData[]>([]);
   const [selected, setSelected] = useState("");
+  const [url, setUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
   /* ================= LOAD ================= */
   useEffect(() => {
     if (!isOpen) return;
+
+    setSelected("");
+    setUrl("");
+    setFile(null);
 
     fetch("/api/admin/videos")
       .then((r) => r.json())
@@ -95,6 +100,13 @@ export default function AddSessionQuiz({
       let videoUrl = "";
       let thumbUrl = "";
 
+      /* ========= DIRECT URL ========= */
+      if (type !== "Quiz" && !file && !selected && url.trim()) {
+        videoUrl = url.trim();
+        videoTitle = name;
+        videoId = undefined;
+      }
+
       /* ========= UPLOAD NEW VIDEO ========= */
       if (type !== "Quiz" && file) {
         const form = new FormData();
@@ -106,12 +118,12 @@ export default function AddSessionQuiz({
         });
 
         const data = await res.json();
-if (!res.ok) throw new Error(data?.error || "Upload failed");
+        if (!res.ok) throw new Error(data?.error || "Upload failed");
 
-videoId = data.file_name;   // ✅ FIX
-videoUrl = data.url;        // ✅ FIX
-thumbUrl = "";              // optional
-videoTitle = name;
+        videoId = data.file_name;
+        videoUrl = data.url;
+        thumbUrl = "";
+        videoTitle = name;
 
         /* ========= SAVE VIDEO TO DB ========= */
         await fetch("/api/admin/videos", {
@@ -168,6 +180,7 @@ videoTitle = name;
 
       setName("");
       setSelected("");
+      setUrl("");
       setFile(null);
       onClose();
     } catch (err) {
@@ -179,7 +192,7 @@ videoTitle = name;
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[70] p-4">
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-70 p-4">
       <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
         
         {/* HEADER */}
@@ -234,7 +247,10 @@ videoTitle = name;
               </label>
               <select
                 value={selected}
-                onChange={(e) => setSelected(e.target.value)}
+                onChange={(e) => {
+                  setSelected(e.target.value);
+                  if (e.target.value) setUrl("");
+                }}
                 disabled={!!file}
                 className="w-full bg-white border border-slate-200 p-3 rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-700 font-medium disabled:opacity-50 appearance-none"
               >
@@ -246,6 +262,27 @@ videoTitle = name;
                 ))}
               </select>
             </div>
+
+            {type === "Session Recording" && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest ml-1">
+                  Or paste a video URL
+                </label>
+                <input
+                  value={url}
+                  onChange={(e) => {
+                    setUrl(e.target.value);
+                    if (e.target.value) {
+                      setSelected("");
+                      setFile(null);
+                    }
+                  }}
+                  placeholder="https://youtu.be/xxxx or https://www.youtube.com/watch?v=xxxx"
+                  className="w-full bg-slate-50 border border-slate-200 p-3 rounded-2xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-slate-700 font-medium"
+                />
+                <p className="text-xs text-slate-400">Paste a YouTube or direct video link here to add it directly to this topic.</p>
+              </div>
+            )}
 
             {/* VIDEO UPLOAD DROPZONE */}
             {type === "Session Recording" && (
@@ -304,7 +341,7 @@ videoTitle = name;
           <button
             onClick={save}
             disabled={loading || !name}
-            className="flex-[2] bg-indigo-600 hover:bg-indigo-700 text-white py-3 px-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-100 disabled:opacity-50 disabled:shadow-none active:scale-[0.98]"
+            className="flex-2 bg-indigo-600 hover:bg-indigo-700 text-white py-3 px-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-100 disabled:opacity-50 disabled:shadow-none active:scale-[0.98]"
           >
             {loading ? (
               <>

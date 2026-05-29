@@ -22,6 +22,7 @@ import Link from "next/link";
 
 import { MdDisplaySettings } from "react-icons/md";
 import { Play } from "next/font/google";
+import { FaYoutube } from "react-icons/fa";
 
 /* ===== TYPES ===== */
 export type VideoItem = {
@@ -102,7 +103,9 @@ type Props = {
     completed?: boolean
   ) => void;
   onOpenQuiz?: (quiz: any) => void;
+  onShowLiveSessions?: (moduleId: string) => void;
 };
+
 
 export type QuizQuestion = {
   id?: string;
@@ -266,11 +269,14 @@ export default function CourseModules({
   onPlayVideo,
   onReportPlayerProgress,
   onOpenQuiz,
+  onShowLiveSessions,
 }: Props): React.ReactElement {
   const [openModuleId, setOpenModuleId] = useState<string | null>(null);
   const [openSubKey, setOpenSubKey] = useState<string | null>(null);
   const [activeVideoKey, setActiveVideoKey] = useState<string | null>(null);
   const [meetModalOpen, setMeetModalOpen] = useState(false);
+  const [showLiveTab, setShowLiveTab] = useState(false);
+  const [selectedLiveModuleId, setSelectedLiveModuleId] = useState<string | null>(null);
   const [isFreeLoggedIn, setIsFreeLoggedIn] = useState(false);
   const [allowSeek, setAllowSeek] = useState(false);
   const [freePreviewStartedAt, setFreePreviewStartedAt] = useState<number | null>(null);
@@ -2068,6 +2074,66 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
             </div>
           );
         })}
+      </div>
+      {/* Live Recording Session bottom tab */}
+      <div className="mt-0 pt-0">
+          <button
+            onClick={() => setShowLiveTab((s) => !s)}
+            className="w-full transition-all duration-300 rounded-2xl border bg-white border-slate-100 hover:border-slate-200"
+          >
+         <div
+            className={`w-full flex items-center justify-between px-4 py-3 transition-colors ${
+              showLiveTab ? "bg-gray-50 rounded-t-2xl" : "hover:bg-gray-50 rounded-2xl"
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              {/* Continues numbering after all modules */}
+              <span
+                className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-sm text-white shadow-lg bg-gradient-to-r from-pink-400 to-red-400`}
+              >
+                 <FaYoutube size={14} />
+              </span>
+              <div>
+                <h3 className="text-sm md:text-[16px] font-bold text-slate-900">
+                  Live Recording Sessions
+                </h3>
+                
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {showLiveTab
+                ? <ChevronUp size={16} className="text-red-400" />
+                : <ChevronDown size={16} className="text-green-600 font-bold" />}
+            </div>
+          </div>
+        </button>
+        {showLiveTab && (
+          <div className="mt-5 space-y-5">
+            {(course?.modules || []).map((m, i) => (
+              <button
+                key={m.moduleId ?? `mod-${i}`}
+                type="button"
+                onClick={() => {
+                  setSelectedLiveModuleId(m.moduleId ?? null);
+                  onShowLiveSessions?.(m.moduleId ?? "");
+                }}
+                className={`w-full space-y-6 text-left p-3 rounded-lg border transition-all ${
+                  selectedLiveModuleId === m.moduleId
+                    ? "bg-indigo-50 border-indigo-300"
+                    : "bg-white border-slate-200 hover:border-indigo-200"
+                }`}
+              >
+                <div className="flex items-center  justify-between">
+                  <div className="min-w-0 ">
+                    <p className="text-sm font-semibold text-slate-900 truncate">{m.name}</p>
+                    {/* <p className="text-xs text-slate-400 mt-1">Module</p> */}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <Modal isOpen={meetModalOpen} onClose={() => setMeetModalOpen(false)}>

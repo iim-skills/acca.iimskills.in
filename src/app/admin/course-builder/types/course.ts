@@ -6,6 +6,8 @@ export type VideoItem = {
   name: string;
   videoId?: string | number;
   videoTitle?: string;
+  videoUrl?: string;
+  thumbUrl?: string;
 };
 
 export type QuizItem = {
@@ -33,10 +35,17 @@ export type Submodule = {
   items: ItemType[];
 };
 
+export type LiveSession = {
+  id: string;
+  title: string;
+  url: string;
+};
+
 export type Module = {
   moduleId: string;
   name: string;
   submodules: Submodule[];
+  liveSessions?: LiveSession[];
 };
 
 /* ================= COURSE ================= */
