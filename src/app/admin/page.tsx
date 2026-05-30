@@ -56,25 +56,23 @@ export default function App() {
     setLoadingUser(true);
 
     try {
-      const storedRaw = sessionStorage.getItem("user") ?? localStorage.getItem("user");
+      const storedRaw =
+        sessionStorage.getItem("user") ?? localStorage.getItem("user");
 
+      // ✅ FIX 1: No user in storage → redirect to login immediately
       if (!storedRaw) {
-        const fallback: UserType = {
-          id: 1,
-          name: "Admin User",
-          email: "admin@iimskills.com",
-          role: "Super Admin",
-        };
-        setUser(fallback);
-        setLoadingUser(false);
+        window.location.href = "/";
         return;
       }
 
       const parsed = JSON.parse(storedRaw);
 
-      if (parsed && parsed.loginType && parsed.loginType !== "admin") {
-        setUser(null);
-        setLoadingUser(false);
+      // ✅ FIX 2: Require loginType to be explicitly "admin" (positive check)
+      if (!parsed || !parsed.loginType || parsed.loginType !== "admin") {
+        // Clear any stale/invalid data and redirect
+        sessionStorage.removeItem("user");
+        localStorage.removeItem("user");
+        window.location.href = "/";
         return;
       }
 
@@ -87,8 +85,11 @@ export default function App() {
 
       setUser(mapped);
     } catch (err) {
+      // ✅ FIX 3: Corrupted storage → clear and redirect
       console.error("Error parsing stored user:", err);
-      setUser(null);
+      sessionStorage.removeItem("user");
+      localStorage.removeItem("user");
+      window.location.href = "/";
     } finally {
       setLoadingUser(false);
     }
@@ -115,13 +116,19 @@ export default function App() {
     );
   }
 
-  /* ---------- NOT AUTHORIZED ---------- */
+  /* ---------- NOT AUTHORIZED (fallback, should rarely show due to redirect) ---------- */
   if (!user) {
     return (
       <div className="flex items-center justify-center h-screen bg-slate-50 px-4">
         <div className="text-center">
           <h2 className="text-lg font-semibold mb-2">Not authorized</h2>
-          <p className="text-sm text-slate-500">No admin user found in session. Please login.</p>
+          <p className="text-sm text-slate-500">
+            No admin user found in session. Please{" "}
+            <a href="/" className="text-blue-600 underline">
+              login
+            </a>
+            .
+          </p>
         </div>
       </div>
     );
@@ -142,7 +149,8 @@ export default function App() {
     { key: "videos", name: "Videos", icon: <Video size={20} /> },
   ];
 
-  const activeTabName = tabs.find((t) => t.key === active)?.name || "Dashboard";
+  const activeTabName =
+    tabs.find((t) => t.key === active)?.name || "Dashboard";
 
   const handleTabChange = (key: string) => {
     setActive(key);
@@ -172,15 +180,15 @@ export default function App() {
           <div className="flex items-center justify-between gap-3 mb-2">
             <div className="flex items-center gap-3">
               <div className="w-14 h-10 bg-white rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/30">
-  <Image
-    src="/iim-skills-official.png"
-    alt="Preview"
-    width={40}
-    height={32}
-    className="object-contain"
-    priority
-  />
-</div>
+                <Image
+                  src="/iim-skills-official.png"
+                  alt="Preview"
+                  width={40}
+                  height={32}
+                  className="object-contain"
+                  priority
+                />
+              </div>
               <h1 className="text-xl font-bold tracking-tight">Admin</h1>
             </div>
 
@@ -194,15 +202,6 @@ export default function App() {
           </div>
 
           <div className="h-px w-full bg-slate-800 my-6" />
-
-          {/* USER INFO CARD */}
-          {/* <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700/50 mb-8">
-            <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold mb-1">
-              Administrator
-            </p>
-            <p className="text-sm font-semibold truncate text-blue-100">{user.name}</p>
-            <p className="text-xs text-slate-400 mt-1">{user.role}</p>
-          </div> */}
 
           {/* NAVIGATION */}
           <nav className="space-y-1.5">
@@ -223,13 +222,17 @@ export default function App() {
                 >
                   <span
                     className={`${
-                      isActive ? "text-white" : "text-slate-500 group-hover:text-blue-400"
+                      isActive
+                        ? "text-white"
+                        : "text-slate-500 group-hover:text-blue-400"
                     } transition-colors`}
                   >
                     {tab.icon}
                   </span>
                   <span className="ml-3 font-medium text-sm">{tab.name}</span>
-                  {isActive && <ChevronRight size={14} className="ml-auto opacity-60" />}
+                  {isActive && (
+                    <ChevronRight size={14} className="ml-auto opacity-60" />
+                  )}
                 </button>
               );
             })}
@@ -259,9 +262,11 @@ export default function App() {
             <div className="h-8 w-px bg-slate-200 mx-1 sm:mx-2 hidden sm:block" />
 
             <div className="flex items-center gap-3">
-              {/* USER INFO (HIDDEN ON SMALL SCREENS) */}
+              {/* USER INFO */}
               <div className="text-right hidden sm:block">
-                <p className="text-sm font-bold text-slate-800 leading-none">{user.name}</p>
+                <p className="text-sm font-bold text-slate-800 leading-none">
+                  {user.name}
+                </p>
                 <p className="text-xs text-slate-500 mt-1">{user.role}</p>
               </div>
 
@@ -287,8 +292,12 @@ export default function App() {
                     >
                       <User2 size={16} className="text-slate-600" />
                       <div>
-                        <div className="text-sm font-medium text-slate-800">Profile</div>
-                        <div className="text-xs text-slate-500">View your profile</div>
+                        <div className="text-sm font-medium text-slate-800">
+                          Profile
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          View your profile
+                        </div>
                       </div>
                     </button>
 
@@ -312,7 +321,7 @@ export default function App() {
           </div>
         </header>
 
-        {/* PAGE CONTENT CONTAINER */}
+        {/* PAGE CONTENT */}
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto custom-scrollbar">
           <div className="max-w-6xl mx-auto">
             {active === "dashboard" && <DashboardHome />}
@@ -325,37 +334,24 @@ export default function App() {
             {active === "profile" && <ProfilePage />}
             {active === "studyMT" && <StudyMT />}
             {active === "users" && user && <Users currentUser={user} />}
-
             {active === "course" && <Course />}
             {active === "quiz" && <Quiz />}
           </div>
         </main>
       </div>
 
-      <style dangerouslySetInnerHTML={{ __html: `
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 6px;
-        }
-
-        .hide-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-
-.hide-scrollbar {
-  -ms-overflow-style: none;  /* IE/Edge */
-  scrollbar-width: none;     /* Firefox */
-}
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #E2E8F0;
-          border-radius: 10px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: #CBD5E1;
-        }
-      `}} />
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #CBD5E1; }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      `,
+        }}
+      />
     </div>
   );
 }
