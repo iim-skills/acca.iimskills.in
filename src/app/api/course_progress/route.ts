@@ -47,14 +47,24 @@ export async function GET(req: Request) {
       return NextResponse.json([]);
     }
 
-    const result = Object.entries(courseProgress).map(
-      ([videoId, data]: any) => ({
+    const normalizedEntries =
+      courseProgress && typeof courseProgress === "object"
+        ? courseProgress.videos &&
+          typeof courseProgress.videos === "object"
+          ? courseProgress.videos
+          : courseProgress
+        : {};
+
+    const result = Object.entries(normalizedEntries)
+      .filter(([videoId]) => videoId !== "updated_at")
+      .map(([videoId, data]: any) => ({
         videoId,
-        positionSeconds: Number(data.positionSeconds ?? 0),
+        positionSeconds: Number(
+          data.positionSeconds ?? data.position_sec ?? 0
+        ),
         duration: Number(data.duration ?? 0),
         completed: Boolean(data.completed),
-      })
-    );
+      }));
 
     return NextResponse.json(result);
   } catch (err) {
@@ -106,11 +116,29 @@ export async function POST(req: Request) {
       fullProgress[courseId] = {};
     }
 
-    // ✅ Trust frontend for completion
+    const existingEntry = fullProgress[courseId][videoId] ?? {};
+    const requestedPosition = Math.max(0, Math.floor(positionSeconds || 0));
+    const requestedDuration = Math.max(0, Math.floor(duration || 0));
+    const previousPosition = Math.max(
+      0,
+      Math.floor(existingEntry.positionSeconds ?? existingEntry.position_sec ?? 0)
+    );
+    const previousDuration = Math.max(
+      0,
+      Math.floor(existingEntry.duration ?? 0)
+    );
+    const wasCompleted = Boolean(existingEntry.completed);
+    const nextCompleted = wasCompleted || Boolean(completed);
+    const nextDuration = Math.max(previousDuration, requestedDuration);
+    const nextPosition = nextCompleted
+      ? Math.max(previousPosition, requestedPosition, nextDuration, 1)
+      : Math.max(previousPosition, requestedPosition);
+
     fullProgress[courseId][videoId] = {
-      positionSeconds: Math.max(0, Math.floor(positionSeconds || 0)),
-      duration: Math.max(0, Math.floor(duration || 0)),
-      completed: Boolean(completed),
+      ...existingEntry,
+      positionSeconds: nextPosition,
+      duration: nextDuration,
+      completed: nextCompleted,
       updated_at: new Date().toISOString(),
     };
 

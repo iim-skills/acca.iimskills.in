@@ -1,19 +1,79 @@
 import { NextResponse } from "next/server";
 import db from "../../../../lib/db";
 
+const normalizeSlug = (value: unknown) =>
+  String(value ?? "")
+    .trim()
+    .toLowerCase();
+
+const safeJsonParse = <T,>(value: unknown, fallback: T): T => {
+  try {
+    if (value == null) return fallback;
+    if (typeof value !== "string") return value as T;
+    const parsed = JSON.parse(value);
+    return (parsed as T) ?? fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const countLessonsFromCourseData = (courseData: any) => {
+  if (!Array.isArray(courseData?.modules)) return 0;
+
+  let total = 0;
+
+  courseData.modules.forEach((module: any) => {
+    if (!Array.isArray(module?.submodules)) return;
+
+    module.submodules.forEach((submodule: any) => {
+      const directVideos = Array.isArray(submodule?.videos)
+        ? submodule.videos
+        : [];
+      const itemVideos = Array.isArray(submodule?.items)
+        ? submodule.items.filter((item: any) => item?.type === "video")
+        : [];
+      const videos = directVideos.length > 0 ? directVideos : itemVideos;
+
+      total += videos.filter((video: any) => video?.visible !== false).length;
+    });
+  });
+
+  return total;
+};
+
+const countCompletedLessons = (courseProgress: any) => {
+  if (!courseProgress || typeof courseProgress !== "object") return 0;
+
+  const entries =
+    courseProgress.videos && typeof courseProgress.videos === "object"
+      ? courseProgress.videos
+      : courseProgress;
+
+  return Object.entries(entries).reduce((count, [key, value]) => {
+    if (key === "updated_at" || key.startsWith("quiz_")) {
+      return count;
+    }
+
+    if (Array.isArray(value)) {
+      return count + value.length;
+    }
+
+    if (value && typeof value === "object" && (value as any).completed) {
+      return count + 1;
+    }
+
+    return count;
+  }, 0);
+};
+
 export async function GET(req: Request) {
   try {
     const email = req.headers.get("x-user-email");
-
-    console.log("=================================");
-    console.log("🚀 STUDENT DASHBOARD API CALLED");
-    console.log("📧 EMAIL:", email);
 
     if (!email) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    /* ================= 1️⃣ FETCH STUDENT ================= */
     const [rows]: any = await db.query(
       `SELECT courses, progress FROM lms_students WHERE email = ? LIMIT 1`,
       [email]
@@ -22,35 +82,14 @@ export async function GET(req: Request) {
     if (!rows.length) return NextResponse.json([]);
 
     const student = rows[0];
+    const courses = safeJsonParse<any[]>(student.courses, []);
+    const progressData = safeJsonParse<Record<string, any>>(student.progress, {});
 
-    let courses: any[] = [];
-    let progressData: any = {};
-
-    try {
-      courses = student.courses ? JSON.parse(student.courses) : [];
-      if (!Array.isArray(courses)) courses = [];
-    } catch {
-      courses = [];
+    if (!Array.isArray(courses) || courses.length === 0) {
+      return NextResponse.json([]);
     }
 
-    try {
-      progressData = student.progress ? JSON.parse(student.progress) : {};
-    } catch {
-      progressData = {};
-    }
-
-    console.log("📚 COURSES:", courses);
-    console.log("📊 PROGRESS:", progressData);
-
-    /* ================= 🚨 CRITICAL FIX ================= */
-    if (!courses.length) {
-      console.log("⚠ No courses → skipping DB query");
-
-      return NextResponse.json([]); // no crash
-    }
-
-    /* ================= 2️⃣ FETCH COURSE TITLES ================= */
-    const slugs = courses.map((c: any) => c.course_slug).filter(Boolean);
+    const slugs = courses.map((course: any) => course?.course_slug).filter(Boolean);
 
     if (!slugs.length) {
       return NextResponse.json([]);
@@ -58,60 +97,69 @@ export async function GET(req: Request) {
 
     const [courseDetails]: any = await db.query(
       `
-      SELECT slug AS course_slug, name AS course_title
+      SELECT slug AS course_slug, name AS course_title, courseId, courseData
       FROM courses
       WHERE slug IN (?)
       `,
       [slugs]
     );
 
-    const titleMap: any = {};
-    courseDetails.forEach((c: any) => {
-      titleMap[c.course_slug] = c.course_title;
+    const detailMap = new Map<string, any>();
+    courseDetails.forEach((course: any) => {
+      detailMap.set(normalizeSlug(course.course_slug), course);
     });
 
     const progressKeys = Object.keys(progressData);
 
-    /* ================= 3️⃣ PROCESS ================= */
     const formatted = courses.map((course: any, index: number) => {
-      const slug = course.course_slug;
-      const modules = course.modules || [];
+      const slug = String(course?.course_slug ?? "");
+      const normalized = normalizeSlug(slug);
+      const detail = detailMap.get(normalized);
+      const courseData = safeJsonParse<any>(detail?.courseData, {});
+      const totalLessons = countLessonsFromCourseData(courseData);
+      const fallbackTotal = Array.isArray(course?.modules) ? course.modules.length : 0;
+      const totalUnits = totalLessons > 0 ? totalLessons : fallbackTotal;
 
-      const totalModules = modules.length;
+      const progressKeyCandidates = [
+        course?.courseId,
+        course?.course_id,
+        detail?.courseId,
+        detail?.course_id,
+        slug,
+        progressKeys[index],
+      ]
+        .filter(Boolean)
+        .map((value) => String(value));
 
-      const progressKey = progressKeys[index];
-      const courseProgress = progressData[progressKey] || {};
-
-      const completedModuleSet = new Set(
-        Object.keys(courseProgress)
-          .filter((k) => courseProgress[k]?.completed)
-          .map((k) => k.split("_SUB")[0])
+      const matchedProgressKey = progressKeyCandidates.find(
+        (key) => progressData[key]
       );
-
-      const completedModules = completedModuleSet.size;
-
+      const courseProgress = matchedProgressKey ? progressData[matchedProgressKey] : {};
+      const completedUnitsRaw = countCompletedLessons(courseProgress);
+      const completedUnits =
+        totalUnits > 0
+          ? Math.min(completedUnitsRaw, totalUnits)
+          : completedUnitsRaw;
       const progress =
-        totalModules > 0
-          ? Math.round((completedModules / totalModules) * 100)
+        totalUnits > 0
+          ? Math.min(100, Math.round((completedUnits / totalUnits) * 100))
           : 0;
 
       return {
         course_slug: slug,
-        course_title: titleMap[slug] || slug,
-        total_modules: totalModules,
-        completed_modules: completedModules,
+        course_title: detail?.course_title || slug,
+        total_modules: totalUnits,
+        completed_modules: completedUnits,
+        total_lessons: totalLessons > 0 ? totalUnits : undefined,
+        completed_lessons: totalLessons > 0 ? completedUnits : undefined,
         progress,
         last_accessed: new Date().toISOString(),
       };
     });
 
-    console.log("✅ FINAL:", formatted);
-    console.log("=================================");
-
     return NextResponse.json(formatted);
-
   } catch (error) {
-    console.error("❌ ERROR:", error);
+    console.error("Student dashboard course progress error:", error);
 
     return NextResponse.json(
       { error: "Failed to fetch courses" },

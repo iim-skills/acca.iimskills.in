@@ -57,6 +57,12 @@ export type Module = {
   name?: string;
   description?: string;
   submodules?: Submodule[];
+  studyMaterial?: CourseMaterial;
+};
+
+export type CourseMaterial = {
+  name?: string;
+  fileUrl?: string;
 };
 
 export type Course = {
@@ -64,6 +70,7 @@ export type Course = {
   slug?: string;
   name?: string;
   description?: string;
+  fullStudyMaterial?: CourseMaterial;
   modules?: Module[];
 };
 
@@ -919,6 +926,31 @@ const isSuperUnlockedUser = currentUserEmail === SUPER_UNLOCK_EMAIL;
     });
   };
 
+  const buildMergedProgressEntry = (
+    globalIndex: number,
+    positionSeconds: number,
+    completed = false,
+    durationSeconds = 0
+  ): ProgressEntry => {
+    const existing = serverProgressRef.current.get(globalIndex);
+    const existingPosition = Math.floor(
+      Math.max(0, existing?.positionSeconds ?? 0)
+    );
+    const safePosition = Math.floor(Math.max(0, positionSeconds));
+    const safeDuration = Math.floor(Math.max(0, durationSeconds));
+    const alreadyCompleted =
+      Boolean(existing?.completed) || completedSetRef.current.has(globalIndex);
+    const nextCompleted = alreadyCompleted || completed;
+    const nextPosition = nextCompleted
+      ? Math.max(existingPosition, safePosition, safeDuration, 1)
+      : Math.max(existingPosition, safePosition);
+
+    return {
+      positionSeconds: nextPosition,
+      completed: nextCompleted,
+    };
+  };
+
   const saveToServer = (
     globalIndex: number,
     positionSeconds: number,
@@ -940,17 +972,19 @@ const isSuperUnlockedUser = currentUserEmail === SUPER_UNLOCK_EMAIL;
           typeof merg?.duration === "number" && merg.duration > 0
             ? Math.floor(merg.duration)
             : 0;
-
-        const alreadyCompleted =
-          serverProgressRef.current.get(globalIndex)?.completed ||
-          completedSetRef.current.has(globalIndex);
+        const nextEntry = buildMergedProgressEntry(
+          globalIndex,
+          positionSeconds,
+          completed,
+          dur
+        );
 
         const payload: any = {
           userKey: getUserKey(),
           courseId,
-          positionSeconds: Math.floor(Math.max(0, positionSeconds)),
+          positionSeconds: nextEntry.positionSeconds,
           duration: dur,
-          completed: alreadyCompleted ? true : completed,
+          completed: nextEntry.completed,
           videoId: fv?.videoId ?? `idx_${globalIndex}`,
         };
 
@@ -963,13 +997,21 @@ const isSuperUnlockedUser = currentUserEmail === SUPER_UNLOCK_EMAIL;
         if (res.ok) {
           setServerProgress((prev) => {
             const n = new Map(prev);
+            const existing = prev.get(globalIndex);
+            const existingPosition = Math.floor(
+              Math.max(0, existing?.positionSeconds ?? 0)
+            );
             const alreadyCompleted =
-              prev.get(globalIndex)?.completed ||
+              Boolean(existing?.completed) ||
               completedSetRef.current.has(globalIndex);
+            const mergedCompleted = alreadyCompleted || nextEntry.completed;
+            const mergedPosition = mergedCompleted
+              ? Math.max(existingPosition, nextEntry.positionSeconds, dur, 1)
+              : Math.max(existingPosition, nextEntry.positionSeconds);
 
             n.set(globalIndex, {
-              positionSeconds: Math.floor(Math.max(0, positionSeconds)),
-              completed: alreadyCompleted ? true : completed,
+              positionSeconds: mergedPosition,
+              completed: mergedCompleted,
             });
             return n;
           });
@@ -1127,7 +1169,11 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
     null
   );
 
-  const handleVideoCompleted = (globalIndex: number) => {
+  const handleVideoCompleted = (
+    globalIndex: number,
+    positionSeconds?: number,
+    durationSeconds?: number
+  ) => {
     const live = new Set<number>(completedSetRef.current);
     live.add(globalIndex);
     markGuestCompleted(globalIndex);
@@ -1136,12 +1182,23 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
     if (!fv) return;
 
     const merg = getMergedForKey(fv.key);
-    const dur = merg?.duration ? Math.floor(merg.duration) : 0;
-
-    const pos =
-      dur > 0
-        ? dur
-        : serverProgressRef.current.get(globalIndex)?.positionSeconds ?? 0;
+    const mergedDuration =
+      typeof merg?.duration === "number" && merg.duration > 0
+        ? Math.floor(merg.duration)
+        : 0;
+    const dur =
+      typeof durationSeconds === "number" && durationSeconds > 0
+        ? Math.floor(durationSeconds)
+        : mergedDuration;
+    const eventPosition =
+      typeof positionSeconds === "number" && positionSeconds > 0
+        ? Math.floor(positionSeconds)
+        : 0;
+    const pos = Math.max(
+      eventPosition,
+      dur,
+      serverProgressRef.current.get(globalIndex)?.positionSeconds ?? 0
+    );
 
     reportProgress(globalIndex, pos, true);
 
@@ -1207,9 +1264,19 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
 
   useEffect(() => {
     const h = (e: Event) => {
-      const ce = e as CustomEvent<{ globalIndex: number }>;
-      if (typeof ce.detail?.globalIndex === "number")
-        handleVideoCompleted(ce.detail.globalIndex);
+      const ce = e as CustomEvent<{
+        globalIndex: number;
+        positionSeconds?: number;
+        durationSeconds?: number;
+      }>;
+
+      if (typeof ce.detail?.globalIndex === "number") {
+        handleVideoCompleted(
+          ce.detail.globalIndex,
+          ce.detail.positionSeconds,
+          ce.detail.durationSeconds
+        );
+      }
     };
 
     window.addEventListener("lms_video_completed", h as EventListener);
@@ -1227,8 +1294,16 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
       if (
         typeof globalIndex === "number" &&
         typeof positionSeconds === "number"
-      )
+      ) {
+        if (
+          serverProgressRef.current.get(globalIndex)?.completed ||
+          completedSetRef.current.has(globalIndex)
+        ) {
+          return;
+        }
+
         saveToServer(globalIndex, positionSeconds, false);
+      }
     };
 
     window.addEventListener("lms_save_progress", h as EventListener);
@@ -1414,6 +1489,18 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
 
       {/* Modules */}
       <div className="space-y-5">
+        {course.fullStudyMaterial?.fileUrl && (
+          <a
+            href={course.fullStudyMaterial.fileUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="w-fit mb-1 py-2.5 px-5 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 rounded-xl font-bold text-sm transition-all shadow-sm flex items-center justify-center gap-2"
+          >
+            <FileText size={18} />
+            {course.fullStudyMaterial.name || "Full Study Material"}
+          </a>
+        )}
+
         {course.modules.map((module, moduleIndex) => {
           const moduleKey = module.moduleId ?? `module-${moduleIndex}`;
           const gradient = gradients[moduleIndex % gradients.length];
@@ -1449,8 +1536,20 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
             Boolean(module.moduleId) && !moduleUnlocked;
 
           return (
-            <div
-              key={moduleKey}
+            <div key={moduleKey} className="flex flex-col gap-3">
+              {module.studyMaterial?.fileUrl && (
+                <a
+                  href={module.studyMaterial.fileUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="w-fit py-2.5 px-5 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 rounded-xl font-bold text-sm transition-all shadow-sm flex items-center justify-center gap-2"
+                >
+                  <FileText size={18} />
+                  Full Study Material
+                </a>
+              )}
+
+              <div
               className={`transition-all duration-300 rounded-2xl border ${
                 isOpen
                   ? "bg-white border-indigo-100 shadow-md ring-1 ring-indigo-50"
@@ -1520,6 +1619,7 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
               {/* submodules */}
               {isOpen && (
                 <div className="border-t border-gray-100 divide-y divide-gray-50">
+
                   {module.submodules?.length ? (
                     module.submodules.map((sub, subIndex) => {
                       const moduleKeyPart =
@@ -2071,6 +2171,7 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
                   )}
                 </div>
               )}
+            </div>
             </div>
           );
         })}

@@ -29,6 +29,8 @@ type Course = {
   course_title: string;
   total_modules?: number;
   completed_modules?: number;
+  total_lessons?: number;
+  completed_lessons?: number;
   progress?: number;
   last_accessed?: string;
 };
@@ -89,9 +91,11 @@ export default function StudentPage() {
   /* ================= HELPERS ================= */
   const getChartProgress = (course: Course) => {
     const directProgress = typeof course.progress === "number" ? course.progress : 0;
+    const completedCount = course.completed_lessons ?? course.completed_modules ?? 0;
+    const totalCount = course.total_lessons ?? course.total_modules ?? 0;
     const moduleProgress =
-      course.total_modules && course.total_modules > 0
-        ? Math.round(((course.completed_modules || 0) / course.total_modules) * 100)
+      totalCount > 0
+        ? Math.round((completedCount / totalCount) * 100)
         : 0;
     const value = directProgress > 0 ? directProgress : moduleProgress;
     return Math.max(5, Math.min(100, value));
@@ -468,6 +472,14 @@ export default function StudentPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                     {myCourses.map((course) => {
                       const progress = getChartProgress(course);
+                      const completedCount =
+                        course.completed_lessons ?? course.completed_modules ?? 0;
+                      const totalCount =
+                        course.total_lessons ?? course.total_modules ?? 0;
+                      const progressLabel =
+                        typeof course.total_lessons === "number"
+                          ? "Lessons"
+                          : "Modules";
                       const meta = courseMeta[course.course_slug?.toLowerCase().trim()] || {
                         gradient: "from-slate-400 to-slate-600",
                         color: "bg-slate-500",
@@ -512,7 +524,7 @@ export default function StudentPage() {
 
                           <div className="flex items-center gap-3 mt-6 pt-6 border-t border-slate-50">
                             <span className="text-[10px] font-black text-slate-400 uppercase">
-                              {course.completed_modules || 0}/{course.total_modules || 0} Modules
+                              {completedCount}/{totalCount} {progressLabel}
                             </span>
                             <div className="w-1 h-1 rounded-full bg-slate-200"></div>
                             <span

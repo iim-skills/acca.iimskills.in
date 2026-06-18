@@ -117,7 +117,18 @@ export default function App({
       if (videoCompleteFiredRef.current) return;
       videoCompleteFiredRef.current = true;
       const globalIndex = (window as any).currentVideoIndex ?? 0;
-      window.dispatchEvent(new CustomEvent("lms_video_completed", { detail: { globalIndex } }));
+      const durationSeconds = Number.isFinite(video.duration)
+        ? Math.floor(Math.max(0, video.duration))
+        : 0;
+      const positionSeconds = durationSeconds > 0
+        ? durationSeconds
+        : Math.floor(Math.max(0, video.currentTime));
+
+      window.dispatchEvent(
+        new CustomEvent("lms_video_completed", {
+          detail: { globalIndex, positionSeconds, durationSeconds },
+        })
+      );
       window.dispatchEvent(new CustomEvent("lms_request_next_item", {
         detail: { type: "video", moduleId: activeModuleId, submoduleTitle: activeSubmoduleTitle },
       }));
@@ -145,7 +156,10 @@ export default function App({
 
       if (video.currentTime / video.duration > 0.95) { 
         fireCompleted(); 
+        return;
       }
+
+      if (videoCompleteFiredRef.current) return;
 
       const now = Date.now();
       if (now - lastSavedAt > 10_000) {

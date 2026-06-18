@@ -20,6 +20,10 @@ type Student = {
 
 type Course = {
   name: string;
+  fullStudyMaterial?: {
+    name?: string;
+    fileUrl?: string;
+  };
   modules: any[];
 };
 
