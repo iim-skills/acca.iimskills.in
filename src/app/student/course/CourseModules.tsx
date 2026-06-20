@@ -57,12 +57,6 @@ export type Module = {
   name?: string;
   description?: string;
   submodules?: Submodule[];
-  studyMaterial?: CourseMaterial;
-};
-
-export type CourseMaterial = {
-  name?: string;
-  fileUrl?: string;
 };
 
 export type Course = {
@@ -70,7 +64,6 @@ export type Course = {
   slug?: string;
   name?: string;
   description?: string;
-  fullStudyMaterial?: CourseMaterial;
   modules?: Module[];
 };
 
@@ -1489,18 +1482,6 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
 
       {/* Modules */}
       <div className="space-y-5">
-        {course.fullStudyMaterial?.fileUrl && (
-          <a
-            href={course.fullStudyMaterial.fileUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="w-fit mb-1 py-2.5 px-5 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 rounded-xl font-bold text-sm transition-all shadow-sm flex items-center justify-center gap-2"
-          >
-            <FileText size={18} />
-            {course.fullStudyMaterial.name || "Full Study Material"}
-          </a>
-        )}
-
         {course.modules.map((module, moduleIndex) => {
           const moduleKey = module.moduleId ?? `module-${moduleIndex}`;
           const gradient = gradients[moduleIndex % gradients.length];
@@ -1536,20 +1517,8 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
             Boolean(module.moduleId) && !moduleUnlocked;
 
           return (
-            <div key={moduleKey} className="flex flex-col gap-3">
-              {module.studyMaterial?.fileUrl && (
-                <a
-                  href={module.studyMaterial.fileUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="w-fit py-2.5 px-5 bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 rounded-xl font-bold text-sm transition-all shadow-sm flex items-center justify-center gap-2"
-                >
-                  <FileText size={18} />
-                  Full Study Material
-                </a>
-              )}
-
-              <div
+            <div
+              key={moduleKey}
               className={`transition-all duration-300 rounded-2xl border ${
                 isOpen
                   ? "bg-white border-indigo-100 shadow-md ring-1 ring-indigo-50"
@@ -1619,7 +1588,6 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
               {/* submodules */}
               {isOpen && (
                 <div className="border-t border-gray-100 divide-y divide-gray-50">
-
                   {module.submodules?.length ? (
                     module.submodules.map((sub, subIndex) => {
                       const moduleKeyPart =
@@ -2171,7 +2139,6 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
                   )}
                 </div>
               )}
-            </div>
             </div>
           );
         })}

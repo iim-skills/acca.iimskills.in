@@ -43,15 +43,16 @@ export default function App(): React.ReactElement {
     <div className="flex min-h-screen bg-[#f8f9fd]">
       {/* LEFT SIDE */}
       <div className="hidden md:flex w-1/2 bg-[#f3eaea] items-center justify-center p-10">
-        <div className="text-center max-w-sm">
+        <div className="text-center p-4 max-w-sm">
+        <div className="m-auto text-center w-55 h-55 mb-8 flex items-center bg-white rounded-full max-w-sm">
           <img
-            src="https://cdn-icons-png.flaticon.com/512/295/295128.png"
-            alt="illustration"
-            className="w-64 mx-auto mb-8 opacity-90"
+            src="https://iimskills.com/iim-skills-official-logo.png"
+            alt="iim-skills-acca-course"
+            className="w-44 mx-auto opacity-90"
           />
-
+</div>
           <h1 className="text-3xl font-bold text-gray-800 mb-3">
-            ACCA Professional Education
+            IIM SKILLS ACCA Professional Education
           </h1>
 
           <p className="text-gray-500 text-sm leading-relaxed">

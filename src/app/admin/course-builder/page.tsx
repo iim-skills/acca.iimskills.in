@@ -65,7 +65,6 @@ export default function CourseBuilderPage() {
             slug: c.slug,
             courseData: {
               modules: c.courseData?.modules || c.modules || [],
-              fullStudyMaterial: c.courseData?.fullStudyMaterial,
             },
           }))
         : [];

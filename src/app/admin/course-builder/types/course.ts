@@ -48,11 +48,6 @@ export type Module = {
   liveSessions?: LiveSession[];
 };
 
-export type CourseMaterial = {
-  name: string;
-  fileUrl: string;
-};
-
 /* ================= COURSE ================= */
 
 export type Course = {
@@ -62,7 +57,6 @@ export type Course = {
 
   courseData: {
     modules: Module[];
-    fullStudyMaterial?: CourseMaterial;
   };
 };
 
