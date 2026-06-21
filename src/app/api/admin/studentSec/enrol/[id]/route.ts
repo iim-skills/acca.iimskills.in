@@ -32,7 +32,7 @@ export async function GET(
     conn = await pool.getConnection();
 
     const [rows]: any = await conn.execute(
-      `SELECT id,name,email,phone,courses
+      `SELECT id,name,email,phone,student_type,courses
        FROM lms_students
        WHERE id = ?
        LIMIT 1`,
@@ -91,6 +91,10 @@ export async function PUT(
     const name = body?.name ?? null;
     const email = body?.email ?? null;
     const phone = body?.phone ?? null;
+    const rawStudentType = String(body?.studentType ?? "")
+      .trim()
+      .toLowerCase();
+    const studentType = rawStudentType === "free" ? "free" : "paid";
 
     const courseSlugs: string[] = Array.isArray(body?.courseSlugs)
       ? body.courseSlugs
@@ -175,6 +179,7 @@ export async function PUT(
         name = COALESCE(?, name),
         email = COALESCE(?, email),
         phone = COALESCE(?, phone),
+        student_type = ?,
         courses = ?,
         updated_at = NOW()
       WHERE id = ?
@@ -183,6 +188,7 @@ export async function PUT(
         name,
         email,
         phone,
+        studentType,
         JSON.stringify(updatedCourses),
         id,
       ]

@@ -1,6 +1,27 @@
 import { NextResponse } from "next/server";
 import db from "../../../../../lib/db";
 
+function normalizeFullStudyMaterial(rawMaterial: any) {
+  if (!rawMaterial || typeof rawMaterial !== "object") {
+    return undefined;
+  }
+
+  const fileUrl = String(
+    rawMaterial.fileUrl ?? rawMaterial.url ?? ""
+  ).trim();
+
+  if (!fileUrl) {
+    return undefined;
+  }
+
+  return {
+    name:
+      String(rawMaterial.name ?? "Full Study Material").trim() ||
+      "Full Study Material",
+    fileUrl,
+  };
+}
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
@@ -180,6 +201,9 @@ export async function GET(req: Request) {
       courseId: courseRow.courseId ?? courseRow.course_id ?? courseRow.id ?? null,
       slug,
       name: courseRow.name ?? courseRow.course_title ?? courseRow.title ?? null,
+      fullStudyMaterial: normalizeFullStudyMaterial(
+        courseData.fullStudyMaterial
+      ),
       modules: normalizedModules
     };
 

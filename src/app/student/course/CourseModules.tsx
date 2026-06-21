@@ -59,11 +59,17 @@ export type Module = {
   submodules?: Submodule[];
 };
 
+export type CourseMaterial = {
+  name?: string;
+  fileUrl?: string;
+};
+
 export type Course = {
   courseId?: string;
   slug?: string;
   name?: string;
   description?: string;
+  fullStudyMaterial?: CourseMaterial;
   modules?: Module[];
 };
 
@@ -1588,6 +1594,28 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
               {/* submodules */}
               {isOpen && (
                 <div className="border-t border-gray-100 divide-y divide-gray-50">
+                  {course?.fullStudyMaterial?.fileUrl ? (
+                    <div className="p-3">
+                      <a
+                        href={course.fullStudyMaterial.fileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center justify-between gap-3 p-3 rounded-xl border transition-all bg-white border-slate-100 hover:border-indigo-100 text-slate-600 hover:text-indigo-600 cursor-pointer"
+                      >
+                        <div className="flex items-center gap-3">
+                          <FileText size={16} className="text-emerald-500" />
+                          <p className="text-xs font-semibold">
+                            Full Study Material
+                          </p>
+                        </div>
+
+                        <span className="text-red-500 text-[14px] font-bold rounded">
+                          <ExternalLink size={18} />
+                        </span>
+                      </a>
+                    </div>
+                  ) : null}
+
                   {module.submodules?.length ? (
                     module.submodules.map((sub, subIndex) => {
                       const moduleKeyPart =

@@ -34,6 +34,7 @@ type Student = {
   name: string;
   email: string;
   phone?: string | null;
+  studentType?: string | null;
   courses?: CourseItem[];
   course?: string;
   assignedModules?: string[];
@@ -154,6 +155,7 @@ export default function LMSPage() {
               name: s.name ?? "",
               email: s.email ?? "",
               phone: s.phone ?? null,
+              studentType: s.studentType ?? s.student_type ?? null,
               courses,
               status: s.status ?? s.state ?? "in_progress",
               enrolledAt: s.enrolledAt ?? s.enrolled_at ?? null,
@@ -365,6 +367,17 @@ export default function LMSPage() {
                                 <div className="font-bold text-slate-800 text-sm truncate">
                                   {s.name}
                                 </div>
+                                <div className="mt-1">
+                                  <span
+                                    className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-widest ${
+                                      (s.studentType ?? "").toLowerCase() === "free"
+                                        ? "bg-emerald-50 text-emerald-700"
+                                        : "bg-indigo-50 text-indigo-700"
+                                    }`}
+                                  >
+                                    {(s.studentType ?? "paid").toString().toUpperCase()}
+                                  </span>
+                                </div>
                                 <div className="flex items-center gap-1 text-slate-400 text-xs truncate">
                                   <Mail size={12} /> {s.email}
                                 </div>
@@ -549,6 +562,17 @@ export default function LMSPage() {
                               <h3 className="font-bold text-slate-900 text-base sm:text-lg leading-tight truncate">
                                 {s.name}
                               </h3>
+                              <div className="mt-1">
+                                <span
+                                  className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-widest ${
+                                    (s.studentType ?? "").toLowerCase() === "free"
+                                      ? "bg-emerald-50 text-emerald-700"
+                                      : "bg-indigo-50 text-indigo-700"
+                                  }`}
+                                >
+                                  {(s.studentType ?? "paid").toString().toUpperCase()}
+                                </span>
+                              </div>
                               <div className="flex items-center gap-1 text-slate-400 text-[11px] sm:text-xs truncate">
                                 <Mail size={12} /> {s.email}
                               </div>

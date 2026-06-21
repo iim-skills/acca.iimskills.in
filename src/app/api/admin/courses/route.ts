@@ -25,6 +25,22 @@ function normalizeCourseData(data: any) {
       : [],
   }));
 
+  const rawMaterial = data.fullStudyMaterial;
+  const fileUrl = String(
+    rawMaterial?.fileUrl ?? rawMaterial?.url ?? ""
+  ).trim();
+
+  if (fileUrl) {
+    data.fullStudyMaterial = {
+      name:
+        String(rawMaterial?.name ?? "Full Study Material").trim() ||
+        "Full Study Material",
+      fileUrl,
+    };
+  } else {
+    delete data.fullStudyMaterial;
+  }
+
   return data;
 }
 

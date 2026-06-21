@@ -39,6 +39,7 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [studentType, setStudentType] = useState<"paid" | "free">("paid");
 
   const [courses, setCourses] = useState<any[]>([]);
   const [selectedCourseSlugs, setSelectedCourseSlugs] = useState<string[]>([]);
@@ -188,6 +189,7 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
         const course = getCourseBySlug(slug);
         const payload = {
           name, email, phone,
+          studentType,
           courseSlug: course.slug,
           courseTitle: course.name,
           modules: selectedModulesMap[slug],
@@ -259,6 +261,39 @@ export default function EnrolModal({ onClose, adminName }: EnrolModalProps) {
                   {/* FIXED: Changed setName to setPhone */}
                   <input type="tel" placeholder="9876543210" value={phone} onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
                     className="w-full pl-24 pr-4 py-4 bg-slate-50 border-2 border-transparent rounded-2xl focus:bg-white focus:border-indigo-600 outline-none transition-all placeholder:text-slate-400 font-medium tracking-widest" />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <label className="text-sm font-bold text-slate-700 ml-1">User Type</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setStudentType("paid")}
+                    className={`rounded-2xl border-2 px-4 py-4 text-left transition-all ${
+                      studentType === "paid"
+                        ? "border-indigo-600 bg-indigo-50 shadow-sm"
+                        : "border-slate-200 bg-white hover:border-slate-300"
+                    }`}
+                  >
+                    <div className="text-xs font-black uppercase tracking-widest text-slate-400">Paid</div>
+                    <div className="mt-1 text-sm font-bold text-slate-900">Full paid learner</div>
+                    <p className="mt-2 text-xs text-slate-500">Admin assigns the course and modules as a paid student.</p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setStudentType("free")}
+                    className={`rounded-2xl border-2 px-4 py-4 text-left transition-all ${
+                      studentType === "free"
+                        ? "border-emerald-600 bg-emerald-50 shadow-sm"
+                        : "border-slate-200 bg-white hover:border-slate-300"
+                    }`}
+                  >
+                    <div className="text-xs font-black uppercase tracking-widest text-slate-400">Free</div>
+                    <div className="mt-1 text-sm font-bold text-slate-900">Admin managed free user</div>
+                    <p className="mt-2 text-xs text-slate-500">The student stays free, but you can still assign the exact modules below.</p>
+                  </button>
                 </div>
               </div>
             </div>

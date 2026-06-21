@@ -26,7 +26,7 @@ export async function GET() {
   try {
 
     const [rows]: any = await pool.query(`
-      SELECT id,name,email,phone,courses,status,enrolled_at
+      SELECT id,name,email,phone,courses,status,enrolled_at,student_type
       FROM lms_students
       ORDER BY id DESC
     `);
@@ -70,6 +70,7 @@ export async function GET() {
         email: r.email,
         phone: r.phone,
         courses,
+        studentType: r.student_type ?? null,
         status: r.status || "active",
         enrolledAt: r.enrolled_at,
       };

@@ -57,6 +57,7 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [studentType, setStudentType] = useState<"paid" | "free">("paid");
   const [editingField, setEditingField] = useState<"name" | "email" | "phone" | null>(null);
 
   /* ===== courses & modules ===== */
@@ -139,6 +140,7 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
         setName(stud.name ?? "");
         setEmail(stud.email ?? "");
         setPhone(stud.phone ?? "");
+        setStudentType(stud.student_type === "free" ? "free" : "paid");
 
         /* ===== selected courses & modules =====
            prefer stud.courses (array stored by enrol API). Fallback to legacy fields.
@@ -337,6 +339,7 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
         name,
         email,
         phone,
+        studentType,
       };
 
       const res = await fetch(`/api/admin/studentSec/enrol/${studentId}`, {
@@ -452,6 +455,37 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
                           onClick={() => setEditingField(editingField === "phone" ? null : "phone")}
                         >
                           <Pencil size={14} />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-slate-500 ml-1">User Type</label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => setStudentType("paid")}
+                          className={`rounded-xl border px-4 py-3 text-left transition-all ${
+                            studentType === "paid"
+                              ? "border-indigo-500 bg-indigo-50 text-indigo-900"
+                              : "border-slate-200 bg-white text-slate-700"
+                          }`}
+                        >
+                          <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Paid</div>
+                          <div className="mt-1 text-sm font-bold">Full access user</div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setStudentType("free")}
+                          className={`rounded-xl border px-4 py-3 text-left transition-all ${
+                            studentType === "free"
+                              ? "border-emerald-500 bg-emerald-50 text-emerald-900"
+                              : "border-slate-200 bg-white text-slate-700"
+                          }`}
+                        >
+                          <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Free</div>
+                          <div className="mt-1 text-sm font-bold">Admin-managed free user</div>
                         </button>
                       </div>
                     </div>

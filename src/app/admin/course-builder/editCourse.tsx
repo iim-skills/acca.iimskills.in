@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Pencil,
   ChevronDown,
@@ -12,6 +12,9 @@ import {
   FileText,
   X,
   Save,
+  Upload,
+  Loader2,
+  ExternalLink,
 } from "lucide-react";
 
 import AddSessionQuiz from "./addSessionQuiz";
@@ -42,6 +45,12 @@ export default function EditCourse({
   const [editingLiveSessionId, setEditingLiveSessionId] = useState<string | null>(null);
   const [showLiveSessionForm, setShowLiveSessionForm] = useState<boolean>(false);
 
+  // Per-module Full Study Material files pending upload, keyed by moduleId
+  const [moduleStudyMaterialFiles, setModuleStudyMaterialFiles] = useState<
+    Record<string, File>
+  >({});
+  const [savingCourse, setSavingCourse] = useState(false);
+
   const [dragItem, setDragItem] = useState<{
     moduleId: string;
     submoduleId: string;
@@ -50,8 +59,15 @@ export default function EditCourse({
 
   const [editingItemKey, setEditingItemKey] = useState<string | null>(null);
 
+  // One hidden file input per module, keyed by moduleId
+  const fullStudyMaterialInputRefs = useRef<Record<string, HTMLInputElement | null>>(
+    {}
+  );
+
   useEffect(() => {
     setEditingCourse(course);
+    setModuleStudyMaterialFiles({});
+    setSavingCourse(false);
   }, [course]);
 
   if (!isOpen || !editingCourse) return null;
@@ -114,6 +130,13 @@ export default function EditCourse({
     updateModules(
       editingCourse.courseData.modules.filter((m) => m.moduleId !== moduleId)
     );
+
+    setModuleStudyMaterialFiles((prev) => {
+      if (!(moduleId in prev)) return prev;
+      const next = { ...prev };
+      delete next[moduleId];
+      return next;
+    });
   };
 
   const updateModuleName = (moduleId: string, name: string) => {
@@ -122,6 +145,23 @@ export default function EditCourse({
         m.moduleId === moduleId ? { ...m, name } : m
       )
     );
+  };
+
+  /* ================= MODULE FULL STUDY MATERIAL ================= */
+
+  const handleModuleStudyMaterialChange = (
+    moduleId: string,
+    file: File | null
+  ) => {
+    setModuleStudyMaterialFiles((prev) => {
+      const next = { ...prev };
+      if (file) {
+        next[moduleId] = file;
+      } else {
+        delete next[moduleId];
+      }
+      return next;
+    });
   };
 
   /* ================= SUBMODULE ================= */
@@ -342,21 +382,88 @@ export default function EditCourse({
 
   const saveCourse = async () => {
     try {
+      if (!editingCourse) return;
+
+      setSavingCourse(true);
+
+      let modules = editingCourse.courseData.modules;
+
+      const moduleIdsToUpload = Object.keys(moduleStudyMaterialFiles);
+
+      // Upload any pending per-module Full Study Material PDFs first
+      if (moduleIdsToUpload.length > 0) {
+        const uploadedByModule: Record<
+          string,
+          { name: string; fileUrl: string }
+        > = {};
+
+        for (const moduleId of moduleIdsToUpload) {
+          const file = moduleStudyMaterialFiles[moduleId];
+          if (!file) continue;
+
+          const formData = new FormData();
+          formData.append("file", file);
+          formData.append("name", file.name);
+
+          const uploadRes = await fetch("/api/admin/upload-course-material", {
+            method: "POST",
+            body: formData,
+          });
+
+          const uploadData = await uploadRes.json();
+
+          if (!uploadRes.ok) {
+            throw new Error(
+              uploadData?.message ||
+                `Failed to upload Full Study Material for module "${
+                  modules.find((m) => m.moduleId === moduleId)?.name ||
+                  moduleId
+                }"`
+            );
+          }
+
+          uploadedByModule[moduleId] = {
+            name:
+              String(uploadData?.name || file.name || "Full Study Material").trim() ||
+              "Full Study Material",
+            fileUrl: String(uploadData?.fileUrl || "").trim(),
+          };
+        }
+
+        modules = modules.map((m) =>
+          uploadedByModule[m.moduleId]
+            ? { ...m, fullStudyMaterial: uploadedByModule[m.moduleId] }
+            : m
+        );
+      }
+
+      const courseToSave = {
+        ...editingCourse,
+        courseData: { ...editingCourse.courseData, modules },
+      };
+
+      setEditingCourse(courseToSave);
+
       const res = await fetch("/api/admin/update-course", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(editingCourse),
+        body: JSON.stringify(courseToSave),
       });
 
       if (!res.ok) {
         throw new Error("Failed to save course");
       }
 
+      setModuleStudyMaterialFiles({});
       onSaved();
       onClose();
     } catch (error) {
       console.error("Save error:", error);
-      alert("Failed to save course");
+      alert(
+        error instanceof Error ? error.message : "Failed to save course"
+      );
+    } finally {
+      setSavingCourse(false);
     }
   };
 
@@ -424,8 +531,9 @@ export default function EditCourse({
               >
                 <Plus size={16} /> Add Module
               </button>
-            {editingCourse.courseData.modules.map((m) => {
+            {editingCourse.courseData.modules.map((m: any) => {
               const isOpen = openModules.includes(m.moduleId);
+              const pendingFile = moduleStudyMaterialFiles[m.moduleId];
 
               return (
                 <div
@@ -495,16 +603,83 @@ export default function EditCourse({
                     </div>
                   </div>
 
-                  {/* SUBMODULES */}
+                  {/* MODULE BODY: Full Study Material + SUBMODULES */}
                   {isOpen && (
                     <div className="p-4 bg-white space-y-4">
+                      {/* FULL STUDY MATERIAL (per module) */}
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <h4 className="font-semibold text-slate-800 text-sm">
+                              Full Study Material
+                            </h4>
+                            <p className="text-xs text-slate-500 mt-1">
+                              Upload one PDF for this module. It will appear
+                              above the submodules on the student course page.
+                            </p>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              fullStudyMaterialInputRefs.current[
+                                m.moduleId
+                              ]?.click()
+                            }
+                            className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white transition-all hover:bg-indigo-700 shrink-0"
+                          >
+                            <Upload size={14} />
+                            Add Full Study Material
+                          </button>
+                        </div>
+
+                        <input
+                          ref={(el) => {
+                            fullStudyMaterialInputRefs.current[m.moduleId] = el;
+                          }}
+                          type="file"
+                          accept="application/pdf"
+                          onChange={(e) =>
+                            handleModuleStudyMaterialChange(
+                              m.moduleId,
+                              e.target.files?.[0] ?? null
+                            )
+                          }
+                          className="hidden"
+                        />
+
+                        {pendingFile && (
+                          <div className="rounded-xl border border-indigo-100 bg-white px-3 py-2 text-xs text-indigo-700">
+                            Selected PDF: {pendingFile.name}
+                          </div>
+                        )}
+
+                        {m.fullStudyMaterial?.fileUrl && (
+                          <a
+                            href={m.fullStudyMaterial.fileUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-2 text-xs font-medium text-indigo-600 hover:text-indigo-800"
+                          >
+                            <FileText size={14} />
+                            Current uploaded PDF
+                            <ExternalLink size={12} />
+                          </a>
+                        )}
+
+                        <p className="text-[11px] text-slate-400">
+                          The selected PDF will upload when you click Save
+                          Changes.
+                        </p>
+                      </div>
+
                       {m.submodules.length === 0 && (
                         <p className="text-center text-sm text-slate-400 py-2 italic">
                           No submodules yet
                         </p>
                       )}
 
-                      {m.submodules.map((s) => (
+                      {m.submodules.map((s: any) => (
                         <div
                           key={s.submoduleId}
                           className="bg-slate-50/50 border border-slate-100 p-4 rounded-lg group/sub"
@@ -881,10 +1056,15 @@ export default function EditCourse({
           </button>
           <button
             onClick={saveCourse}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-indigo-200 transition-all active:scale-95"
+            disabled={savingCourse}
+            className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-70 text-white px-8 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-indigo-200 transition-all active:scale-95"
           >
-            <Save size={18} />
-            Save Changes
+            {savingCourse ? (
+              <Loader2 size={18} className="animate-spin" />
+            ) : (
+              <Save size={18} />
+            )}
+            {savingCourse ? "Saving..." : "Save Changes"}
           </button>
         </div>
       </div>
