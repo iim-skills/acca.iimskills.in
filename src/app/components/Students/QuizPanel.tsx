@@ -44,11 +44,14 @@ export default function QuizPanel({
   onClose,
   onSubmit,
   onSubmitted,
+  email,
 }: Props) {
   const questions = useMemo(() => normalizeQuestions(quiz), [quiz]);
 
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string>("");
 
   if (!questions.length) {
     return (
@@ -70,28 +73,64 @@ export default function QuizPanel({
     }));
   };
 
-  const handleSubmit = () => {
-    const result = {
-      submittedAt: Date.now(),
-      quizId: quiz?.id,
-      answers,
-      total: questions.length,
-    };
-
-    try {
-      onSubmit?.(result);
-      onSubmitted?.(result);
-    } catch (err) {
-      console.warn(err);
+  const handleSubmit = async () => {
+    if (!quiz?.id) {
+      setSubmitError("Quiz ID is missing. Please reload and try again.");
+      return;
     }
 
+    if (!email) {
+      setSubmitError("Student email is missing. Please log in again.");
+      return;
+    }
+
+    setSubmitting(true);
+    setSubmitError("");
+
     try {
-      window.dispatchEvent(
-        new CustomEvent("lms_quiz_submitted", {
-          detail: { quizId: quiz?.id, result },
-        })
-      );
-    } catch {}
+      const res = await fetch("/api/admin/quizzes/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          quizId: quiz.id,
+          answers,
+        }),
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(
+          data?.error || data?.message || "Quiz submission failed"
+        );
+      }
+
+      const result = {
+        ...data,
+        quizId: quiz.id,
+        answers,
+      };
+
+      try {
+        onSubmit?.(result);
+        onSubmitted?.(result);
+      } catch (err) {
+        console.warn(err);
+      }
+
+      try {
+        window.dispatchEvent(
+          new CustomEvent("lms_quiz_submitted", {
+            detail: { quizId: quiz?.id, result },
+          })
+        );
+      } catch {}
+    } catch (err: any) {
+      setSubmitError(err?.message || "Quiz submission failed");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   /* ================= UI ================= */
@@ -140,9 +179,9 @@ export default function QuizPanel({
 
         {/* QUESTION CARD */}
         <div className="space-y-4">
-          <div className="text-base font-semibold text-gray-800 leading-snug">
-            {current.text || "Please answer the following:"}
-          </div>
+        <div className="text-base font-semibold text-gray-800 leading-snug">
+          {current.text || "Please answer the following:"}
+        </div>
 
           {/* MCQ OPTIONS */}
           {current.type === "MCQ" && (
@@ -193,11 +232,17 @@ export default function QuizPanel({
           )}
         </div>
 
+        {submitError && (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {submitError}
+          </div>
+        )}
+
         {/* ACTIONS */}
         <div className="flex items-center justify-between pt-6 border-t border-gray-50">
           <button
             onClick={() => setIndex((i) => Math.max(0, i - 1))}
-            disabled={index === 0}
+            disabled={index === 0 || submitting}
             className="flex items-center gap-2 px-5 py-2.5 text-sm font-semibold text-gray-600 hover:text-gray-900 disabled:opacity-30 transition-all"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -209,6 +254,7 @@ export default function QuizPanel({
           {!isLast ? (
             <button
               onClick={() => setIndex((i) => i + 1)}
+              disabled={submitting}
               className="flex items-center gap-2 rounded-xl bg-indigo-600 px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-indigo-200 hover:bg-indigo-700 active:scale-95 transition-all"
             >
               Next
@@ -219,9 +265,10 @@ export default function QuizPanel({
           ) : (
             <button
               onClick={handleSubmit}
-              className="rounded-xl bg-emerald-600 px-8 py-2.5 text-sm font-bold text-white shadow-lg shadow-emerald-200 hover:bg-emerald-700 active:scale-95 transition-all"
+              disabled={submitting}
+              className="rounded-xl bg-emerald-600 px-8 py-2.5 text-sm font-bold text-white shadow-lg shadow-emerald-200 hover:bg-emerald-700 active:scale-95 transition-all disabled:cursor-not-allowed disabled:opacity-70"
             >
-              Finish & Submit
+              {submitting ? "Submitting..." : "Finish & Submit"}
             </button>
           )}
         </div>

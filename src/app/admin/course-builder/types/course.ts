@@ -46,6 +46,7 @@ export type Module = {
   name: string;
   submodules: Submodule[];
   liveSessions?: LiveSession[];
+  fullStudyMaterial?: CourseMaterial;
 };
 
 export type CourseMaterial = {

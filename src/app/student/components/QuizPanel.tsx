@@ -49,11 +49,14 @@ export default function QuizPanel({
   onClose,
   onSubmit,
   onSubmitted,
+  email,
 }: Props) {
   const questions = useMemo(() => normalizeQuestions(quiz), [quiz]);
 
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
 
   if (!questions.length) {
     return (
@@ -74,30 +77,64 @@ export default function QuizPanel({
     }));
   };
 
-  const handleSubmit = () => {
-    const result = {
-      submittedAt: Date.now(),
-      quizId: quiz?.id,
-      answers,
-      total: questions.length,
-    };
-
-    // call both (safe)
-    try {
-      onSubmit?.(result);
-      onSubmitted?.(result);
-    } catch (err) {
-      console.warn(err);
+  const handleSubmit = async () => {
+    if (!quiz?.id) {
+      setSubmitError("Quiz ID is missing. Please reload and try again.");
+      return;
     }
 
-    // LMS event
+    if (!email) {
+      setSubmitError("Student email is missing. Please log in again.");
+      return;
+    }
+
+    setSubmitting(true);
+    setSubmitError("");
+
     try {
-      window.dispatchEvent(
-        new CustomEvent("lms_quiz_submitted", {
-          detail: { quizId: quiz?.id, result },
-        })
-      );
-    } catch {}
+      const res = await fetch("/api/admin/quizzes/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          quizId: quiz.id,
+          answers,
+        }),
+      });
+
+      const data = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        throw new Error(
+          data?.error || data?.message || "Quiz submission failed"
+        );
+      }
+
+      const result = {
+        ...data,
+        quizId: quiz.id,
+        answers,
+      };
+
+      try {
+        onSubmit?.(result);
+        onSubmitted?.(result);
+      } catch (err) {
+        console.warn(err);
+      }
+
+      try {
+        window.dispatchEvent(
+          new CustomEvent("lms_quiz_submitted", {
+            detail: { quizId: quiz?.id, result },
+          })
+        );
+      } catch {}
+    } catch (err: any) {
+      setSubmitError(err?.message || "Quiz submission failed");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   /* ================= UI ================= */
@@ -159,11 +196,17 @@ export default function QuizPanel({
         )}
       </div>
 
+      {submitError && (
+        <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {submitError}
+        </div>
+      )}
+
       {/* ACTIONS */}
       <div className="flex justify-between">
         <button
           onClick={() => setIndex((i) => Math.max(0, i - 1))}
-          disabled={index === 0}
+          disabled={index === 0 || submitting}
           className="rounded bg-gray-100 px-3 py-2 disabled:opacity-50"
         >
           Prev
@@ -172,16 +215,18 @@ export default function QuizPanel({
         {!isLast ? (
           <button
             onClick={() => setIndex((i) => i + 1)}
-            className="rounded bg-indigo-600 px-3 py-2 text-white"
+            disabled={submitting}
+            className="rounded bg-indigo-600 px-3 py-2 text-white disabled:opacity-70"
           >
             Next
           </button>
         ) : (
           <button
             onClick={handleSubmit}
-            className="rounded bg-green-600 px-3 py-2 text-white"
+            disabled={submitting}
+            className="rounded bg-green-600 px-3 py-2 text-white disabled:opacity-70"
           >
-            Submit Quiz
+            {submitting ? "Submitting..." : "Submit Quiz"}
           </button>
         )}
       </div>

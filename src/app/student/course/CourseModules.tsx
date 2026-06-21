@@ -56,6 +56,7 @@ export type Module = {
   slug?: string;
   name?: string;
   description?: string;
+  fullStudyMaterial?: CourseMaterial;
   submodules?: Submodule[];
 };
 
@@ -1493,6 +1494,12 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
           const gradient = gradients[moduleIndex % gradients.length];
           const moduleKeyStr = String(moduleKey);
           const isOpen = openModuleId === moduleKey;
+          const moduleStudyMaterial =
+            module.fullStudyMaterial?.fileUrl
+              ? module.fullStudyMaterial
+              : moduleIndex === 0
+              ? course?.fullStudyMaterial
+              : undefined;
 
           const hasAssignments = allowedSet.size > 0;
 
@@ -1594,10 +1601,10 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
               {/* submodules */}
               {isOpen && (
                 <div className="border-t border-gray-100 divide-y divide-gray-50">
-                  {course?.fullStudyMaterial?.fileUrl ? (
+                  {moduleStudyMaterial?.fileUrl ? (
                     <div className="p-3">
                       <a
-                        href={course.fullStudyMaterial.fileUrl}
+                        href={moduleStudyMaterial.fileUrl}
                         target="_blank"
                         rel="noreferrer"
                         className="flex items-center justify-between gap-3 p-3 rounded-xl border transition-all bg-white border-slate-100 hover:border-indigo-100 text-slate-600 hover:text-indigo-600 cursor-pointer"
@@ -1605,7 +1612,8 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
                         <div className="flex items-center gap-3">
                           <FileText size={16} className="text-emerald-500" />
                           <p className="text-xs font-semibold">
-                            Full Study Material
+                            {moduleStudyMaterial.name ||
+                              "Full Study Material"}
                           </p>
                         </div>
 

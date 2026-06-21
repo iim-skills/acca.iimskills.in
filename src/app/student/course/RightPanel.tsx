@@ -223,12 +223,24 @@ export default function App({
           if (user && user === ok) score++;
         });
       }
-      const passed = total > 0 ? score / total >= 0.6 : false;
-      setQuizResult({ score, total, passed, quizId: activeQuiz?.id });
+      const passed =
+        typeof result?.passed === "boolean"
+          ? result.passed
+          : typeof result?.result === "string"
+          ? String(result.result).toUpperCase() === "PASS"
+          : total > 0
+          ? score / total >= 0.6
+          : false;
+      setQuizResult({
+        score,
+        total,
+        passed,
+        quizId: result?.quizId ?? activeQuiz?.id,
+      });
       setAdvanceCountdown(5);
       window.dispatchEvent(new CustomEvent("lms_quiz_submitted", {
         detail: {
-          quizId: activeQuiz?.id, moduleId: activeModuleId,
+          quizId: result?.quizId ?? activeQuiz?.id, moduleId: activeModuleId,
           submoduleTitle: activeSubmoduleTitle,
           result: { score, total, passed },
         },

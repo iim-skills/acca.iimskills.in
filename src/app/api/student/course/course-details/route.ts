@@ -192,6 +192,9 @@ export async function GET(req: Request) {
         moduleId: mod.moduleId ?? mod.module_id ?? mod.id ?? null,
         name: mod.name ?? mod.moduleName ?? mod.title ?? null,
         description: mod.description ?? null,
+        fullStudyMaterial: normalizeFullStudyMaterial(
+          mod.fullStudyMaterial
+        ),
         submodules: normalizedSubmodules,
         liveSessions: Array.isArray(mod.liveSessions) ? mod.liveSessions : (mod.live_sessions ?? [])
       };

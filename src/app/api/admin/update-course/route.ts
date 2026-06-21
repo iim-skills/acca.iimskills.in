@@ -3,6 +3,25 @@
 import { NextResponse } from "next/server";
 import db from "../../../../lib/db";
 
+function normalizeFullStudyMaterial(rawMaterial: any) {
+  if (!rawMaterial || typeof rawMaterial !== "object") {
+    return undefined;
+  }
+
+  const fileUrl = String(rawMaterial?.fileUrl ?? rawMaterial?.url ?? "").trim();
+
+  if (!fileUrl) {
+    return undefined;
+  }
+
+  return {
+    name:
+      String(rawMaterial?.name ?? "Full Study Material").trim() ||
+      "Full Study Material",
+    fileUrl,
+  };
+}
+
 /* ======================================================
    Normalize Submodule Items (VIDEO + QUIZ + PDF)
 ====================================================== */
@@ -172,21 +191,19 @@ function normalizeCourseData(data: any) {
       return out;
     });
 
+    const moduleMaterial = normalizeFullStudyMaterial(m.fullStudyMaterial);
+    if (moduleMaterial) {
+      m.fullStudyMaterial = moduleMaterial;
+    } else {
+      delete m.fullStudyMaterial;
+    }
+
     return m;
   });
 
-  const rawMaterial = data.fullStudyMaterial;
-  const fileUrl = String(
-    rawMaterial?.fileUrl ?? rawMaterial?.url ?? ""
-  ).trim();
-
-  if (fileUrl) {
-    data.fullStudyMaterial = {
-      name:
-        String(rawMaterial?.name ?? "Full Study Material").trim() ||
-        "Full Study Material",
-      fileUrl,
-    };
+  const courseMaterial = normalizeFullStudyMaterial(data.fullStudyMaterial);
+  if (courseMaterial) {
+    data.fullStudyMaterial = courseMaterial;
   } else {
     delete data.fullStudyMaterial;
   }

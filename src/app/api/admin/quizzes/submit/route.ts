@@ -1,164 +1,628 @@
 import { NextResponse } from "next/server";
-import db from "../../../../../lib/db";
-import nodemailer from "nodemailer";
 import { google } from "googleapis";
+import db from "../../../../../lib/db";
+import { sendMail } from "../../../../../lib/email";
 
-/* =========================
-   GOOGLE SHEETS INIT
-========================= */
+export const runtime = "nodejs";
 
-let sheets: any = null;
+type FlatQuestion = {
+  id: string;
+  type?: string;
+  text?: string;
+  answer?: string;
+  correctAnswer?: string;
+  correctOption?: string;
+  correctOptionId?: string;
+  options?: Array<{ id?: string; text?: string }>;
+};
 
-try {
-  const base64Key = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+type SheetSyncResult =
+  | { success: true; mode: "updated" | "appended"; rowNumber?: number }
+  | { success: false; skipped?: boolean; reason?: string; error?: string };
 
-  if (base64Key) {
-    const serviceAccount = JSON.parse(
-      Buffer.from(base64Key, "base64").toString("utf8")
+let cachedSheetsClient: any | null = null;
+let sheetsInitAttempted = false;
+
+function safeJsonParse(value: any, fallback: any) {
+  try {
+    if (value == null || value === "") return fallback;
+    if (typeof value === "string") return JSON.parse(value);
+    return value;
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeString(value: any) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function escapeHtml(value: any) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function flattenQuizQuestions(questions: any[] = []): FlatQuestion[] {
+  const flat: FlatQuestion[] = [];
+
+  questions.forEach((question: any, index: number) => {
+    const isPassage =
+      String(question?.type ?? "").toUpperCase() === "PASSAGE";
+    const nestedQuestions = Array.isArray(question?.passageQuestions)
+      ? question.passageQuestions
+      : Array.isArray(question?.questions)
+      ? question.questions
+      : [];
+
+    if (isPassage && nestedQuestions.length > 0) {
+      nestedQuestions.forEach((subQuestion: any, subIndex: number) => {
+        flat.push({
+          ...subQuestion,
+          id:
+            String(
+              subQuestion?.id ??
+                `${question?.id ?? `passage-${index}`}-${subIndex}`
+            ) || `passage-${index}-${subIndex}`,
+        });
+      });
+      return;
+    }
+
+    flat.push({
+      ...question,
+      id: String(question?.id ?? `q-${index}`) || `q-${index}`,
+    });
+  });
+
+  return flat;
+}
+
+function normalizeSubmittedAnswers(input: any) {
+  if (Array.isArray(input)) {
+    return input.reduce<Record<string, string>>((acc, item: any, index) => {
+      const questionId = String(
+        item?.questionId ?? item?.id ?? item?.qid ?? `q-${index}`
+      ).trim();
+      const answerValue =
+        item?.answer ??
+        item?.selectedOptionId ??
+        item?.selected ??
+        item?.value ??
+        item?.userAnswer ??
+        "";
+
+      if (questionId && answerValue !== "") {
+        acc[questionId] = String(answerValue);
+      }
+
+      return acc;
+    }, {});
+  }
+
+  if (input && typeof input === "object") {
+    return Object.entries(input).reduce<Record<string, string>>(
+      (acc, [key, value]) => {
+        if (value === undefined || value === null || value === "") {
+          return acc;
+        }
+
+        acc[String(key)] = String(value);
+        return acc;
+      },
+      {}
     );
+  }
 
+  return {};
+}
+
+function getCorrectAnswerValue(question: FlatQuestion) {
+  return (
+    question?.correctOptionId ??
+    question?.correctOption ??
+    question?.correctAnswer ??
+    question?.answer ??
+    ""
+  );
+}
+
+function isAnswerCorrect(question: FlatQuestion, submittedAnswer: any) {
+  const submitted = normalizeString(submittedAnswer);
+  if (!submitted) return false;
+
+  const correctValue = getCorrectAnswerValue(question);
+  const correct = normalizeString(correctValue);
+
+  if (correct && submitted === correct) {
+    return true;
+  }
+
+  const options = Array.isArray(question?.options) ? question.options : [];
+  const submittedOption = options.find(
+    (option) =>
+      normalizeString(option?.id) === submitted ||
+      normalizeString(option?.text) === submitted
+  );
+  const correctOption = options.find(
+    (option) =>
+      normalizeString(option?.id) === correct ||
+      normalizeString(option?.text) === correct
+  );
+
+  if (submittedOption && correctOption) {
+    return (
+      normalizeString(submittedOption.id) === normalizeString(correctOption.id) ||
+      normalizeString(submittedOption.text) ===
+        normalizeString(correctOption.text)
+    );
+  }
+
+  if (submittedOption && correct) {
+    return normalizeString(submittedOption.text) === correct;
+  }
+
+  if (correctOption) {
+    return normalizeString(correctOption.text) === submitted;
+  }
+
+  return false;
+}
+
+function resolveSubmittedAnswerLabel(
+  question: FlatQuestion,
+  submittedAnswer: any
+) {
+  const rawValue = String(submittedAnswer ?? "").trim();
+  if (!rawValue) {
+    return "Not answered";
+  }
+
+  const normalizedRaw = normalizeString(rawValue);
+  const options = Array.isArray(question?.options) ? question.options : [];
+
+  const matchedOption = options.find(
+    (option) =>
+      normalizeString(option?.id) === normalizedRaw ||
+      normalizeString(option?.text) === normalizedRaw
+  );
+
+  if (matchedOption?.text) {
+    return String(matchedOption.text).trim();
+  }
+
+  return rawValue;
+}
+
+function formatAnswersForSheet(
+  questions: FlatQuestion[],
+  submittedAnswers: Record<string, string>
+) {
+  if (!questions.length) {
+    return JSON.stringify(submittedAnswers);
+  }
+
+  return questions
+    .map((question, index) => {
+      const answerLabel = resolveSubmittedAnswerLabel(
+        question,
+        submittedAnswers[question.id]
+      );
+      return `Q${index + 1} - ${answerLabel}`;
+    })
+    .join("\n");
+}
+
+function getMysqlTimestamp(date = new Date()) {
+  return (
+    date.getFullYear() +
+    "-" +
+    String(date.getMonth() + 1).padStart(2, "0") +
+    "-" +
+    String(date.getDate()).padStart(2, "0") +
+    " " +
+    String(date.getHours()).padStart(2, "0") +
+    ":" +
+    String(date.getMinutes()).padStart(2, "0") +
+    ":" +
+    String(date.getSeconds()).padStart(2, "0")
+  );
+}
+
+function parseServiceAccountCredentials() {
+  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_KEY?.trim();
+  if (!raw) {
+    return null;
+  }
+
+  const candidates = [raw];
+
+  try {
+    const decoded = Buffer.from(raw, "base64").toString("utf8").trim();
+    if (decoded && decoded !== raw) {
+      candidates.push(decoded);
+    }
+  } catch {
+    // Ignore invalid base64 and try the raw value.
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+
+      if (parsed?.private_key) {
+        parsed.private_key = String(parsed.private_key).replace(/\\n/g, "\n");
+      }
+
+      if (parsed?.client_email && parsed?.private_key) {
+        return parsed;
+      }
+    } catch {
+      // Try the next candidate.
+    }
+  }
+
+  return null;
+}
+
+function getSheetsClient() {
+  if (sheetsInitAttempted) {
+    return cachedSheetsClient;
+  }
+
+  sheetsInitAttempted = true;
+
+  const credentials = parseServiceAccountCredentials();
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID?.trim();
+
+  if (!credentials) {
+    console.warn(
+      "Quiz submit -> Google Sheets disabled: GOOGLE_SERVICE_ACCOUNT_KEY invalid or missing"
+    );
+    return null;
+  }
+
+  if (!spreadsheetId) {
+    console.warn(
+      "Quiz submit -> Google Sheets disabled: GOOGLE_SHEET_ID missing"
+    );
+    return null;
+  }
+
+  try {
     const auth = new google.auth.GoogleAuth({
-      credentials: serviceAccount,
+      credentials,
       scopes: ["https://www.googleapis.com/auth/spreadsheets"],
     });
 
-    sheets = google.sheets({ version: "v4", auth });
-    console.log("Sheets -> initialized");
-  } else {
-    console.error("Sheets -> GOOGLE_SERVICE_ACCOUNT_KEY missing");
+    cachedSheetsClient = google.sheets({ version: "v4", auth });
+    return cachedSheetsClient;
+  } catch (error) {
+    console.error("Quiz submit -> Google Sheets init failed:", error);
+    cachedSheetsClient = null;
+    return null;
   }
-} catch (err) {
-  console.error("Sheets -> initialization failed", err);
 }
 
-/* =========================
-   QUIZ SUBMIT API
-========================= */
+function getSheetRange() {
+  return process.env.GOOGLE_SHEET_RANGE?.trim() || "Sheet1!A:J";
+}
+
+function getSheetName(range: string) {
+  return range.includes("!") ? range.split("!")[0] : range;
+}
+
+async function syncSubmissionToSheet(payload: {
+  submittedAt: string;
+  quizId: string;
+  studentName: string;
+  studentEmail: string;
+  score: number;
+  total: number;
+  attempted: number;
+  percent: number;
+  result: string;
+  answersForSheet: string;
+}): Promise<SheetSyncResult> {
+  const sheets = getSheetsClient();
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID?.trim();
+
+  if (!sheets || !spreadsheetId) {
+    return {
+      success: false,
+      skipped: true,
+      reason: "Google Sheets is not configured",
+    };
+  }
+
+  const range = getSheetRange();
+  const sheetName = getSheetName(range);
+  const rowValues = [[
+    payload.submittedAt,
+    payload.quizId,
+    payload.studentName,
+    payload.studentEmail,
+    payload.score,
+    payload.total,
+    payload.attempted,
+    Number(payload.percent.toFixed(2)),
+    payload.result,
+    payload.answersForSheet,
+  ]];
+
+  try {
+    const existingResponse = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range,
+    });
+
+    const rows: any[] = Array.isArray(existingResponse?.data?.values)
+      ? existingResponse.data.values
+      : [];
+
+    const targetIndex = rows.findIndex((row) => {
+      const rowQuizId = String(row?.[1] ?? "").trim();
+      const rowEmail = String(row?.[3] ?? "").trim().toLowerCase();
+
+      return (
+        rowQuizId === String(payload.quizId).trim() &&
+        rowEmail === String(payload.studentEmail).trim().toLowerCase()
+      );
+    });
+
+    if (targetIndex >= 0) {
+      const rowNumber = targetIndex + 1;
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${sheetName}!A${rowNumber}:J${rowNumber}`,
+        valueInputOption: "RAW",
+        requestBody: { values: rowValues },
+      });
+
+      return { success: true, mode: "updated", rowNumber };
+    }
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId,
+      range,
+      valueInputOption: "RAW",
+      insertDataOption: "INSERT_ROWS",
+      requestBody: { values: rowValues },
+    });
+
+    return { success: true, mode: "appended" };
+  } catch (error: any) {
+    console.error("Quiz submit -> Google Sheets sync failed:", {
+      message: error?.message,
+      response: error?.response?.data ?? error?.errors ?? null,
+    });
+
+    return {
+      success: false,
+      error: error?.message || "Google Sheets sync failed",
+    };
+  }
+}
+
+async function insertNotification(title: string, message: string) {
+  try {
+    await db.query(
+      "INSERT INTO notifications (title, message) VALUES (?, ?)",
+      [title, message]
+    );
+    return true;
+  } catch (error) {
+    console.error("Quiz submit -> notification insert failed:", error);
+    return false;
+  }
+}
+
+async function sendQuizEmails(payload: {
+  adminEmail?: string;
+  studentEmail: string;
+  studentName: string;
+  quizId: string;
+  quizName: string;
+  score: number;
+  total: number;
+  attempted: number;
+  percent: number;
+  result: string;
+  submittedAt: string;
+}) {
+  const adminResults = {
+    sent: false,
+    reason: "",
+  };
+  const userResults = {
+    sent: false,
+    reason: "",
+  };
+
+  const summaryHtml = `
+    <div style="font-family:Arial,sans-serif;font-size:14px;color:#111827;">
+      <p><strong>Student:</strong> ${escapeHtml(payload.studentName)}</p>
+      <p><strong>Email:</strong> ${escapeHtml(payload.studentEmail)}</p>
+      <p><strong>Quiz:</strong> ${escapeHtml(payload.quizName)} (#${escapeHtml(
+    payload.quizId
+  )})</p>
+      <p><strong>Score:</strong> ${payload.score}/${payload.total}</p>
+      <p><strong>Attempted:</strong> ${payload.attempted}</p>
+      <p><strong>Percent:</strong> ${payload.percent.toFixed(2)}%</p>
+      <p><strong>Result:</strong> ${escapeHtml(payload.result)}</p>
+      <p><strong>Submitted At:</strong> ${escapeHtml(payload.submittedAt)}</p>
+    </div>
+  `;
+
+  if (payload.adminEmail) {
+    try {
+      await sendMail(
+        payload.adminEmail,
+        `Quiz Submission: ${payload.quizName}`,
+        `
+          <div style="font-family:Arial,sans-serif;font-size:14px;color:#111827;">
+            <h2 style="margin:0 0 12px;">New or Updated Quiz Submission</h2>
+            ${summaryHtml}
+          </div>
+        `
+      );
+      adminResults.sent = true;
+    } catch (error: any) {
+      adminResults.reason = error?.message || "Admin email failed";
+      console.error("Quiz submit -> admin email failed:", error);
+    }
+  } else {
+    adminResults.reason = "ADMIN_EMAIL missing";
+  }
+
+  try {
+    await sendMail(
+      payload.studentEmail,
+      `Quiz Result: ${payload.quizName}`,
+      `
+        <div style="font-family:Arial,sans-serif;font-size:14px;color:#111827;">
+          <p>Hi <strong>${escapeHtml(payload.studentName)}</strong>,</p>
+          <p>Your quiz submission has been recorded successfully.</p>
+          ${summaryHtml}
+          <p>Keep going. You're making solid progress.</p>
+        </div>
+      `
+    );
+    userResults.sent = true;
+  } catch (error: any) {
+    userResults.reason = error?.message || "Student email failed";
+    console.error("Quiz submit -> student email failed:", error);
+  }
+
+  return { admin: adminResults, student: userResults };
+}
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    console.log(">>> Quiz submit payload:", JSON.stringify(body));
+    const email = String(body?.email ?? "").trim().toLowerCase();
+    const quizId = String(body?.quizId ?? "").trim();
+    const rawAnswers = body?.answers;
 
-    const { email, quizId, answers } = body;
-
-    /* =========================
-       VALIDATION
-    ========================= */
-
-    if (!email || !quizId || !answers || !Array.isArray(answers)) {
-      console.error("Validation failed - invalid request data", { email, quizId, answersType: Array.isArray(answers) ? "array" : typeof answers });
-      return NextResponse.json({ error: "Invalid request data" }, { status: 400 });
+    if (!email || !quizId || rawAnswers == null) {
+      return NextResponse.json(
+        { error: "Email, quizId and answers are required" },
+        { status: 400 }
+      );
     }
 
-    const total = answers.length;
-    if (total === 0) {
-      console.error("Validation failed - empty answers array");
-      return NextResponse.json({ error: "No answers submitted" }, { status: 400 });
+    const normalizedAnswers = normalizeSubmittedAnswers(rawAnswers);
+    const submittedAnswerCount = Object.keys(normalizedAnswers).length;
+
+    if (submittedAnswerCount === 0 && !Array.isArray(rawAnswers)) {
+      return NextResponse.json(
+        { error: "No answers submitted" },
+        { status: 400 }
+      );
     }
 
-    /* =========================
-       FETCH STUDENT
-    ========================= */
+    const [studentRows]: any = await db.query(
+      "SELECT name FROM lms_students WHERE email = ? LIMIT 1",
+      [email]
+    );
 
-    console.log("DB -> fetching student for:", email);
-    const [studentRows]: any = await db.query(`SELECT name FROM lms_students WHERE email=? LIMIT 1`, [email]);
+    const studentName =
+      String(studentRows?.[0]?.name ?? body?.name ?? email.split("@")[0] ?? "")
+        .trim() || "Student";
 
-    if (!studentRows?.length) {
-      console.error("Student not found for email:", email);
-      return NextResponse.json({ error: "Student not found" }, { status: 404 });
-    }
+    const [quizRows]: any = await db.query(
+      "SELECT id, name, questions, passing_percent FROM quizzes WHERE id = ? LIMIT 1",
+      [quizId]
+    );
 
-    const studentName = studentRows[0].name;
-    console.log("Student found:", studentName);
-
-    /* =========================
-       FETCH QUIZ (exists)
-    ========================= */
-
-    console.log("DB -> fetching quiz:", quizId);
-    const [quizRows]: any = await db.query(`SELECT id FROM quizzes WHERE id=?`, [quizId]);
     if (!quizRows?.length) {
-      console.error("Quiz not found id:", quizId);
       return NextResponse.json({ error: "Quiz not found" }, { status: 404 });
     }
 
-    /* =========================
-       CALCULATE SCORE & RESULT
-    ========================= */
+    const quizRow = quizRows[0];
+    const quizName =
+      String(quizRow?.name ?? body?.quizName ?? `Quiz ${quizId}`).trim() ||
+      `Quiz ${quizId}`;
+    const passingPercent = Number(quizRow?.passing_percent ?? 75) || 75;
+    const parsedQuestions = safeJsonParse(quizRow?.questions, []);
+    const flatQuestions = flattenQuizQuestions(
+      Array.isArray(parsedQuestions) ? parsedQuestions : []
+    );
 
+    let total = flatQuestions.length;
     let correct = 0;
-    try {
-      answers.forEach((item: any) => {
-        if (item && item.correct === true) correct++;
-      });
-    } catch (err) {
-      console.error("Error while iterating answers:", err);
-      return NextResponse.json({ error: "Invalid answers format" }, { status: 400 });
+
+    if (flatQuestions.length > 0) {
+      correct = flatQuestions.reduce((count, question) => {
+        return count + (isAnswerCorrect(question, normalizedAnswers[question.id]) ? 1 : 0);
+      }, 0);
+    } else if (Array.isArray(rawAnswers)) {
+      total = rawAnswers.length;
+      correct = rawAnswers.reduce(
+        (count: number, item: any) => count + (item?.correct === true ? 1 : 0),
+        0
+      );
+    } else {
+      total = submittedAnswerCount;
     }
 
-    const attempted = total;
+    if (total === 0) {
+      return NextResponse.json(
+        { error: "Quiz has no scorable questions" },
+        { status: 400 }
+      );
+    }
+
+    const attempted =
+      flatQuestions.length > 0
+        ? flatQuestions.reduce((count, question) => {
+            return count + (normalizedAnswers[question.id] ? 1 : 0);
+          }, 0)
+        : submittedAnswerCount;
     const percent = (correct / total) * 100;
+    const passed = percent >= passingPercent;
+    const result = passed ? "PASS" : "FAIL";
+    const submittedAt = getMysqlTimestamp();
 
-    const PASS_PERCENT = 75;
-    const result = percent >= PASS_PERCENT ? "PASS" : "FAIL";
+    const answersToStore =
+      rawAnswers && typeof rawAnswers === "object"
+        ? rawAnswers
+        : normalizedAnswers;
+    const answersForSheet = formatAnswersForSheet(
+      flatQuestions,
+      normalizedAnswers
+    );
 
-    console.log("Calculated result:", { correct, total, attempted, percent: Number(percent.toFixed(2)), result });
-
-    /* =========================
-       MYSQL DATE FORMAT
-    ========================= */
-
-    const now = new Date();
-    const mysqlDate =
-      now.getFullYear() + "-" +
-      String(now.getMonth() + 1).padStart(2, "0") + "-" +
-      String(now.getDate()).padStart(2, "0") + " " +
-      String(now.getHours()).padStart(2, "0") + ":" +
-      String(now.getMinutes()).padStart(2, "0") + ":" +
-      String(now.getSeconds()).padStart(2, "0");
-
-    /* =========================
-       CHECK EXISTING SUBMISSION
-    ========================= */
-
-    console.log("DB -> checking existing submission for quiz and student");
     const [existingRows]: any = await db.query(
-      `SELECT id FROM quiz_submissions WHERE quiz_id=? AND student_email=? LIMIT 1`,
+      "SELECT id FROM quiz_submissions WHERE quiz_id = ? AND student_email = ? LIMIT 1",
       [quizId, email]
     );
 
     if (existingRows?.length) {
-      // update existing row (overwrite fields)
-      const existingId = existingRows[0].id;
-      console.log("DB -> updating existing submission id:", existingId);
-
       await db.query(
         `UPDATE quiz_submissions
-         SET score = ?, total_questions = ?, attempted_questions = ?, percent = ?, result = ?, answers = ?, submitted_at = ?
+         SET student_name = ?, score = ?, total_questions = ?, attempted_questions = ?, percent = ?, result = ?, answers = ?, submitted_at = ?
          WHERE id = ?`,
         [
+          studentName,
           correct,
           total,
           attempted,
           percent,
           result,
-          JSON.stringify(answers),
-          mysqlDate,
-          existingId
+          JSON.stringify(answersToStore),
+          submittedAt,
+          existingRows[0].id,
         ]
       );
-
-      console.log("DB -> update success for id:", existingId);
-
-      // proceed to emailing + sheets logging below using current values
     } else {
-      // insert new row
-      console.log("DB -> inserting new submission");
       await db.query(
         `INSERT INTO quiz_submissions
          (quiz_id, student_name, student_email, score, total_questions, attempted_questions, percent, result, answers, submitted_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           quizId,
           studentName,
@@ -168,131 +632,74 @@ export async function POST(req: Request) {
           attempted,
           percent,
           result,
-          JSON.stringify(answers),
-          mysqlDate
+          JSON.stringify(answersToStore),
+          submittedAt,
         ]
       );
-      console.log("DB -> insert success");
     }
 
-    /* =========================
-       SEND EMAILS (non-blocking failure tolerant)
-    ========================= */
-
-    const transporter = nodemailer.createTransport({
-      host: process.env.MAIL_HOST,
-      port: Number(process.env.MAIL_PORT),
-      secure: false,
-      auth: { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS }
-    });
-
-    const adminText = `
-Student: ${studentName}
-Email: ${email}
-
-Quiz ID: ${quizId}
-
-Score: ${correct}/${total}
-Percent: ${percent.toFixed(2)}%
-Result: ${result}
-Submitted At: ${mysqlDate}
-`;
-
-    try {
-      console.log("Email -> sending admin email to", process.env.ADMIN_EMAIL);
-      const infoAdmin = await transporter.sendMail({
-        from: `"LMS Quiz" <${process.env.MAIL_USER}>`,
-        to: process.env.ADMIN_EMAIL,
-        subject: "New/Updated Quiz Submission",
-        text: adminText
-      });
-      console.log("Email -> admin send result:", { messageId: infoAdmin?.messageId, accepted: infoAdmin?.accepted });
-    } catch (mailErr) {
-      console.error("Email -> admin send failed:", mailErr);
-    }
-
-    try {
-      console.log("Email -> sending student email to", email);
-      const infoStudent = await transporter.sendMail({
-        from: `"LMS Quiz" <${process.env.MAIL_USER}>`,
-        to: email,
-        subject: "Quiz Result",
-        text: `
-Hi ${studentName},
-
-Your quiz has been recorded.
-
-Score: ${correct}/${total}
-Percentage: ${percent.toFixed(2)}%
-Result: ${result}
-
-Submitted At: ${mysqlDate}
-
-Thank you.
-`
-      });
-      console.log("Email -> student send result:", { messageId: infoStudent?.messageId, accepted: infoStudent?.accepted });
-    } catch (mailErr2) {
-      console.error("Email -> student send failed:", mailErr2);
-    }
-
-    /* =========================
-       GOOGLE SHEETS APPEND (history of attempts)
-    ========================= */
-
-    if (sheets) {
-      try {
-        const sheetValues = [[
-          mysqlDate,
-          quizId,
-          studentName,
-          email,
-          correct,
-          total,
-          attempted,
-          Number(percent.toFixed(2)),
-          result,
-          JSON.stringify(answers)
-        ]];
-
-        console.log("Sheets -> appending values:", sheetValues);
-
-        const appendRes = await sheets.spreadsheets.values.append({
-          spreadsheetId: process.env.GOOGLE_SHEET_ID!,
-          range: process.env.GOOGLE_SHEET_RANGE || "Sheet1!A:Z",
-          valueInputOption: "RAW",
-          requestBody: { values: sheetValues }
-        });
-
-        console.log("Sheets -> append response:", appendRes?.data ?? appendRes);
-      } catch (sheetErr: any) {
-        console.error("Sheets -> append error:", {
-          message: sheetErr?.message,
-          response: sheetErr?.response?.data ?? sheetErr?.errors ?? null,
-          stack: sheetErr?.stack
-        });
-      }
-    }
-
-    /* =========================
-       FINAL RESPONSE
-    ========================= */
+    const [sheetSync, emailSync, notificationSaved] = await Promise.all([
+      syncSubmissionToSheet({
+        submittedAt,
+        quizId,
+        studentName,
+        studentEmail: email,
+        score: correct,
+        total,
+        attempted,
+        percent,
+        result,
+        answersForSheet,
+      }),
+      sendQuizEmails({
+        adminEmail: process.env.ADMIN_EMAIL?.trim(),
+        studentEmail: email,
+        studentName,
+        quizId,
+        quizName,
+        score: correct,
+        total,
+        attempted,
+        percent,
+        result,
+        submittedAt,
+      }),
+      insertNotification(
+        `Quiz Submitted: ${quizName}`,
+        `${studentName} scored ${correct}/${total} (${percent.toFixed(
+          2
+        )}%) and ${result.toLowerCase()}ed ${quizName}.`
+      ),
+    ]);
 
     return NextResponse.json({
       success: true,
+      quizId,
+      quizName,
       score: correct,
       total,
       attempted,
       percent: Number(percent.toFixed(2)),
-      result
+      passingPercent,
+      result,
+      passed,
+      submittedAt,
+      sheetSync,
+      notificationSaved,
+      emailSync,
     });
-  } catch (error) {
-    console.error("Quiz Submit Error - top level:", {
-      message: (error as any)?.message ?? String(error),
-      stack: (error as any)?.stack ?? null,
-      raw: error
+  } catch (error: any) {
+    console.error("Quiz submit -> top-level failure:", {
+      message: error?.message,
+      stack: error?.stack,
     });
 
-    return NextResponse.json({ error: "Server error", details: String(error) }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: "Server error",
+        details: error?.message || String(error),
+      },
+      { status: 500 }
+    );
   }
 }

@@ -400,10 +400,16 @@ export default function EditCourse({
         for (const moduleId of moduleIdsToUpload) {
           const file = moduleStudyMaterialFiles[moduleId];
           if (!file) continue;
+          const currentModule =
+            modules.find((m) => m.moduleId === moduleId) ?? null;
 
           const formData = new FormData();
           formData.append("file", file);
           formData.append("name", file.name);
+          formData.append("courseDbId", String(editingCourse.id));
+          formData.append("courseName", editingCourse.name || "");
+          formData.append("moduleId", moduleId);
+          formData.append("moduleName", currentModule?.name || moduleId);
 
           const uploadRes = await fetch("/api/admin/upload-course-material", {
             method: "POST",
@@ -416,8 +422,7 @@ export default function EditCourse({
             throw new Error(
               uploadData?.message ||
                 `Failed to upload Full Study Material for module "${
-                  modules.find((m) => m.moduleId === moduleId)?.name ||
-                  moduleId
+                  currentModule?.name || moduleId
                 }"`
             );
           }
