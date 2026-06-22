@@ -407,19 +407,6 @@ async function syncSubmissionToSheet(payload: {
   }
 }
 
-async function insertNotification(title: string, message: string) {
-  try {
-    await db.query(
-      "INSERT INTO notifications (title, message) VALUES (?, ?)",
-      [title, message]
-    );
-    return true;
-  } catch (error) {
-    console.error("Quiz submit -> notification insert failed:", error);
-    return false;
-  }
-}
-
 async function sendQuizEmails(payload: {
   adminEmail?: string;
   studentEmail: string;
@@ -638,7 +625,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const [sheetSync, emailSync, notificationSaved] = await Promise.all([
+    const [sheetSync, emailSync] = await Promise.all([
       syncSubmissionToSheet({
         submittedAt,
         quizId,
@@ -664,12 +651,6 @@ export async function POST(req: Request) {
         result,
         submittedAt,
       }),
-      insertNotification(
-        `Quiz Submitted: ${quizName}`,
-        `${studentName} scored ${correct}/${total} (${percent.toFixed(
-          2
-        )}%) and ${result.toLowerCase()}ed ${quizName}.`
-      ),
     ]);
 
     return NextResponse.json({
@@ -685,7 +666,6 @@ export async function POST(req: Request) {
       passed,
       submittedAt,
       sheetSync,
-      notificationSaved,
       emailSync,
     });
   } catch (error: any) {

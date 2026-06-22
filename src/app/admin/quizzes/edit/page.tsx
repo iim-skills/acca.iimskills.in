@@ -17,11 +17,11 @@ import {
   X,
   Type,
   Save,
-  ArrowLeft,
   Loader2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import AdminRouteHeader from "../../components/AdminRouteHeader";
 
 /* ================= TYPES & CONSTANTS ================= */
 
@@ -230,7 +230,6 @@ const TextArea = ({ className = "", ...props }: React.TextareaHTMLAttributes<HTM
 /* ================= MAIN CONTENT ================= */
 
 function EditQuizContent() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const id = searchParams.get("id");
 
@@ -563,16 +562,16 @@ const payload = {
 
   return (
     <div className="flex flex-col h-screen bg-[#F8FAFC] text-slate-800 font-sans overflow-hidden">
+      <AdminRouteHeader
+        forceShow
+        compact
+        backHref="/admin/quizzes"
+        title="Edit Quiz"
+        maxWidthClassName="max-w-none"
+      />
       {/* HEADER */}
       <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between z-10 shrink-0">
         <div className="flex items-center gap-4">
-          <button
-            type="button"
-            onClick={() => router.back()}
-            className="p-2 hover:bg-slate-100 rounded-full transition-all"
-          >
-            <ArrowLeft size={20} />
-          </button>
           <div>
             <input
               value={quizName}

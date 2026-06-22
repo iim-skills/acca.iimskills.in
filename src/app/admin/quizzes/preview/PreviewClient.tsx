@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { Clock, BookOpen, BarChart3, HelpCircle, FileText } from "lucide-react";
+import AdminRouteHeader from "../../components/AdminRouteHeader";
 
 // --- Types ---
 type QuestionOption = { id: string; text: string };
@@ -57,6 +58,12 @@ export default function PreviewClient({ id }: { id?: string }) {
 
   return (
     <div className="min-h-screen bg-[#F1F5F9] pb-20">
+      <AdminRouteHeader
+        forceShow
+        compact
+        backHref="/admin/quizzes"
+        title="Quiz Preview"
+      />
       {/* STICKY TOP BAR */}
       <div className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-slate-200">
         <div className="max-w-5xl mx-auto px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
