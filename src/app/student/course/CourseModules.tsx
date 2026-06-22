@@ -842,11 +842,19 @@ const isSuperUnlockedUser = currentUserEmail === SUPER_UNLOCK_EMAIL;
       const pid = prev.moduleId ?? `module-${i - 1}`;
       const pidStr = String(pid);
 
-      if (s.has(pidStr) && isModuleCompleted(prev)) s.add(midStr);
+      if (s.has(pidStr) && isModuleCompleted(i - 1)) s.add(midStr);
     }
 
     return s;
-  }, [course?.modules, allowedSet, completedSet, flatVideos]);
+  }, [
+    course?.modules,
+    allowedSet,
+    completedSet,
+    completedQuizzes,
+    flatVideos,
+    quizzesBySubmodule,
+    videoKeyToGlobalIndex,
+  ]);
 
   const isIdAllowedOrUnlocked = (id: any) => {
     if (!id) return false;
@@ -854,21 +862,36 @@ const isSuperUnlockedUser = currentUserEmail === SUPER_UNLOCK_EMAIL;
     return allowedSet.has(sid) || unlockedModulesSet.has(sid);
   };
 
-  function isModuleCompleted(module: Module) {
+  function getSubmoduleQuizIds(
+    moduleIndex: number,
+    subIndex: number
+  ): string[] {
+    const mod = course?.modules?.[moduleIndex];
+    const sub = mod?.submodules?.[subIndex];
+    if (!sub) return [];
+
+    const subId = String(sub.submoduleId ?? "");
+    const quizIds = (quizzesBySubmodule[subId] ?? []).map((q) => q.id);
+
+    if (!Array.isArray((sub as any).items)) {
+      return [...new Set(quizIds.filter(Boolean))];
+    }
+
+    const inlineQuizIds = (sub as any).items
+      .filter((it: any) => it?.type === "quiz")
+      .map((it: any) => String(it.quizId ?? it.id ?? it.quizRefId ?? ""))
+      .filter(Boolean);
+
+    return [...new Set([...quizIds, ...inlineQuizIds])];
+  }
+
+  function isModuleCompleted(moduleIndex: number) {
+    const module = course?.modules?.[moduleIndex];
+    if (!module) return false;
     if (!module.submodules?.length) return true;
 
-    return module.submodules.every((s, si) =>
-      (s.videos ?? []).every((_, vi) => {
-        const fv = flatVideos.find(
-          (f) =>
-            f.moduleId === module.moduleId &&
-            f.subIndex === si &&
-            f.videoIndex === vi
-        );
-        if (!fv) return false;
-        const gi = videoKeyToGlobalIndex.get(fv.key);
-        return typeof gi === "number" && completedSet.has(gi);
-      })
+    return module.submodules.every((_, subIndex) =>
+      isSubmoduleCompleted(moduleIndex, subIndex)
     );
   }
 
@@ -891,20 +914,7 @@ const isSuperUnlockedUser = currentUserEmail === SUPER_UNLOCK_EMAIL;
 
     if (!videoDone) return false;
 
-    const subId = String(sub.submoduleId ?? "");
-    const quizList = quizzesBySubmodule[subId] ?? [];
-
-    let allQuizIds: string[] = quizList.map((q) => q.id);
-    if (Array.isArray((sub as any).items)) {
-      const inlineQuizIds = (sub as any).items
-        .filter((it: any) => it?.type === "quiz")
-        .map((it: any) =>
-          String(it.quizId ?? it.id ?? it.quizRefId ?? "")
-        )
-        .filter(Boolean);
-      allQuizIds = [...new Set([...allQuizIds, ...inlineQuizIds])];
-    }
-
+    const allQuizIds = getSubmoduleQuizIds(moduleIndex, subIndex);
     return allQuizIds.every((qid) => completedQuizzes.has(qid));
   }
 
@@ -1313,9 +1323,13 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
 
   useEffect(() => {
     const h = (e: Event) => {
-      const ce = e as CustomEvent<{ quizId?: string }>;
+      const ce = e as CustomEvent<{
+        quizId?: string;
+        result?: { passed?: boolean };
+      }>;
       const qid = ce.detail?.quizId;
-      if (!qid) return;
+      const passed = ce.detail?.result?.passed === true;
+      if (!qid || !passed) return;
 
       setCompletedQuizzes((prev) => {
         const n = new Set(prev);
@@ -1612,8 +1626,7 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
                         <div className="flex items-center gap-3">
                           <FileText size={16} className="text-emerald-500" />
                           <p className="text-xs font-semibold">
-                            {moduleStudyMaterial.name ||
-                              "Full Study Material"}
+                           Full Study Material
                           </p>
                         </div>
 

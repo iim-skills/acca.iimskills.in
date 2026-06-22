@@ -3,7 +3,7 @@
 import React, { useMemo, useRef, useEffect, useState } from "react";
 import {
   Play, X, Trophy, Activity, Layers, User, CheckCircle2, XCircle, 
-  BookOpen, Calculator, Landmark, ShieldCheck, ChevronRight,
+  BookOpen, Calculator, Landmark, ShieldCheck, ChevronRight, RotateCcw,
   Clock, Award, Bell, MonitorPlay, Info
 } from "lucide-react";
 import Image from "next/image";
@@ -192,7 +192,7 @@ export default function App({
   }, [activeQuiz?.id]);
 
   useEffect(() => {
-    if (advanceCountdown <= 0) return;
+    if (advanceCountdown <= 0 || !quizResult?.passed) return;
     const t = setTimeout(() => {
       setAdvanceCountdown(prev => {
         if (prev <= 1) {
@@ -206,7 +206,7 @@ export default function App({
       });
     }, 1000);
     return () => clearTimeout(t);
-  }, [advanceCountdown, onCloseQuiz]);
+  }, [advanceCountdown, onCloseQuiz, quizResult?.passed]);
 
   const handleQuizSubmit = (result?: any) => {
     try {
@@ -237,7 +237,7 @@ export default function App({
         passed,
         quizId: result?.quizId ?? activeQuiz?.id,
       });
-      setAdvanceCountdown(5);
+      setAdvanceCountdown(passed ? 5 : 0);
       window.dispatchEvent(new CustomEvent("lms_quiz_submitted", {
         detail: {
           quizId: result?.quizId ?? activeQuiz?.id, moduleId: activeModuleId,
@@ -249,6 +249,7 @@ export default function App({
   };
 
   const handleContinueNow = () => {
+    if (!quizResultRef.current?.passed) return;
     window.dispatchEvent(new CustomEvent("lms_quiz_advance", {
       detail: { quizId: quizResultRef.current?.quizId },
     }));
@@ -389,24 +390,45 @@ export default function App({
                       </div>
 
                       <div className="w-full max-w-sm space-y-4 pt-4 border-t border-slate-100">
-                        <div className="px-6 py-4 rounded-2xl bg-slate-950 text-white relative overflow-hidden group">
-                          <div className="relative z-10">
-                            <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 font-black mb-3">Auto-Advancing Syllabus</p>
-                            <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mb-3">
-                              <div className="h-full bg-blue-500 transition-all duration-1000 ease-linear shadow-[0_0_8px_rgba(59,130,246,0.5)]" style={{ width: `${(advanceCountdown / 5) * 100}%` }} />
+                        {quizResult.passed ? (
+                          <>
+                            <div className="px-6 py-4 rounded-2xl bg-slate-950 text-white relative overflow-hidden group">
+                              <div className="relative z-10">
+                                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 font-black mb-3">Auto-Advancing Syllabus</p>
+                                <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mb-3">
+                                  <div className="h-full bg-blue-500 transition-all duration-1000 ease-linear shadow-[0_0_8px_rgba(59,130,246,0.5)]" style={{ width: `${(advanceCountdown / 5) * 100}%` }} />
+                                </div>
+                                <p className="text-sm font-bold flex items-center justify-center gap-2">
+                                  <Clock size={14} className="text-blue-400" />
+                                  Next lesson in {advanceCountdown} seconds
+                                </p>
+                              </div>
+                              <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                             </div>
-                            <p className="text-sm font-bold flex items-center justify-center gap-2">
-                              <Clock size={14} className="text-blue-400" />
-                              Next lesson in {advanceCountdown} seconds
-                            </p>
-                          </div>
-                          <div className="absolute inset-0 bg-gradient-to-r from-blue-600/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </div>
-                        
-                        <button onClick={handleContinueNow}
-                          className="w-full py-4 bg-white border-2 border-slate-200 hover:border-blue-600 hover:text-blue-600 text-slate-700 text-sm font-bold rounded-2xl transition-all active:scale-[0.98] flex items-center justify-center gap-2">
-                          Resume Learning Now <ChevronRight size={18} />
-                        </button>
+
+                            <button onClick={handleContinueNow}
+                              className="w-full py-4 bg-white border-2 border-slate-200 hover:border-blue-600 hover:text-blue-600 text-slate-700 text-sm font-bold rounded-2xl transition-all active:scale-[0.98] flex items-center justify-center gap-2">
+                              Resume Learning Now <ChevronRight size={18} />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <div className="px-6 py-4 rounded-2xl bg-rose-50 border border-rose-100 text-rose-900">
+                              <p className="text-sm font-bold">Pass this quiz to unlock the next lesson.</p>
+                              <p className="text-xs mt-1 text-rose-700">Retake the quiz and score at least 60% to continue.</p>
+                            </div>
+
+                            <button
+                              onClick={() => {
+                                setQuizResult(null);
+                                setAdvanceCountdown(0);
+                              }}
+                              className="w-full py-4 bg-white border-2 border-slate-200 hover:border-rose-500 hover:text-rose-600 text-slate-700 text-sm font-bold rounded-2xl transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                            >
+                              Try Quiz Again <RotateCcw size={18} />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   ) : (
