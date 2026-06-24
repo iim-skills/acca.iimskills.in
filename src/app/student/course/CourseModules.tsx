@@ -1637,10 +1637,19 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
                     </div>
                   ) : null}
 
-                  {module.submodules?.length ? (
+                  {(module.submodules?.filter(sub => {
+                      const items = Array.isArray((sub as any).items) ? (sub as any).items : [];
+                      const videos = Array.isArray(sub.videos) ? sub.videos : [];
+                      const quizzes = Array.isArray(sub.quizzes) ? sub.quizzes : [];
+                      return items.length > 0 || videos.length > 0 || quizzes.length > 0;
+                    }) ?? []).length > 0 ? (
                     module.submodules.map((sub, subIndex) => {
                       const moduleKeyPart =
                         module.moduleId ?? `module-${moduleIndex}`;
+                      const items = Array.isArray((sub as any).items) ? (sub as any).items : [];
+                      const videosLegacy = Array.isArray(sub.videos) ? sub.videos : [];
+                      const quizzesLegacy = Array.isArray(sub.quizzes) ? sub.quizzes : [];
+                      if (items.length === 0 && videosLegacy.length === 0 && quizzesLegacy.length === 0) return null;
                       const subKey = `${moduleKey}-sub-${subIndex}`;
                       const subIsOpen = openSubKey === subKey;
 

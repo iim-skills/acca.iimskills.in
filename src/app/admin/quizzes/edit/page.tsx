@@ -561,16 +561,16 @@ const payload = {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-[#F8FAFC] text-slate-800 font-sans overflow-hidden">
-      <AdminRouteHeader
+    <div className="w-full lg:w-7xl  mx-auto mt-10 flex flex-col h-screen bg-[#F8FAFC] text-slate-800 font-sans overflow-hidden">
+      {/* <AdminRouteHeader
         forceShow
         compact
         backHref="/admin/quizzes"
         title="Edit Quiz"
         maxWidthClassName="max-w-none"
-      />
+      /> */}
       {/* HEADER */}
-      <header className="h-16 bg-white border-b border-slate-200 px-6 flex items-center justify-between z-10 shrink-0">
+      <header className="h-16 mb-10 bg-white border-b border-slate-200 px-6 flex items-center justify-between z-10 shrink-0">
         <div className="flex items-center gap-4">
           <div>
             <input

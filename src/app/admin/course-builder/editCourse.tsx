@@ -431,7 +431,7 @@ export default function EditCourse({
             name:
               String(uploadData?.name || file.name || "Full Study Material").trim() ||
               "Full Study Material",
-            fileUrl: String(uploadData?.fileUrl || "").trim(),
+            fileUrl: `https://kgate.co${String(uploadData?.fileUrl || "").trim()}`,
           };
         }
 

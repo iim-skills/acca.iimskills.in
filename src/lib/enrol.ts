@@ -46,7 +46,7 @@ export async function ensureUserAndCourse({
   writeUsers(users);
 
   if (sendWelcome && firstTime) {
-    const base = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
+    const base = process.env.NEXT_PUBLIC_BASE_URL || "http://acca.iimskills.in";
     const lmsLink = `${base}/free-courses/${courseSlug}`;
 
     await sendMail(

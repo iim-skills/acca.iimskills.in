@@ -10,7 +10,6 @@ import {
   BookOpen,
   ArrowRight,
   LogOut,
-  GraduationCap,
   Award,
   Search,
   LayoutDashboard,
@@ -72,6 +71,20 @@ const courseMeta: Record<
 
 const NOTIFICATION_SEEN_KEY = "student_seen_notifications";
 
+/** Normalise any student-type value to "paid" | "free" */
+function resolveStudentType(user: Record<string, any>): "paid" | "free" {
+  // Check every field that might carry the type, in priority order
+  const raw =
+    user.studentType ??
+    user.student_type ??
+    user.type ??
+    user.userType ??
+    user.user_type ??
+    "";
+  const normalized = String(raw).toLowerCase().trim();
+  return normalized === "paid" ? "paid" : "free";
+}
+
 export default function StudentPage() {
   const router = useRouter();
 
@@ -94,14 +107,12 @@ export default function StudentPage() {
     const completedCount = course.completed_lessons ?? course.completed_modules ?? 0;
     const totalCount = course.total_lessons ?? course.total_modules ?? 0;
     const moduleProgress =
-      totalCount > 0
-        ? Math.round((completedCount / totalCount) * 100)
-        : 0;
+      totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
     const value = directProgress > 0 ? directProgress : moduleProgress;
     return Math.max(5, Math.min(100, value));
   };
 
-  const getSeenNotificationIds = () => {
+  const getSeenNotificationIds = (): number[] => {
     if (typeof window === "undefined") return [];
     try {
       const raw = localStorage.getItem(NOTIFICATION_SEEN_KEY);
@@ -124,9 +135,7 @@ export default function StudentPage() {
 
   const fetchNotifications = async () => {
     try {
-      const res = await fetch("/api/student/notifications", {
-        cache: "no-store",
-      });
+      const res = await fetch("/api/student/notifications", { cache: "no-store" });
       const data = await res.json();
       const list = Array.isArray(data) ? data : [];
       setNotifications(list);
@@ -141,28 +150,20 @@ export default function StudentPage() {
   const handleBellClick = () => {
     setShowNotifications((prev) => {
       const next = !prev;
-
       if (!prev) {
         const ids = notifications.map((item) => item.id);
         const seenIds = getSeenNotificationIds();
         saveSeenNotificationIds([...seenIds, ...ids]);
         setUnreadCount(0);
       }
-
       return next;
     });
-  };
-
-  const handleCloseNotifications = () => {
-    setShowNotifications(false);
   };
 
   const handleLogout = () => {
     localStorage.removeItem("user");
     localStorage.removeItem("visitedCourses");
     localStorage.removeItem(NOTIFICATION_SEEN_KEY);
-
-    // Full reload is the most reliable logout method
     window.location.href = "/";
   };
 
@@ -171,7 +172,6 @@ export default function StudentPage() {
     let interval: ReturnType<typeof setInterval> | undefined;
 
     const raw = localStorage.getItem("user");
-
     if (!raw) {
       window.location.href = "/";
       return;
@@ -183,17 +183,38 @@ export default function StudentPage() {
       setStudentName(user.name || "Student");
       setStudentEmail(user.email || "");
 
-      const rawType = user.studentType || user.student_type || user.type || "";
-      const normalizedType = rawType.toString().toLowerCase().trim();
-      setStudentType(normalizedType === "paid" ? "paid" : "free");
+      // ── FIX: use the robust resolver ──────────────────────────────────────
+      const resolvedType = resolveStudentType(user);
+      setStudentType(resolvedType);
+
+      // Also re-fetch latest student data from the server to get the authoritative type
+      fetch("/api/student/me", {
+        headers: { "x-user-email": user.email },
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (!data) return;
+          // Server response may use student_type or studentType
+          const serverType = resolveStudentType(data);
+          setStudentType(serverType);
+          // Keep localStorage in sync so next load is correct
+          try {
+            const stored = JSON.parse(localStorage.getItem("user") || "{}");
+            stored.student_type = serverType;
+            localStorage.setItem("user", JSON.stringify(stored));
+          } catch {
+            // ignore
+          }
+        })
+        .catch(() => {
+          // If /api/student/me doesn't exist yet, silently fall back to localStorage value
+        });
 
       fetch("/api/student/course", {
         headers: { "x-user-email": user.email },
       })
         .then((res) => res.json())
-        .then((data) => {
-          setMyCourses(data || []);
-        })
+        .then((data) => setMyCourses(data || []))
         .catch((err) => {
           console.error("ERROR FETCHING STUDENT COURSES:", err);
           setMyCourses([]);
@@ -201,9 +222,7 @@ export default function StudentPage() {
 
       fetch("/api/courses")
         .then((res) => res.json())
-        .then((data) => {
-          setAllCourses(data || []);
-        })
+        .then((data) => setAllCourses(data || []))
         .catch((err) => {
           console.error("ERROR FETCHING COURSE CATALOG:", err);
           setAllCourses([]);
@@ -211,10 +230,7 @@ export default function StudentPage() {
         .finally(() => setLoading(false));
 
       fetchNotifications();
-
-      interval = setInterval(() => {
-        fetchNotifications();
-      }, 20000);
+      interval = setInterval(fetchNotifications, 20000);
     } catch (error) {
       console.error("INVALID USER DATA:", error);
       window.location.href = "/";
@@ -227,12 +243,6 @@ export default function StudentPage() {
   }, [router]);
 
   /* ================= CALCULATED STATS ================= */
-  const completedModules = myCourses.reduce((acc, curr) => acc + (curr.completed_modules || 0), 0);
-  const averageProgress =
-    myCourses.length > 0
-      ? Math.round(myCourses.reduce((acc, curr) => acc + getChartProgress(curr), 0) / myCourses.length)
-      : 0;
-
   const handleStart = (slug: string) => {
     const visited = JSON.parse(localStorage.getItem("visitedCourses") || "[]");
     if (!visited.includes(slug)) {
@@ -241,15 +251,13 @@ export default function StudentPage() {
     }
   };
 
+  /* ================= UI ================= */
   return (
     <div className="min-h-screen bg-slate-50 flex font-sans text-slate-900">
       {/* SIDEBAR */}
       <aside className="hidden lg:flex flex-col w-80 bg-slate-950 p-8 text-white sticky top-0 shadow-2xl">
         <div className="absolute inset-0 z-0">
-          {/* Soft Radial Center Light */}
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(51,65,85,0.4)_0%,transparent_70%)]" />
-
-          {/* Very Subtle Slate Grid */}
           <div
             className="absolute inset-0 opacity-[0.05]"
             style={{
@@ -259,24 +267,24 @@ export default function StudentPage() {
             }}
           />
         </div>
+
         <div className="mb-12 flex items-center gap-3 pb-8 border-b-2">
           <div className="w-14 h-10 bg-white rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/30">
-  <Image
-    src="/iim-skills-official.png"
-    alt="Preview"
-    width={40}
-    height={32}
-    className="object-contain"
-    priority
-  />
-</div>
+            <Image
+              src="/iim-skills-official.png"
+              alt="Preview"
+              width={40}
+              height={32}
+              className="object-contain"
+              priority
+            />
+          </div>
           <span className="text-xl font-bold tracking-tight">
-            Student <span className="text-indigo-400">Dashboard </span>
+            Student <span className="text-indigo-400">Dashboard</span>
           </span>
         </div>
 
-        <nav className="flex-1 space-y-2">
- 
+        <nav className="flex-1 space-y-2 relative z-10">
           <button
             onClick={() => setActiveTab("all")}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
@@ -301,25 +309,28 @@ export default function StudentPage() {
           </button>
         </nav>
 
-        <div className="mt-8 space-y-3">
+        {/* ── Book Mentor Meet / Upgrade ── */}
+        <div className="mt-8 space-y-3 relative z-10">
           {studentType === "paid" ? (
+            // PAID: show Book Mentor Meet
             <button
+              type="button"
               onClick={() => setMeetModalOpen(true)}
               className="w-full flex items-center justify-between gap-3 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 hover:text-white transition-all px-4 py-3 rounded-2xl group"
             >
               <div className="flex items-center gap-2">
                 <Compass size={16} className="text-indigo-400" />
-                <div className="text-left">
-                   
-                  <p className="text-sm font-bold text-white leading-none">
-                    Book Mentor Meet
-                  </p>
-                </div>
+                <p className="text-sm font-bold text-white leading-none">Book Mentor Meet</p>
               </div>
-              <ChevronRight size={16} className="group-hover:translate-x-1 transition-transform" />
+              <ChevronRight
+                size={16}
+                className="group-hover:translate-x-1 transition-transform"
+              />
             </button>
           ) : (
+            // FREE: show Upgrade prompt
             <button
+              type="button"
               onClick={() => router.push("/enroll?type=expert")}
               className="w-full flex items-center justify-between gap-3 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:text-white transition-all px-4 py-3 rounded-2xl group"
             >
@@ -329,17 +340,25 @@ export default function StudentPage() {
                   <p className="text-[10px] uppercase font-black tracking-wider text-slate-400">
                     Access
                   </p>
-                  <p className="text-sm font-bold text-white leading-none">
-                    Upgrade Your Access
-                  </p>
+                  <p className="text-sm font-bold text-white leading-none">Upgrade Your Access</p>
                 </div>
               </div>
-              <ChevronRight size={16} className="group-hover:translate-x-1 transition-transform" />
+              <ChevronRight
+                size={16}
+                className="group-hover:translate-x-1 transition-transform"
+              />
             </button>
+          )}
+
+          {/* DEBUG BADGE — remove before production */}
+          {process.env.NODE_ENV === "development" && (
+            <div className="text-[10px] text-slate-500 text-center hidden">
+              type: <span className="text-indigo-400 font-bold">{studentType}</span>
+            </div>
           )}
         </div>
 
-        <div className="mt-auto pt-8 border-t border-white/5">
+        <div className="mt-auto pt-8 border-t border-white/5 relative z-10">
           <div className="flex items-center gap-3 mb-6 px-2">
             <div className="w-10 h-10 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 font-bold border border-indigo-500/30">
               {studentName.charAt(0)}
@@ -351,7 +370,7 @@ export default function StudentPage() {
           </div>
           <button
             onClick={handleLogout}
-            className="w-full flex items-center justify-center gap-2 bg-rose-500/10 hover:bg-rose-50 text-rose-500 hover:text-white transition-all py-3 rounded-xl text-xs font-bold border border-rose-500/20"
+            className="w-full flex items-center justify-center gap-2 bg-rose-500/10 hover:bg-rose-500/30 text-rose-400 hover:text-rose-200 transition-all py-3 rounded-xl text-xs font-bold border border-rose-500/20"
           >
             <LogOut size={16} />
             Sign Out
@@ -361,6 +380,7 @@ export default function StudentPage() {
 
       {/* MAIN CONTENT */}
       <main className="flex-1 overflow-y-auto h-screen p-6 lg:p-10 space-y-10">
+        {/* Top bar */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>
             <h2 className="text-3xl font-black text-slate-900 tracking-tight">
@@ -370,7 +390,10 @@ export default function StudentPage() {
 
           <div className="flex items-center gap-4">
             <div className="relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+              <Search
+                className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
+                size={18}
+              />
               <input
                 type="text"
                 placeholder="Search records..."
@@ -378,6 +401,7 @@ export default function StudentPage() {
               />
             </div>
 
+            {/* Bell */}
             <div className="relative">
               <button
                 onClick={handleBellClick}
@@ -396,14 +420,13 @@ export default function StudentPage() {
                   <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
                     <h4 className="text-sm font-bold text-slate-800">Notifications</h4>
                     <button
-                      onClick={handleCloseNotifications}
+                      onClick={() => setShowNotifications(false)}
                       className="text-xs font-semibold text-slate-500 hover:text-slate-700"
                     >
                       Close
                     </button>
                   </div>
-
-                  <div className="max-h-[50%] overflow-y-auto">
+                  <div className="max-h-72 overflow-y-auto">
                     {notifications.length > 0 ? (
                       notifications.map((item) => (
                         <div
@@ -411,7 +434,9 @@ export default function StudentPage() {
                           className="px-4 py-3 border-b border-slate-50 last:border-b-0 hover:bg-slate-50 transition-colors"
                         >
                           <p className="text-sm font-bold text-slate-900">{item.title}</p>
-                          <p className="text-xs text-slate-600 mt-1 leading-relaxed">{item.message}</p>
+                          <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                            {item.message}
+                          </p>
                           {item.created_at && (
                             <p className="text-[10px] text-slate-400 mt-2">
                               {new Date(item.created_at).toLocaleString()}
@@ -431,11 +456,14 @@ export default function StudentPage() {
           </div>
         </div>
 
+        {/* Tabs */}
         <div className="flex items-center gap-1 bg-slate-200/50 p-1.5 rounded-2xl w-fit shadow-inner">
           <button
             onClick={() => setActiveTab("all")}
             className={`flex items-center gap-2 px-8 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.15em] transition-all ${
-              activeTab === "all" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              activeTab === "all"
+                ? "bg-white text-indigo-600 shadow-sm"
+                : "text-slate-500 hover:text-slate-700"
             }`}
           >
             <Globe size={14} className={activeTab === "all" ? "text-blue-500" : ""} />
@@ -444,7 +472,9 @@ export default function StudentPage() {
           <button
             onClick={() => setActiveTab("my")}
             className={`flex items-center gap-2 px-8 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.15em] transition-all ${
-              activeTab === "my" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+              activeTab === "my"
+                ? "bg-white text-indigo-600 shadow-sm"
+                : "text-slate-500 hover:text-slate-700"
             }`}
           >
             <Zap size={14} className={activeTab === "my" ? "text-amber-500" : ""} />
@@ -452,9 +482,10 @@ export default function StudentPage() {
           </button>
         </div>
 
+        {/* Content */}
         {loading ? (
           <div className="flex flex-col items-center justify-center h-64 text-slate-300 gap-4 animate-pulse">
-            <div className="w-12 h-12 border-4 border-slate-200 border-t-indigo-500 rounded-full animate-spin"></div>
+            <div className="w-12 h-12 border-4 border-slate-200 border-t-indigo-500 rounded-full animate-spin" />
             <p className="font-bold text-xs uppercase tracking-widest">Fetching Records...</p>
           </div>
         ) : (
@@ -477,9 +508,7 @@ export default function StudentPage() {
                       const totalCount =
                         course.total_lessons ?? course.total_modules ?? 0;
                       const progressLabel =
-                        typeof course.total_lessons === "number"
-                          ? "Lessons"
-                          : "Modules";
+                        typeof course.total_lessons === "number" ? "Lessons" : "Modules";
                       const meta = courseMeta[course.course_slug?.toLowerCase().trim()] || {
                         gradient: "from-slate-400 to-slate-600",
                         color: "bg-slate-500",
@@ -500,7 +529,14 @@ export default function StudentPage() {
                             </div>
                             <div className="relative w-16 h-16 flex items-center justify-center">
                               <svg className="w-full h-full transform -rotate-90">
-                                <circle cx="32" cy="32" r="28" fill="none" stroke="#F1F5F9" strokeWidth="4" />
+                                <circle
+                                  cx="32"
+                                  cy="32"
+                                  r="28"
+                                  fill="none"
+                                  stroke="#F1F5F9"
+                                  strokeWidth="4"
+                                />
                                 <circle
                                   cx="32"
                                   cy="32"
@@ -526,7 +562,7 @@ export default function StudentPage() {
                             <span className="text-[10px] font-black text-slate-400 uppercase">
                               {completedCount}/{totalCount} {progressLabel}
                             </span>
-                            <div className="w-1 h-1 rounded-full bg-slate-200"></div>
+                            <div className="w-1 h-1 rounded-full bg-slate-200" />
                             <span
                               className={`text-[10px] font-black uppercase ${
                                 progress === 100 ? "text-emerald-500" : "text-amber-500"
@@ -539,7 +575,9 @@ export default function StudentPage() {
                           <div className="mt-8 flex items-center justify-between text-slate-400 text-[10px] font-bold">
                             <div className="flex items-center gap-1.5">
                               <Clock size={12} />
-                              {course.last_accessed ? new Date(course.last_accessed).toLocaleDateString() : "Never"}
+                              {course.last_accessed
+                                ? new Date(course.last_accessed).toLocaleDateString()
+                                : "Never"}
                             </div>
                             <div className="flex items-center gap-1 text-indigo-500 group-hover:translate-x-1 transition-transform">
                               Continue <ChevronRight size={12} />
@@ -554,7 +592,9 @@ export default function StudentPage() {
                     <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6 text-slate-300">
                       <BookOpen size={32} />
                     </div>
-                    <h4 className="text-lg font-bold text-slate-800 italic">No Enrolled Courses Found</h4>
+                    <h4 className="text-lg font-bold text-slate-800 italic">
+                      No Enrolled Courses Found
+                    </h4>
                     <p className="text-slate-400 mt-2 mb-8 text-sm">
                       Please check the catalog to start your learning journey.
                     </p>
@@ -572,7 +612,9 @@ export default function StudentPage() {
                 <div className="flex items-center justify-between mb-8">
                   <div>
                     <h3 className="text-xl font-bold text-slate-800">All Available Courses</h3>
-                    <p className="text-slate-500 text-sm mt-1">Explore our professional qualification tracks.</p>
+                    <p className="text-slate-500 text-sm mt-1">
+                      Explore our professional qualification tracks.
+                    </p>
                   </div>
                 </div>
 
@@ -584,14 +626,18 @@ export default function StudentPage() {
                       description: "Professional ACCA qualification course.",
                       gradient: "from-slate-400 to-slate-600",
                     };
-                    const isEnrolled = myCourses.some((c) => c.course_slug === course.course_slug);
+                    const isEnrolled = myCourses.some(
+                      (c) => c.course_slug === course.course_slug
+                    );
 
                     return (
                       <div
                         key={course.course_slug}
                         className="bg-white rounded-[2.5rem] overflow-hidden shadow-sm border border-slate-100 flex flex-col hover:shadow-2xl hover:shadow-indigo-500/10 transition-all group"
                       >
-                        <div className={`h-32 bg-gradient-to-br ${meta.gradient} relative p-8 flex items-end overflow-hidden`}>
+                        <div
+                          className={`h-32 bg-gradient-to-br ${meta.gradient} relative p-8 flex items-end overflow-hidden`}
+                        >
                           <div className="absolute top-4 right-4 bg-white/20 backdrop-blur-md rounded-full px-4 py-1.5 text-[9px] text-white font-black uppercase tracking-widest border border-white/20">
                             Certified
                           </div>
@@ -643,12 +689,14 @@ export default function StudentPage() {
                 </div>
               </section>
             )}
-            <Modal isOpen={meetModalOpen} onClose={() => setMeetModalOpen(false)}>
-              <BookingApp onSuccess={() => setMeetModalOpen(false)} />
-            </Modal>
           </div>
         )}
       </main>
+
+      {/* MENTOR MEET MODAL */}
+      <Modal isOpen={meetModalOpen} onClose={() => setMeetModalOpen(false)}>
+        <BookingApp onSuccess={() => setMeetModalOpen(false)} />
+      </Modal>
     </div>
   );
 }

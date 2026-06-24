@@ -6,7 +6,6 @@ import {
   X,
   Loader2,
   Pencil,
-  Layers,
   Calendar,
   User,
   Mail,
@@ -31,12 +30,19 @@ type Batch = {
   startDate?: string;
 };
 
+type Submodule = {
+  submoduleId?: string | number;
+  title?: string;
+};
+
 type Module = {
   id?: string | number;
   moduleId?: string | number;
   slug?: string;
   name?: string;
   summary?: string;
+  submodules?: Submodule[];
+  items?: any[];
 };
 
 type Course = {
@@ -65,16 +71,13 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
   const [courseDropdownOpen, setCourseDropdownOpen] = useState(false);
   const courseDropdownRef = useRef<HTMLDivElement | null>(null);
 
-  // selected course slugs & per-course selected modules map
   const [selectedCourseSlugs, setSelectedCourseSlugs] = useState<string[]>([]);
   const [selectedModulesMap, setSelectedModulesMap] = useState<Record<string, string[]>>({});
-
-  // per-course input for adding custom module ids/names
+  const [selectedSubmodulesMap, setSelectedSubmodulesMap] = useState<Record<string, Record<string, string[]>>>({});
   const [newModuleInputMap, setNewModuleInputMap] = useState<Record<string, string>>({});
 
   /* ===== batches ===== */
   const [batches, setBatches] = useState<Batch[]>([]);
-  const [currentBatchName, setCurrentBatchName] = useState<string | null>(null);
   const [editingBatch, setEditingBatch] = useState(false);
   const [allowMultiBatches, setAllowMultiBatches] = useState(false);
   const [selectedBatchIds, setSelectedBatchIds] = useState<string[]>([]);
@@ -82,19 +85,30 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
   /* =====================================================
       HELPERS
   ===================================================== */
-  const moduleKeyFrom = (m: Module | string | null) => {
+  const moduleKeyFrom = (m: Module | string | null): string => {
     if (m == null) return "";
     if (typeof m === "string") return m;
     return String(m.moduleId ?? m.id ?? m.slug ?? m.name ?? "");
   };
 
-  const getCourseBySlug = (slug?: string) => courses.find((c) => String(c.slug ?? c.id ?? c.name) === slug);
-  const getModulesForCourse = (course?: Course) => {
+  const submoduleKeyFrom = (sm: Submodule | string | null): string => {
+    if (sm == null) return "";
+    if (typeof sm === "string") return sm;
+    return String(sm.submoduleId ?? sm.title ?? "");
+  };
+
+  const getCourseBySlug = (slug?: string) =>
+    courses.find((c) => String(c.slug ?? c.id ?? c.name) === slug);
+
+  const getModulesForCourse = (course?: Course): Module[] => {
     if (!course) return [];
     if (course.modules && Array.isArray(course.modules)) return course.modules;
     if (course.courseData) {
       try {
-        const data = typeof course.courseData === "string" ? JSON.parse(course.courseData) : course.courseData;
+        const data =
+          typeof course.courseData === "string"
+            ? JSON.parse(course.courseData)
+            : course.courseData;
         return data?.modules || [];
       } catch {
         return course.modules || [];
@@ -103,12 +117,13 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
     return [];
   };
 
-  // Display name for a module id: prefer module.name from course modules, else show id
-  const getModuleDisplayName = (course?: Course, moduleId?: string) => {
-    if (!moduleId) return "";
-    const mods = getModulesForCourse(course);
-    const found = mods.find((m: any) => moduleKeyFrom(m) === moduleId);
-    return found?.name ?? moduleId;
+  const getSubmodulesForModule = (module?: Module): Submodule[] => {
+    if (!module) return [];
+    if (module.submodules && Array.isArray(module.submodules)) return module.submodules;
+    if (module.items && Array.isArray(module.items)) {
+      return module.items.filter((item) => item.type === "submodule");
+    }
+    return [];
   };
 
   /* =====================================================
@@ -116,7 +131,6 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
   ===================================================== */
   useEffect(() => {
     if (!studentId) return;
-
     let mounted = true;
 
     const load = async () => {
@@ -142,11 +156,9 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
         setPhone(stud.phone ?? "");
         setStudentType(stud.student_type === "free" ? "free" : "paid");
 
-        /* ===== selected courses & modules =====
-           prefer stud.courses (array stored by enrol API). Fallback to legacy fields.
-        */
         const initialCourseSlugs: string[] = [];
         const initialModulesMap: Record<string, string[]> = {};
+        const initialSubmodulesMap: Record<string, Record<string, string[]>> = {};
         const collectedBatchIds: string[] = [];
 
         if (Array.isArray(stud.courses) && stud.courses.length) {
@@ -154,18 +166,30 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
             const slug = String(c.course_slug ?? c.slug ?? c.id ?? c.name ?? "");
             if (!slug) continue;
             initialCourseSlugs.push(slug);
-            // modules may be array (strings) or objects -> convert to string keys
+
             const mods =
               Array.isArray(c.modules)
                 ? c.modules.map((m: any) => moduleKeyFrom(m))
                 : typeof c.modules === "string" && c.modules.includes("[")
                 ? JSON.parse(c.modules).map((m: any) => moduleKeyFrom(m))
                 : [];
+
+            if (stud.student_type === "free" && c.submodules && typeof c.submodules === "object") {
+              const submods =
+                typeof c.submodules === "string" ? JSON.parse(c.submodules) : c.submodules;
+              initialSubmodulesMap[slug] = Object.keys(submods).reduce(
+                (acc, key) => {
+                  acc[key] = (submods[key] || []).map(submoduleKeyFrom);
+                  return acc;
+                },
+                {} as Record<string, string[]>
+              );
+            }
+
             initialModulesMap[slug] = mods;
             if (c.batch_id) collectedBatchIds.push(String(c.batch_id));
           }
         } else {
-          // legacy: single course columns or modules map
           if (stud.course_slug) {
             const slug = String(stud.course_slug);
             initialCourseSlugs.push(slug);
@@ -173,7 +197,9 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
               initialModulesMap[slug] = stud.modules.map((m: any) => moduleKeyFrom(m));
             } else if (typeof stud.modules === "string" && stud.modules.includes("[")) {
               try {
-                initialModulesMap[slug] = (JSON.parse(stud.modules) as any[]).map((m: any) => moduleKeyFrom(m));
+                initialModulesMap[slug] = (JSON.parse(stud.modules) as any[]).map((m: any) =>
+                  moduleKeyFrom(m)
+                );
               } catch {
                 initialModulesMap[slug] = [];
               }
@@ -186,24 +212,25 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
 
         setSelectedCourseSlugs(initialCourseSlugs);
         setSelectedModulesMap(initialModulesMap);
+        setSelectedSubmodulesMap(initialSubmodulesMap);
 
-        /* ===== Load courses ===== */
         if (courseRes.ok) {
           const courseList = await courseRes.json();
           setCourses(Array.isArray(courseList) ? courseList : []);
         }
 
-        /* ===== batches ===== */
         if (batchRes.ok) {
           const bj = await batchRes.json();
           setBatches(Array.isArray(bj) ? bj : []);
         }
 
-        // batches related fields (union of batches found in courses OR legacy batch_ids/batch_id)
-        const batchIdsFromStud = Array.isArray(stud.batch_ids) ? stud.batch_ids.map(String) : stud.batch_id ? [String(stud.batch_id)] : [];
+        const batchIdsFromStud = Array.isArray(stud.batch_ids)
+          ? stud.batch_ids.map(String)
+          : stud.batch_id
+          ? [String(stud.batch_id)]
+          : [];
         const mergedBatchIds = Array.from(new Set([...batchIdsFromStud, ...collectedBatchIds]));
         setSelectedBatchIds(mergedBatchIds);
-        setCurrentBatchName(stud.batch_name ?? null);
         setAllowMultiBatches(mergedBatchIds.length > 1);
       } catch (err: any) {
         setError(err.message || "Load failed");
@@ -223,7 +250,10 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
   ===================================================== */
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (courseDropdownRef.current && !courseDropdownRef.current.contains(event.target as Node)) {
+      if (
+        courseDropdownRef.current &&
+        !courseDropdownRef.current.contains(event.target as Node)
+      ) {
         setCourseDropdownOpen(false);
       }
     }
@@ -232,26 +262,30 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
   }, []);
 
   /* =====================================================
-      HANDLERS: courses/modules/batches
+      HANDLERS
   ===================================================== */
   const toggleCourse = (slug: string) => {
     setSelectedCourseSlugs((prev) => {
       if (prev.includes(slug)) {
-        const next = prev.filter((s) => s !== slug);
         setSelectedModulesMap((m) => {
           const copy = { ...m };
           delete copy[slug];
           return copy;
         });
-        // also remove any newModuleInputMap entry for clarity
+        setSelectedSubmodulesMap((sm) => {
+          const copy = { ...sm };
+          delete copy[slug];
+          return copy;
+        });
         setNewModuleInputMap((m) => {
           const copy = { ...m };
           delete copy[slug];
           return copy;
         });
-        return next;
+        return prev.filter((s) => s !== slug);
       } else {
         setSelectedModulesMap((m) => ({ ...m, [slug]: m[slug] ?? [] }));
+        setSelectedSubmodulesMap((sm) => ({ ...sm, [slug]: sm[slug] ?? {} }));
         return [...prev, slug];
       }
     });
@@ -260,22 +294,50 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
   const toggleModuleForCourse = (courseSlug: string, moduleId: string) => {
     setSelectedModulesMap((prev) => {
       const arr = prev[courseSlug] || [];
-      if (arr.includes(moduleId)) {
+      const isSelected = arr.includes(moduleId);
+
+      if (isSelected) {
+        setSelectedSubmodulesMap((sm) => {
+          const courseSubmodules = sm[courseSlug] ?? {};
+          if (courseSubmodules[moduleId]) {
+            const { [moduleId]: _, ...rest } = courseSubmodules;
+            return { ...sm, [courseSlug]: rest };
+          }
+          return sm;
+        });
         return { ...prev, [courseSlug]: arr.filter((x) => x !== moduleId) };
       } else {
+        setSelectedSubmodulesMap((sm) => ({
+          ...sm,
+          [courseSlug]: {
+            ...(sm[courseSlug] || {}),
+            [moduleId]: sm[courseSlug]?.[moduleId] || [],
+          },
+        }));
         return { ...prev, [courseSlug]: [...arr, moduleId] };
       }
     });
   };
 
-  const isModuleSelected = (courseSlug: string, moduleId: string) => (selectedModulesMap[courseSlug] || []).includes(moduleId);
-
-  const removeModule = (courseSlug: string, moduleId: string) => {
-    setSelectedModulesMap((prev) => {
-      const arr = prev[courseSlug] || [];
-      return { ...prev, [courseSlug]: arr.filter((x) => x !== moduleId) };
+  const toggleSubmodule = (courseSlug: string, moduleId: string, submoduleId: string) => {
+    setSelectedSubmodulesMap((prev) => {
+      const courseMap = prev[courseSlug] ?? {};
+      const moduleMap = courseMap[moduleId] ?? [];
+      const newModuleMap = moduleMap.includes(submoduleId)
+        ? moduleMap.filter((id) => id !== submoduleId)
+        : [...moduleMap, submoduleId];
+      return {
+        ...prev,
+        [courseSlug]: {
+          ...courseMap,
+          [moduleId]: newModuleMap,
+        },
+      };
     });
   };
+
+  const isModuleSelected = (courseSlug: string, moduleId: string) =>
+    (selectedModulesMap[courseSlug] || []).includes(moduleId);
 
   const addModule = (courseSlug: string) => {
     const val = (newModuleInputMap[courseSlug] || "").trim();
@@ -292,20 +354,15 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
     const idStr = String(id);
     setSelectedBatchIds((prev: string[]) => {
       if (allowMultiBatches) {
-        return prev.includes(idStr) ? prev.filter((x: string) => x !== idStr) : [...prev, idStr];
+        return prev.includes(idStr) ? prev.filter((x) => x !== idStr) : [...prev, idStr];
       }
       return [idStr];
     });
   };
 
-  /* =====================================================
-      NEW: select all helpers for a given course
-  ===================================================== */
   const setAllModulesForCourse = (courseSlug: string, modulesArr: any[], value: boolean) => {
     const ids = modulesArr.map((m: any) => moduleKeyFrom(m)).filter(Boolean);
-    setSelectedModulesMap((prev) => {
-      return { ...prev, [courseSlug]: value ? ids : [] };
-    });
+    setSelectedModulesMap((prev) => ({ ...prev, [courseSlug]: value ? ids : [] }));
   };
 
   const areAllModulesSelected = (courseSlug: string, modulesArr: any[]) => {
@@ -323,18 +380,18 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
     setError("");
 
     try {
-      // Find names for selected batches to send descriptive info
-      const selectedBatchObjects = batches.filter((b: Batch) => selectedBatchIds.includes(String(b.id)));
-      const combinedNames = selectedBatchObjects.map(b => b.name).join(", ");
+      const selectedBatchObjects = batches.filter((b: Batch) =>
+        selectedBatchIds.includes(String(b.id))
+      );
+      const combinedNames = selectedBatchObjects.map((b) => b.name).join(", ");
 
       const payload = {
-        // preserve legacy fields
         modules: ([] as string[]).concat(...Object.values(selectedModulesMap)),
-        // new/explicit fields to support multiple courses
         courseSlugs: selectedCourseSlugs,
         modulesMap: selectedModulesMap,
+        submodulesMap: studentType === "free" ? selectedSubmodulesMap : {},
         batchIds: selectedBatchIds,
-        batchId: allowMultiBatches ? null : (selectedBatchIds[0] || null),
+        batchId: allowMultiBatches ? null : selectedBatchIds[0] || null,
         batchName: combinedNames || null,
         name,
         email,
@@ -373,7 +430,10 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
       >
-        <motion.div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
+        <motion.div
+          className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+          onClick={onClose}
+        />
 
         <motion.div
           initial={{ x: "100%" }}
@@ -436,8 +496,11 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
                       onChange={setEmail}
                     />
 
+                    {/* PHONE */}
                     <div className="space-y-1.5 relative group">
-                      <label className="text-xs font-semibold text-slate-500 ml-1">Phone Number</label>
+                      <label className="text-xs font-semibold text-slate-500 ml-1">
+                        Phone Number
+                      </label>
                       <div className="relative">
                         <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-2 border-r pr-2 border-slate-200">
                           <Phone className="text-slate-400" size={18} />
@@ -447,20 +510,31 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
                           type="tel"
                           disabled={editingField !== "phone"}
                           value={phone}
-                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                          className={`w-full pl-20 pr-12 py-3 border rounded-xl outline-none transition-all shadow-sm ${editingField === "phone" ? "bg-white border-indigo-500 ring-2 ring-indigo-500/10" : "bg-slate-100 border-transparent cursor-not-allowed text-slate-600"}`}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                            setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))
+                          }
+                          className={`w-full pl-20 pr-12 py-3 border rounded-xl outline-none transition-all shadow-sm ${
+                            editingField === "phone"
+                              ? "bg-white border-indigo-500 ring-2 ring-indigo-500/10"
+                              : "bg-slate-100 border-transparent cursor-not-allowed text-slate-600"
+                          }`}
                         />
                         <button
                           className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 hover:bg-slate-200 rounded-lg text-slate-400 transition-colors"
-                          onClick={() => setEditingField(editingField === "phone" ? null : "phone")}
+                          onClick={() =>
+                            setEditingField(editingField === "phone" ? null : "phone")
+                          }
                         >
                           <Pencil size={14} />
                         </button>
                       </div>
                     </div>
 
+                    {/* STUDENT TYPE */}
                     <div className="space-y-2">
-                      <label className="text-xs font-semibold text-slate-500 ml-1">User Type</label>
+                      <label className="text-xs font-semibold text-slate-500 ml-1">
+                        User Type
+                      </label>
                       <div className="grid grid-cols-2 gap-3">
                         <button
                           type="button"
@@ -471,7 +545,9 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
                               : "border-slate-200 bg-white text-slate-700"
                           }`}
                         >
-                          <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Paid</div>
+                          <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                            Paid
+                          </div>
                           <div className="mt-1 text-sm font-bold">Full access user</div>
                         </button>
 
@@ -484,7 +560,9 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
                               : "border-slate-200 bg-white text-slate-700"
                           }`}
                         >
-                          <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Free</div>
+                          <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                            Free
+                          </div>
                           <div className="mt-1 text-sm font-bold">Admin-managed free user</div>
                         </button>
                       </div>
@@ -503,30 +581,64 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
                     </span>
                   </div>
 
+                  {/* Course dropdown */}
                   <div ref={courseDropdownRef} className="space-y-2 relative">
                     <button
                       type="button"
                       onClick={() => setCourseDropdownOpen(!courseDropdownOpen)}
-                      className={`w-full flex items-center justify-between px-5 py-3 bg-white border-2 rounded-2xl transition-all ${courseDropdownOpen ? "border-indigo-600 ring-4 ring-indigo-50" : "border-slate-100"}`}
+                      className={`w-full flex items-center justify-between px-5 py-3 bg-white border-2 rounded-2xl transition-all ${
+                        courseDropdownOpen
+                          ? "border-indigo-600 ring-4 ring-indigo-50"
+                          : "border-slate-100"
+                      }`}
                     >
                       <div className="flex items-center gap-3 overflow-hidden text-left">
-                        <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0"><BookOpen size={18} /></div>
+                        <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0">
+                          <BookOpen size={18} />
+                        </div>
                         <div className="truncate">
-                          <div className="text-sm font-bold text-slate-900 leading-none mb-1">{selectedCourseSlugs.length === 0 ? "Browse Courses" : `${selectedCourseSlugs.length} Selected`}</div>
-                          <div className="text-[11px] text-slate-500 truncate">{selectedCourseSlugs.length === 0 ? "Select programs" : selectedCourseSlugs.map(s => getCourseBySlug(s)?.name).join(", ")}</div>
+                          <div className="text-sm font-bold text-slate-900 leading-none mb-1">
+                            {selectedCourseSlugs.length === 0
+                              ? "Browse Courses"
+                              : `${selectedCourseSlugs.length} Selected`}
+                          </div>
+                          <div className="text-[11px] text-slate-500 truncate">
+                            {selectedCourseSlugs.length === 0
+                              ? "Select programs"
+                              : selectedCourseSlugs
+                                  .map((s) => getCourseBySlug(s)?.name)
+                                  .join(", ")}
+                          </div>
                         </div>
                       </div>
-                      <ChevronRight size={20} className={`text-slate-400 transition-transform ${courseDropdownOpen ? "rotate-90" : ""}`} />
+                      <ChevronRight
+                        size={20}
+                        className={`text-slate-400 transition-transform ${
+                          courseDropdownOpen ? "rotate-90" : ""
+                        }`}
+                      />
                     </button>
 
                     {courseDropdownOpen && (
                       <div className="absolute z-50 w-[calc(100%-32px)] mt-2 bg-white border border-slate-200 rounded-2xl shadow-2xl p-2 max-h-64 overflow-auto">
-                        {courses.map(c => {
+                        {courses.map((c) => {
                           const slug = String(c.slug ?? c.id ?? c.name);
                           const selected = selectedCourseSlugs.includes(slug);
                           return (
-                            <div key={slug} className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer ${selected ? "bg-indigo-50" : "hover:bg-slate-50"}`}>
-                              <div onClick={() => toggleCourse(slug)} className={`w-5 h-5 rounded border-2 flex items-center justify-center ${selected ? "bg-indigo-600 border-indigo-600" : "border-slate-200"}`}>
+                            <div
+                              key={slug}
+                              className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer ${
+                                selected ? "bg-indigo-50" : "hover:bg-slate-50"
+                              }`}
+                            >
+                              <div
+                                onClick={() => toggleCourse(slug)}
+                                className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                                  selected
+                                    ? "bg-indigo-600 border-indigo-600"
+                                    : "border-slate-200"
+                                }`}
+                              >
                                 {selected && <Check size={12} className="text-white" />}
                               </div>
                               <span className="text-sm font-bold text-slate-700">{c.name}</span>
@@ -534,15 +646,19 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
                             </div>
                           );
                         })}
-                        {courses.length === 0 && <div className="p-3 text-slate-500 text-sm">No courses available</div>}
+                        {courses.length === 0 && (
+                          <div className="p-3 text-slate-500 text-sm">No courses available</div>
+                        )}
                       </div>
                     )}
                   </div>
 
-                  {/* For each selected course show modules */}
+                  {/* Per-course module selection */}
                   <div className="space-y-3">
                     {selectedCourseSlugs.length === 0 ? (
-                      <div className="p-4 text-sm text-slate-500 border-2 border-dashed rounded-xl">No course selected.</div>
+                      <div className="p-4 text-sm text-slate-500 border-2 border-dashed rounded-xl">
+                        No course selected.
+                      </div>
                     ) : (
                       selectedCourseSlugs.map((slug) => {
                         const course = getCourseBySlug(slug);
@@ -550,43 +666,121 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
                         const assigned = selectedModulesMap[slug] ?? [];
 
                         return (
-                          <div key={`course-${slug}`} className="border-2 border-slate-100 rounded-3xl p-5">
+                          <div
+                            key={`course-${slug}`}
+                            className="border-2 border-slate-100 rounded-3xl p-5"
+                          >
+                            {/* Course header */}
                             <div className="flex justify-between items-center mb-4">
                               <div className="flex items-center gap-3">
-                                <span className="text-xs font-black text-indigo-600 uppercase tracking-widest">{course?.name ?? slug}</span>
-
-                                {/* <-- REPLACED "Remove Course" BUTTON WITH SELECT ALL CHECKBOX */}
+                                <span className="text-xs font-black text-indigo-600 uppercase tracking-widest">
+                                  {course?.name ?? slug}
+                                </span>
                                 <label className="ml-2 flex items-center gap-2 text-[12px] font-medium">
                                   <input
                                     type="checkbox"
                                     checked={areAllModulesSelected(slug, modules)}
-                                    onChange={(e) => setAllModulesForCourse(slug, modules, e.target.checked)}
+                                    onChange={(e) =>
+                                      setAllModulesForCourse(slug, modules, e.target.checked)
+                                    }
                                     disabled={!modules || modules.length === 0}
                                     className="w-4 h-4"
                                   />
-                                  <span className="text-[10px] uppercase text-slate-600 font-bold">Select all</span>
+                                  <span className="text-[10px] uppercase text-slate-600 font-bold">
+                                    Select all
+                                  </span>
                                 </label>
                               </div>
-
-                              <button onClick={() => setSelectedModulesMap(m => ({...m, [slug]: []}))} className="text-[10px] font-bold text-slate-400 uppercase">Clear</button>
+                              <button
+                                onClick={() =>
+                                  setSelectedModulesMap((m) => ({ ...m, [slug]: [] }))
+                                }
+                                className="text-[10px] font-bold text-slate-400 uppercase"
+                              >
+                                Clear
+                              </button>
                             </div>
 
+                            {/* Module grid */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                               {modules.length === 0 && (
-                                <div className="p-4 text-sm text-slate-500 border-2 border-dashed rounded-xl">No modules found for this course.</div>
+                                <div className="p-4 text-sm text-slate-500 border-2 border-dashed rounded-xl">
+                                  No modules found for this course.
+                                </div>
                               )}
                               {modules.map((m: any) => {
                                 const id = moduleKeyFrom(m);
                                 const sel = isModuleSelected(slug, id);
                                 return (
-                                  <div key={`${slug}-${id}`} onClick={() => toggleModuleForCourse(slug, id)} className={`p-3 rounded-xl border-2 transition-all cursor-pointer ${sel ? "bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-100" : "bg-slate-50 border-transparent text-slate-600"}`}>
-                                    <span className="text-xs font-bold truncate block">{m.name ?? id}</span>
-                                    {m.summary && <div className="text-[11px] mt-1 text-slate-300">{m.summary}</div>}
+                                  <div
+                                    key={`${slug}-${id}`}
+                                    onClick={() => toggleModuleForCourse(slug, id)}
+                                    className={`p-3 rounded-xl border-2 transition-all cursor-pointer ${
+                                      sel
+                                        ? "bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-100"
+                                        : "bg-slate-50 border-transparent text-slate-600"
+                                    }`}
+                                  >
+                                    <span className="text-xs font-bold truncate block">
+                                      {m.name ?? id}
+                                    </span>
+                                    {m.summary && (
+                                      <div className="text-[11px] mt-1 text-slate-300">
+                                        {m.summary}
+                                      </div>
+                                    )}
                                   </div>
                                 );
                               })}
                             </div>
-                          </div>
+
+                            {/* Submodules for FREE users */}
+                            {studentType === "free" && assigned.length > 0 && (
+                              <div className="mt-4 space-y-3 pt-4 border-t border-slate-200">
+                                {modules
+                                  .filter((m: any) => assigned.includes(moduleKeyFrom(m)))
+                                  .map((m: any) => {
+                                    const submodules = getSubmodulesForModule(m);
+                                    if (submodules.length === 0) return null;
+                                    const moduleId = moduleKeyFrom(m);
+                                    return (
+                                      <div
+                                        key={`sub-for-mod-${moduleId}`}
+                                        className="p-3 bg-slate-50 rounded-xl"
+                                      >
+                                        <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                                          Sub-modules for:{" "}
+                                          <span className="text-indigo-700">{m.name}</span>
+                                        </p>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                          {submodules.map((sm: any) => {
+                                            const smId = submoduleKeyFrom(sm);
+                                            const isSubSelected = (
+                                              selectedSubmodulesMap[slug]?.[moduleId] ?? []
+                                            ).includes(smId);
+                                            return (
+                                              <div
+                                                key={`${slug}-${moduleId}-${smId}`}
+                                                onClick={() =>
+                                                  toggleSubmodule(slug, moduleId, smId)
+                                                }
+                                                className={`p-2 rounded-lg border-2 transition-all cursor-pointer text-xs ${
+                                                  isSubSelected
+                                                    ? "bg-blue-500 border-blue-500 text-white"
+                                                    : "bg-white border-transparent text-slate-500"
+                                                }`}
+                                              >
+                                                {sm.title ?? smId}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                              </div>
+                            )}
+                          </div> // ← closes <div key={`course-${slug}`}>
                         );
                       })
                     )}
@@ -615,11 +809,16 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
                       <div className="flex-1">
                         <div className="text-sm font-bold text-slate-700">
                           {selectedBatchIds.length > 0
-                            ? batches.filter(b => selectedBatchIds.includes(String(b.id))).map(b => b.name).join(", ")
+                            ? batches
+                                .filter((b) => selectedBatchIds.includes(String(b.id)))
+                                .map((b) => b.name)
+                                .join(", ")
                             : "Not Assigned"}
                         </div>
                         <div className="text-[11px] text-slate-400 uppercase font-medium">
-                          {selectedBatchIds.length > 1 ? "Assigned batches" : "Current active batch"}
+                          {selectedBatchIds.length > 1
+                            ? "Assigned batches"
+                            : "Current active batch"}
                         </div>
                       </div>
                     </div>
@@ -637,31 +836,63 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
                             }
                           }}
                         />
-                        <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${allowMultiBatches ? "bg-indigo-600 border-indigo-600" : "bg-white border-slate-300"}`}></div>
-                        <span className="text-xs font-bold text-indigo-900 uppercase tracking-tight">Allow Multiple Batch Assignment</span>
+                        <div
+                          className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${
+                            allowMultiBatches
+                              ? "bg-indigo-600 border-indigo-600"
+                              : "bg-white border-slate-300"
+                          }`}
+                        >
+                          {allowMultiBatches && <Check size={12} className="text-white" />}
+                        </div>
+                        <span className="text-xs font-bold text-indigo-900 uppercase tracking-tight">
+                          Allow Multiple Batch Assignment
+                        </span>
                       </label>
 
-                      <div className="space-y-2 max-h-60 overflow-y-auto pr-2 custom-scrollbar">
+                      <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
                         {batches.map((b: Batch) => {
                           const isSelected = selectedBatchIds.includes(String(b.id));
                           return (
                             <button
                               key={`batch-${b.id}`}
                               onClick={() => toggleBatch(b.id)}
-                              className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all ${isSelected ? "bg-indigo-50 border-indigo-500 ring-1 ring-indigo-500/20" : "bg-white border-slate-200 hover:border-slate-300 shadow-sm"}`}
+                              className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all ${
+                                isSelected
+                                  ? "bg-indigo-50 border-indigo-500 ring-1 ring-indigo-500/20"
+                                  : "bg-white border-slate-200 hover:border-slate-300 shadow-sm"
+                              }`}
                             >
                               <div className="flex items-center gap-3">
                                 {allowMultiBatches ? (
-                                  <div className={`shrink-0 w-5 h-5 rounded border flex items-center justify-center transition-colors ${isSelected ? "bg-indigo-600 border-indigo-600" : "bg-white border-slate-300"}`}></div>
+                                  <div
+                                    className={`shrink-0 w-5 h-5 rounded border flex items-center justify-center transition-colors ${
+                                      isSelected
+                                        ? "bg-indigo-600 border-indigo-600"
+                                        : "bg-white border-slate-300"
+                                    }`}
+                                  >
+                                    {isSelected && <Check size={12} className="text-white" />}
+                                  </div>
                                 ) : (
-                                  <div className={`w-2 h-2 rounded-full ${isSelected ? 'bg-indigo-600' : 'bg-slate-300'}`} />
+                                  <div
+                                    className={`w-2 h-2 rounded-full ${
+                                      isSelected ? "bg-indigo-600" : "bg-slate-300"
+                                    }`}
+                                  />
                                 )}
                                 <div className="text-left">
                                   <div className="text-sm font-bold text-slate-700">{b.name}</div>
-                                  {b.startDate && <div className="text-xs text-slate-400">Starts: {new Date(b.startDate).toLocaleDateString()}</div>}
+                                  {b.startDate && (
+                                    <div className="text-xs text-slate-400">
+                                      Starts: {new Date(b.startDate).toLocaleDateString()}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
-                              {isSelected && !allowMultiBatches && <Check size={16} className="text-indigo-600" />}
+                              {isSelected && !allowMultiBatches && (
+                                <Check size={16} className="text-indigo-600" />
+                              )}
                             </button>
                           );
                         })}
@@ -705,26 +936,54 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
   );
 }
 
-/* ===== BEAUTIFIED FIELD COMPONENT ===== */
-function EditableField({ label, value, icon, editing, onEdit, onCancel, onChange }: any) {
+/* ===== EDITABLE FIELD COMPONENT ===== */
+function EditableField({
+  label,
+  value,
+  icon,
+  editing,
+  onEdit,
+  onCancel,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  icon: React.ReactNode;
+  editing: boolean;
+  onEdit: () => void;
+  onCancel: () => void;
+  onChange: (v: string) => void;
+}) {
   return (
     <div className="space-y-1.5 relative group">
       <label className="text-xs font-semibold text-slate-500 ml-1">{label}</label>
       <div className="relative">
-        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-          {icon}
-        </div>
+        <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">{icon}</div>
         <input
           value={value}
           readOnly={!editing}
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
-          className={`w-full pl-10 pr-12 py-3 border rounded-xl outline-none transition-all shadow-sm ${editing ? "bg-white border-indigo-500 ring-2 ring-indigo-500/10" : "bg-slate-100 border-transparent cursor-not-allowed text-slate-600"}`}
+          className={`w-full pl-10 pr-12 py-3 border rounded-xl outline-none transition-all shadow-sm ${
+            editing
+              ? "bg-white border-indigo-500 ring-2 ring-indigo-500/10"
+              : "bg-slate-100 border-transparent cursor-not-allowed text-slate-600"
+          }`}
         />
         <div className="absolute right-2 top-1/2 -translate-y-1/2">
           {editing ? (
-            <button onClick={onCancel} className="px-2 py-1 text-[10px] font-bold text-red-600 hover:bg-red-50 rounded uppercase">Cancel</button>
+            <button
+              onClick={onCancel}
+              className="px-2 py-1 text-[10px] font-bold text-red-600 hover:bg-red-50 rounded uppercase"
+            >
+              Cancel
+            </button>
           ) : (
-            <button onClick={onEdit} className="p-1.5 hover:bg-slate-200 rounded-lg text-slate-400 transition-colors"><Pencil size={14} /></button>
+            <button
+              onClick={onEdit}
+              className="p-1.5 hover:bg-slate-200 rounded-lg text-slate-400 transition-colors"
+            >
+              <Pencil size={14} />
+            </button>
           )}
         </div>
       </div>
