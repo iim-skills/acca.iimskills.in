@@ -92,6 +92,7 @@ type ProgressEntry = { positionSeconds: number; completed: boolean };
 type Props = {
   course: Course | null;
   allowedModules?: string[] | number[];
+  allowedSubmodules?: Record<string, Record<string, string[]>> | Record<string, string[]>;
   progress?: Record<string, number[]>;
   onPlayVideo: (
     videoUrl: string,
@@ -266,12 +267,54 @@ function flattenCourseVideos(course: Course | null) {
   return out;
 }
 
+function normalizeAssignedSubmodules(
+  allowedSubmodules:
+    | Record<string, Record<string, string[]>>
+    | Record<string, string[]>
+    | undefined,
+  courseSlug?: string
+) {
+  if (!allowedSubmodules || typeof allowedSubmodules !== "object") {
+    return {} as Record<string, string[]>;
+  }
+
+  const byCourse =
+    courseSlug &&
+    (allowedSubmodules as any)[courseSlug] &&
+    typeof (allowedSubmodules as any)[courseSlug] === "object" &&
+    !Array.isArray((allowedSubmodules as any)[courseSlug])
+      ? (allowedSubmodules as any)[courseSlug]
+      : allowedSubmodules;
+
+  if (!byCourse || typeof byCourse !== "object" || Array.isArray(byCourse)) {
+    return {} as Record<string, string[]>;
+  }
+
+  return Object.entries(byCourse).reduce((acc, [moduleId, submoduleIds]) => {
+    const normalizedModuleId = String(moduleId ?? "").trim();
+    if (!normalizedModuleId) return acc;
+
+    acc[normalizedModuleId] = Array.isArray(submoduleIds)
+      ? Array.from(
+          new Set(
+            submoduleIds
+              .map((submoduleId: any) => String(submoduleId ?? "").trim())
+              .filter(Boolean)
+          )
+        )
+      : [];
+
+    return acc;
+  }, {} as Record<string, string[]>);
+}
+
 /* ═══════════════════════════════════════════════
   COMPONENT
 ═══════════════════════════════════════════════ */
 export default function CourseModules({
   course,
   allowedModules = [],
+  allowedSubmodules = {},
   progress = {},
   onPlayVideo,
   onReportPlayerProgress,
@@ -395,14 +438,31 @@ const isSuperUnlockedUser = currentUserEmail === SUPER_UNLOCK_EMAIL;
     }
   };
 
+  const courseAssignedSubmodules = useMemo(
+    () => normalizeAssignedSubmodules(allowedSubmodules, course?.slug),
+    [allowedSubmodules, course?.slug]
+  );
+
   const allowedSet = useMemo(
-    () =>
-      new Set(
+    () => {
+      const ids = new Set(
         (Array.isArray(allowedModules) ? allowedModules : []).map((x: any) =>
           String(x)
         )
-      ),
-    [allowedModules]
+      );
+
+      // For free students, add assigned submodule IDs to the allowed set
+      if (Object.keys(courseAssignedSubmodules).length > 0) {
+        Object.values(courseAssignedSubmodules).forEach((submoduleIds: any) => {
+          if (Array.isArray(submoduleIds)) {
+            submoduleIds.forEach((id) => ids.add(String(id)));
+          }
+        });
+      }
+
+      return ids;
+    },
+    [allowedModules, courseAssignedSubmodules]
   );
 
   const isFreePreviewVideo = (globalIndex: number) =>
@@ -474,10 +534,16 @@ const isSuperUnlockedUser = currentUserEmail === SUPER_UNLOCK_EMAIL;
       const raw = localStorage.getItem("user");
       if (raw) {
         const u = JSON.parse(raw);
+        const normalizedStudentType = String(
+          u?.student_type ?? u?.studentType ?? u?.type ?? u?.userType ?? ""
+        )
+          .toLowerCase()
+          .trim();
         if (
           u?.loginType === "guest" ||
           u?.role === "guest" ||
-          u?.loginType === "free"
+          u?.loginType === "free" ||
+          normalizedStudentType === "free"
         ) {
           setIsFreeLoggedIn(true);
           return;
@@ -495,6 +561,11 @@ const isSuperUnlockedUser = currentUserEmail === SUPER_UNLOCK_EMAIL;
       setIsFreeLoggedIn(false);
     }
   }, [JSON.stringify(allowedModules ?? [])]);
+
+  const isManagedFreeAccess =
+    isFreeLoggedIn &&
+    ((Array.isArray(allowedModules) && allowedModules.length > 0) ||
+      Object.keys(courseAssignedSubmodules).length > 0);
 
   /* ── free preview window ── */
   useEffect(() => {
@@ -544,7 +615,14 @@ const isSuperUnlockedUser = currentUserEmail === SUPER_UNLOCK_EMAIL;
 
   /* ── auto-open free preview content ── */
   useEffect(() => {
-    if (!course?.modules?.length || !isFreeLoggedIn || isFreePreviewExpired) return;
+    if (
+      !course?.modules?.length ||
+      !isFreeLoggedIn ||
+      isManagedFreeAccess ||
+      isFreePreviewExpired
+    ) {
+      return;
+    }
 
     const firstPreview = flatVideos[0];
     if (firstPreview) {
@@ -558,7 +636,7 @@ const isSuperUnlockedUser = currentUserEmail === SUPER_UNLOCK_EMAIL;
     const fk = first.moduleId ?? "module-0";
     setOpenModuleId(fk);
     if (first.submodules?.length) setOpenSubKey(`${fk}-sub-0`);
-  }, [course, isFreeLoggedIn, isFreePreviewExpired, flatVideos]);
+  }, [course, flatVideos, isFreeLoggedIn, isManagedFreeAccess, isFreePreviewExpired]);
 
   /* ── guest video progress ── */
   useEffect(() => {
@@ -1119,6 +1197,26 @@ const isSuperUnlockedUser = currentUserEmail === SUPER_UNLOCK_EMAIL;
     if (!url) return;
 
     const mod = course?.modules?.[fv.moduleIndex];
+    const hasExplicitModuleAssignments =
+      Array.isArray(allowedModules) && allowedModules.length > 0;
+
+    if (!isSuperUnlockedUser) {
+      if (isManagedFreeAccess) {
+        if (!isManagedFreeSubmoduleAllowed(fv.moduleIndex, fv.subIndex)) {
+          return;
+        }
+      } else if (isFreeLoggedIn) {
+        if (!isFreePreviewVideo(globalIndex)) {
+          return;
+        }
+      } else if (
+        mod?.moduleId &&
+        hasExplicitModuleAssignments &&
+        !allowedSet.has(String(mod.moduleId))
+      ) {
+        return;
+      }
+    }
 
     const resumeSecs = getResume(globalIndex) ?? 0;
     const alreadyCompleted = completedSetRef.current.has(globalIndex);
@@ -1178,6 +1276,22 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
   const [pendingNextIndex, setPendingNextIndex] = useState<number | null>(
     null
   );
+
+  const isManagedFreeSubmoduleAllowed = (
+    moduleIndex: number,
+    subIndex: number
+  ) => {
+    if (!isManagedFreeAccess) return false;
+
+    const module = course?.modules?.[moduleIndex];
+    if (!module?.moduleId) return false;
+    if (!allowedSet.has(String(module.moduleId))) return false;
+
+    const submodule = module.submodules?.[subIndex];
+    if (!submodule?.submoduleId) return true;
+
+    return allowedSet.has(String(submodule.submoduleId));
+  };
 
   const handleVideoCompleted = (
     globalIndex: number,
@@ -1263,7 +1377,11 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
         (!nmod?.moduleId && unlockedModulesSet.has(nmKey))
     );
 
-    if (nextAllowed || prevModDone || isFreePreviewVideo(nextIdx)) {
+    const canAdvanceToNextVideo = isManagedFreeAccess
+      ? isManagedFreeSubmoduleAllowed(nfv.moduleIndex, nfv.subIndex)
+      : nextAllowed || prevModDone || isFreePreviewVideo(nextIdx);
+
+    if (canAdvanceToNextVideo) {
       setOpenModuleId(nmKey);
       setOpenSubKey(`${nmKey}-sub-${nfv.subIndex}`);
       setPendingNextIndex(nextIdx);
@@ -1363,6 +1481,12 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
         pendingNextVideoRef.current = null;
         const nfv = flatVideos[ni];
         if (nfv) {
+          if (
+            isManagedFreeAccess &&
+            !isManagedFreeSubmoduleAllowed(nfv.moduleIndex, nfv.subIndex)
+          ) {
+            return;
+          }
           const nmk = nfv.moduleId ?? `module-${nfv.moduleIndex}`;
           setOpenModuleId(nmk);
           setOpenSubKey(`${nmk}-sub-${nfv.subIndex}`);
@@ -1374,7 +1498,7 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
     window.addEventListener("lms_quiz_advance", h as EventListener);
     return () =>
       window.removeEventListener("lms_quiz_advance", h as EventListener);
-  }, [flatVideos]);
+  }, [flatVideos, isManagedFreeAccess]);
 
   useEffect(() => {
     const h = () => {
@@ -1519,11 +1643,10 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
 
          const moduleUnlocked = isSuperUnlockedUser
   ? true
-  : hasAssignments
-  ? Boolean(
-      module.moduleId && allowedSet.has(String(module.moduleId))
-    )
+  : hasAssignments // This now covers both paid and free students with specific assignments
+  ? Boolean(module.moduleId && allowedSet.has(String(module.moduleId)))
   : isFreeLoggedIn
+  // Fallback for free preview if no specific modules are assigned
   ? !isFreePreviewExpired && hasFreePreviewInModule(moduleIndex)
   : Boolean(
       (module.moduleId &&
@@ -1534,7 +1657,7 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
 
           console.debug(
             `[MODULE_DEBUG] idx=${moduleIndex} id=${String(
-              module.moduleId
+              module.moduleId,
             )} hasAssignments=${hasAssignments} moduleUnlocked=${moduleUnlocked} allowed=${allowedSet.has(
               String(module.moduleId)
             )} unlockedSet=${unlockedModulesSet.has(String(module.moduleId))}`
@@ -1654,15 +1777,14 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
                       const subIsOpen = openSubKey === subKey;
 
                       const subUnlocked = isSuperUnlockedUser
-  ? true
-  : !moduleUnlocked
-  ? false
-  : isFreeLoggedIn
-  ? !isFreePreviewExpired &&
-    hasFreePreviewInSubmodule(moduleIndex, subIndex)
-  : subIndex === 0
-  ? true
-  : isSubmoduleCompleted(moduleIndex, subIndex - 1);
+                        ? true
+                        : !moduleUnlocked
+                        ? false
+                        : hasAssignments // For paid & free with assignments
+                        ? (allowedSet.has(String(module.moduleId)) && (sub.submoduleId ? allowedSet.has(String(sub.submoduleId)) : true))
+                        : isFreeLoggedIn // For free preview
+                        ? !isFreePreviewExpired && hasFreePreviewInSubmodule(moduleIndex, subIndex)
+                        : subIndex === 0 || isSubmoduleCompleted(moduleIndex, subIndex - 1);
 
                       // derive videos / quizzes, supporting `items[]`
                       const videos: VideoItem[] = Array.isArray(sub.videos)
@@ -1953,7 +2075,7 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
 
                                     const unlocked = isSuperUnlockedUser
   ? true
-  : isFreeLoggedIn
+  : isFreeLoggedIn && !isManagedFreeAccess
   ? Boolean(
       subUnlocked &&
       typeof globalIndex === "number" &&

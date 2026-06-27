@@ -14,6 +14,7 @@ type Student = {
   student_type?: string;
   phone?: string;
   modules: string[];
+  submodules?: any;
   progress: any;
   batch_id?: string | number;
 };
@@ -147,6 +148,7 @@ export default function CoursePage() {
           <CourseModules
             course={course}
             allowedModules={student.modules}
+            allowedSubmodules={student.submodules}
             progress={student.progress}
             onPlayVideo={(url, title, moduleId) =>
               handlePlayVideo(url, title, moduleId)

@@ -363,6 +363,25 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
   const setAllModulesForCourse = (courseSlug: string, modulesArr: any[], value: boolean) => {
     const ids = modulesArr.map((m: any) => moduleKeyFrom(m)).filter(Boolean);
     setSelectedModulesMap((prev) => ({ ...prev, [courseSlug]: value ? ids : [] }));
+    setSelectedSubmodulesMap((prev) => {
+      if (!value) {
+        return {
+          ...prev,
+          [courseSlug]: {},
+        };
+      }
+
+      return {
+        ...prev,
+        [courseSlug]: ids.reduce(
+          (acc, moduleId) => ({
+            ...acc,
+            [moduleId]: prev[courseSlug]?.[moduleId] ?? [],
+          }),
+          {} as Record<string, string[]>
+        ),
+      };
+    });
   };
 
   const areAllModulesSelected = (courseSlug: string, modulesArr: any[]) => {
@@ -380,6 +399,30 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
     setError("");
 
     try {
+      if (studentType === "free") {
+        for (const slug of selectedCourseSlugs) {
+          const course = getCourseBySlug(slug);
+          const modules = getModulesForCourse(course);
+          const assignedModuleIds = selectedModulesMap[slug] ?? [];
+
+          for (const moduleId of assignedModuleIds) {
+            const module = modules.find(
+              (courseModule: any) => moduleKeyFrom(courseModule) === moduleId
+            );
+            const submodules = getSubmodulesForModule(module);
+
+            if (
+              submodules.length > 0 &&
+              (selectedSubmodulesMap[slug]?.[moduleId] ?? []).length === 0
+            ) {
+              throw new Error(
+                `Please select at least one submodule for ${module?.name ?? moduleId} in ${course?.name ?? slug}.`
+              );
+            }
+          }
+        }
+      }
+
       const selectedBatchObjects = batches.filter((b: Batch) =>
         selectedBatchIds.includes(String(b.id))
       );
@@ -692,9 +735,13 @@ export default function EditEnrolPanel({ studentId, onClose, onSaved }: Props) {
                                 </label>
                               </div>
                               <button
-                                onClick={() =>
-                                  setSelectedModulesMap((m) => ({ ...m, [slug]: [] }))
-                                }
+                                onClick={() => {
+                                  setSelectedModulesMap((m) => ({ ...m, [slug]: [] }));
+                                  setSelectedSubmodulesMap((sm) => ({
+                                    ...sm,
+                                    [slug]: {},
+                                  }));
+                                }}
                                 className="text-[10px] font-bold text-slate-400 uppercase"
                               >
                                 Clear
