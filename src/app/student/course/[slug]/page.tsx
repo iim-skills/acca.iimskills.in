@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import DashboardHero from "../DashboardHero";
 import CourseModules from "../CourseModules";
 import RightPanel from "../RightPanel";
+import QuizPanel from "@/components/Students/QuizPanel";
 
 type Student = {
   id: number;
@@ -27,6 +28,9 @@ type Course = {
   };
   modules: any[];
 };
+
+const normalizeStudentType = (value: unknown): "free" | "paid" =>
+  String(value ?? "").trim().toLowerCase() === "free" ? "free" : "paid";
 
 export default function CoursePage() {
   const params = useParams();
@@ -76,10 +80,34 @@ export default function CoursePage() {
       headers: {
         "x-user-email": user.email,
       },
-    })
+      })
       .then((res) => res.json())
       .then((data) => {
-        setStudent(data);
+        const resolvedStudentType = normalizeStudentType(
+          data?.student_type ?? data?.studentType
+        );
+        const nextStudent = {
+          ...data,
+          student_type: resolvedStudentType,
+          modules: Array.isArray(data?.modules) ? data.modules : [],
+          progress: data?.progress ?? {},
+        };
+
+        setStudent(nextStudent);
+
+        try {
+          const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
+          localStorage.setItem(
+            "user",
+            JSON.stringify({
+              ...storedUser,
+              student_type: resolvedStudentType,
+              studentType: resolvedStudentType,
+            })
+          );
+        } catch {
+          // Ignore localStorage sync issues and continue rendering.
+        }
       })
       .catch((err) => {
         console.error("Student fetch error:", err);
@@ -137,7 +165,6 @@ export default function CoursePage() {
         student_type={student.student_type}
         course={course}
         activeModules={student.modules}
-         // ✅ FIXED
       />
 
       {/* MAIN GRID */}
@@ -147,6 +174,7 @@ export default function CoursePage() {
         <div className="col-span-12 order-last lg:order-first lg:col-span-5 xl:col-span-5">
           <CourseModules
             course={course}
+            studentType={student.student_type}
             allowedModules={student.modules}
             allowedSubmodules={student.submodules}
             progress={student.progress}
@@ -183,7 +211,7 @@ export default function CoursePage() {
             onPlayVideo={(url, title, moduleId) =>
               handlePlayVideo(url, title, moduleId)
             }
-            QuizPanel={require("@/components/Students/QuizPanel").default}
+            QuizPanel={QuizPanel}
           />
         </div>
 

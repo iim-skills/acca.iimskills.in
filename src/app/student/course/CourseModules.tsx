@@ -91,6 +91,7 @@ type ProgressEntry = { positionSeconds: number; completed: boolean };
 
 type Props = {
   course: Course | null;
+  studentType?: string;
   allowedModules?: string[] | number[];
   allowedSubmodules?: Record<string, Record<string, string[]>> | Record<string, string[]>;
   progress?: Record<string, number[]>;
@@ -165,6 +166,18 @@ const GUEST_PROGRESS_KEY = (cid: string) =>
   `guest_progress_${cid || "unknown_course"}`;
 const QUIZ_PROGRESS_KEY = (cid: string) =>
   `quiz_progress_${cid || "unknown_course"}`;
+
+const normalizeText = (value: unknown) => String(value ?? "").trim();
+const normalizeLookupText = (value: unknown) => normalizeText(value).toLowerCase();
+
+function normalizeStudentTypeValue(value: unknown): "free" | "paid" | null {
+  const normalizedValue = normalizeLookupText(value);
+
+  if (normalizedValue === "free") return "free";
+  if (normalizedValue === "paid") return "paid";
+
+  return null;
+}
 
 /* ─────────────────────────────────────────────────────────────────
   buildOrderedSubItems
@@ -278,27 +291,31 @@ function normalizeAssignedSubmodules(
     return {} as Record<string, string[]>;
   }
 
-  const byCourse =
-    courseSlug &&
-    (allowedSubmodules as any)[courseSlug] &&
-    typeof (allowedSubmodules as any)[courseSlug] === "object" &&
-    !Array.isArray((allowedSubmodules as any)[courseSlug])
-      ? (allowedSubmodules as any)[courseSlug]
-      : allowedSubmodules;
+  const byCourseMatch = courseSlug
+    ? Object.entries(allowedSubmodules).find(
+        ([slugKey, value]) =>
+          normalizeLookupText(slugKey) === normalizeLookupText(courseSlug) &&
+          value &&
+          typeof value === "object" &&
+          !Array.isArray(value)
+      )?.[1]
+    : undefined;
+
+  const byCourse = byCourseMatch ?? allowedSubmodules;
 
   if (!byCourse || typeof byCourse !== "object" || Array.isArray(byCourse)) {
     return {} as Record<string, string[]>;
   }
 
   return Object.entries(byCourse).reduce((acc, [moduleId, submoduleIds]) => {
-    const normalizedModuleId = String(moduleId ?? "").trim();
+    const normalizedModuleId = normalizeText(moduleId);
     if (!normalizedModuleId) return acc;
 
     acc[normalizedModuleId] = Array.isArray(submoduleIds)
       ? Array.from(
           new Set(
             submoduleIds
-              .map((submoduleId: any) => String(submoduleId ?? "").trim())
+              .map((submoduleId: any) => normalizeText(submoduleId))
               .filter(Boolean)
           )
         )
@@ -313,6 +330,7 @@ function normalizeAssignedSubmodules(
 ═══════════════════════════════════════════════ */
 export default function CourseModules({
   course,
+  studentType,
   allowedModules = [],
   allowedSubmodules = {},
   progress = {},
@@ -442,6 +460,15 @@ const isSuperUnlockedUser = currentUserEmail === SUPER_UNLOCK_EMAIL;
     () => normalizeAssignedSubmodules(allowedSubmodules, course?.slug),
     [allowedSubmodules, course?.slug]
   );
+  const normalizedStudentType = useMemo(
+    () => normalizeStudentTypeValue(studentType),
+    [studentType]
+  );
+  const hasAssignedModules =
+    Array.isArray(allowedModules) && allowedModules.length > 0;
+  const hasAssignedSubmodules =
+    Object.keys(courseAssignedSubmodules).length > 0;
+  const hasAssignments = hasAssignedModules || hasAssignedSubmodules;
 
   const allowedSet = useMemo(
     () => {
@@ -530,42 +557,92 @@ const isSuperUnlockedUser = currentUserEmail === SUPER_UNLOCK_EMAIL;
 
   /* ── login type ── */
   useEffect(() => {
+    if (normalizedStudentType === "free") {
+      setIsFreeLoggedIn(true);
+      return;
+    }
+
+    if (normalizedStudentType === "paid") {
+      setIsFreeLoggedIn(false);
+      return;
+    }
+
     try {
       const raw = localStorage.getItem("user");
       if (raw) {
         const u = JSON.parse(raw);
-        const normalizedStudentType = String(
+        const normalizedStoredStudentType = normalizeStudentTypeValue(
           u?.student_type ?? u?.studentType ?? u?.type ?? u?.userType ?? ""
-        )
-          .toLowerCase()
-          .trim();
+        );
+
         if (
           u?.loginType === "guest" ||
           u?.role === "guest" ||
           u?.loginType === "free" ||
-          normalizedStudentType === "free"
+          normalizedStoredStudentType === "free"
         ) {
           setIsFreeLoggedIn(true);
           return;
         }
+
+        if (
+          normalizedStoredStudentType === "paid" ||
+          u?.loginType === "student" ||
+          u?.role === "student"
+        ) {
+          setIsFreeLoggedIn(false);
+          return;
+        }
       }
+
       if (
+        !isEmailUser &&
         localStorage.getItem("course_user_key") &&
-        !(Array.isArray(allowedModules) && allowedModules.length > 0)
+        !hasAssignments
       ) {
         setIsFreeLoggedIn(true);
         return;
       }
+
       setIsFreeLoggedIn(false);
     } catch {
       setIsFreeLoggedIn(false);
     }
-  }, [JSON.stringify(allowedModules ?? [])]);
+  }, [hasAssignments, isEmailUser, normalizedStudentType]);
 
   const isManagedFreeAccess =
-    isFreeLoggedIn &&
-    ((Array.isArray(allowedModules) && allowedModules.length > 0) ||
-      Object.keys(courseAssignedSubmodules).length > 0);
+    normalizedStudentType === "free" && hasAssignments;
+
+  const isManagedFreeModuleAssigned = (moduleId: unknown) => {
+    const normalizedModuleId = normalizeText(moduleId);
+    if (!normalizedModuleId) return false;
+
+    return (
+      allowedSet.has(normalizedModuleId) ||
+      Object.prototype.hasOwnProperty.call(
+        courseAssignedSubmodules,
+        normalizedModuleId
+      )
+    );
+  };
+
+  const isManagedFreeSubmoduleAssigned = (
+    moduleId: unknown,
+    submoduleId: unknown
+  ) => {
+    const normalizedModuleId = normalizeText(moduleId);
+    if (!normalizedModuleId) return false;
+
+    const normalizedSubmoduleId = normalizeText(submoduleId);
+    if (!normalizedSubmoduleId) return true;
+
+    const assignedSubmodules = courseAssignedSubmodules[normalizedModuleId];
+    if (!Array.isArray(assignedSubmodules)) {
+      return allowedSet.has(normalizedSubmoduleId);
+    }
+
+    return assignedSubmodules.includes(normalizedSubmoduleId);
+  };
 
   /* ── free preview window ── */
   useEffect(() => {
@@ -1590,7 +1667,7 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
             </span>
           </div>
 
-          {Array.isArray(allowedModules) && allowedModules.length > 1 ? (
+          {isSuperUnlockedUser || normalizedStudentType === "paid" ? (
             <button
               onClick={() => setMeetModalOpen(true)}
               type="button"
@@ -1639,21 +1716,20 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
               ? course?.fullStudyMaterial
               : undefined;
 
-          const hasAssignments = allowedSet.size > 0;
-
-         const moduleUnlocked = isSuperUnlockedUser
-  ? true
-  : hasAssignments // This now covers both paid and free students with specific assignments
-  ? Boolean(module.moduleId && allowedSet.has(String(module.moduleId)))
-  : isFreeLoggedIn
-  // Fallback for free preview if no specific modules are assigned
-  ? !isFreePreviewExpired && hasFreePreviewInModule(moduleIndex)
-  : Boolean(
-      (module.moduleId &&
-        (unlockedModulesSet.has(String(module.moduleId)) ||
-          allowedSet.has(String(module.moduleId)))) ||
-        (!module.moduleId && unlockedModulesSet.has(moduleKeyStr))
-    );
+          const moduleUnlocked = isSuperUnlockedUser
+            ? true
+            : isManagedFreeAccess
+            ? isManagedFreeModuleAssigned(module.moduleId)
+            : hasAssignments
+            ? Boolean(module.moduleId && allowedSet.has(String(module.moduleId)))
+            : isFreeLoggedIn
+            ? !isFreePreviewExpired && hasFreePreviewInModule(moduleIndex)
+            : Boolean(
+                (module.moduleId &&
+                  (unlockedModulesSet.has(String(module.moduleId)) ||
+                    allowedSet.has(String(module.moduleId)))) ||
+                  (!module.moduleId && unlockedModulesSet.has(moduleKeyStr))
+              );
 
           console.debug(
             `[MODULE_DEBUG] idx=${moduleIndex} id=${String(
@@ -1740,12 +1816,21 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
                 <div className="border-t border-gray-100 divide-y divide-gray-50">
                   {moduleStudyMaterial?.fileUrl ? (
                     <div className="p-3">
-                      <a
-                        href={moduleStudyMaterial.fileUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="flex items-center justify-between gap-3 p-3 rounded-xl border transition-all bg-white border-slate-100 hover:border-indigo-100 text-slate-600 hover:text-indigo-600 cursor-pointer"
-                      >
+                     <a
+  href={(() => {
+    const url = moduleStudyMaterial.fileUrl;
+    if (!url) return "#";
+    if (url.includes("localhost")) {
+      const path = url.replace(/^https?:\/\/[^/]+/, "");
+      return `https://acca.iimskills.in${path}`;
+    }
+    if (url.startsWith("http")) return url;
+    return `https://acca.iimskills.in${url}`;
+  })()}
+  target="_blank"
+  rel="noreferrer"
+  className="flex items-center justify-between gap-3 p-3 rounded-xl border transition-all bg-white border-slate-100 hover:border-indigo-100 text-slate-600 hover:text-indigo-600 cursor-pointer"
+>
                         <div className="flex items-center gap-3">
                           <FileText size={16} className="text-emerald-500" />
                           <p className="text-xs font-semibold">
@@ -1766,7 +1851,7 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
                       const quizzes = Array.isArray(sub.quizzes) ? sub.quizzes : [];
                       return items.length > 0 || videos.length > 0 || quizzes.length > 0;
                     }) ?? []).length > 0 ? (
-                    module.submodules.map((sub, subIndex) => {
+                    (module.submodules ?? []).map((sub, subIndex) => {
                       const moduleKeyPart =
                         module.moduleId ?? `module-${moduleIndex}`;
                       const items = Array.isArray((sub as any).items) ? (sub as any).items : [];
@@ -1780,11 +1865,18 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
                         ? true
                         : !moduleUnlocked
                         ? false
-                        : hasAssignments // For paid & free with assignments
-                        ? (allowedSet.has(String(module.moduleId)) && (sub.submoduleId ? allowedSet.has(String(sub.submoduleId)) : true))
-                        : isFreeLoggedIn // For free preview
-                        ? !isFreePreviewExpired && hasFreePreviewInSubmodule(moduleIndex, subIndex)
-                        : subIndex === 0 || isSubmoduleCompleted(moduleIndex, subIndex - 1);
+                        : isManagedFreeAccess
+                        ? isManagedFreeSubmoduleAssigned(
+                            module.moduleId,
+                            sub.submoduleId
+                          )
+                        : hasAssignments
+                        ? true
+                        : isFreeLoggedIn
+                        ? !isFreePreviewExpired &&
+                          hasFreePreviewInSubmodule(moduleIndex, subIndex)
+                        : subIndex === 0 ||
+                          isSubmoduleCompleted(moduleIndex, subIndex - 1);
 
                       // derive videos / quizzes, supporting `items[]`
                       const videos: VideoItem[] = Array.isArray(sub.videos)

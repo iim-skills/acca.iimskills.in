@@ -13,6 +13,19 @@ const safeJsonParse = <T,>(value: unknown, fallback: T): T => {
 };
 
 const normalizeText = (value: unknown) => String(value ?? "").trim();
+const normalizeSlug = (value: unknown) => normalizeText(value).toLowerCase();
+
+const normalizeStudentType = (
+  value: unknown,
+  hasCourses: boolean
+): "free" | "paid" => {
+  const raw = normalizeSlug(value);
+
+  if (raw === "free") return "free";
+  if (raw === "paid") return "paid";
+
+  return hasCourses ? "paid" : "free";
+};
 
 const normalizeCourseSubmodules = (value: any) => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -42,7 +55,7 @@ const buildScopedFreeSubmodules = (
   courseSubmodules: any,
   freeStudentAccess: Record<string, any>
 ) => {
-  const normalizedSlug = normalizeText(slug);
+  const normalizedSlug = normalizeSlug(slug);
   if (!normalizedSlug) return undefined;
 
   const parsedCourseSubmodules = safeJsonParse<any>(courseSubmodules, courseSubmodules);
@@ -52,15 +65,17 @@ const buildScopedFreeSubmodules = (
     typeof parsedCourseSubmodules === "object" &&
     !Array.isArray(parsedCourseSubmodules)
   ) {
-    if (
-      parsedCourseSubmodules[normalizedSlug] &&
-      typeof parsedCourseSubmodules[normalizedSlug] === "object" &&
-      !Array.isArray(parsedCourseSubmodules[normalizedSlug])
-    ) {
+    const nestedCourseSubmodules = Object.entries(parsedCourseSubmodules).find(
+      ([courseKey, value]) =>
+        normalizeSlug(courseKey) === normalizedSlug &&
+        value &&
+        typeof value === "object" &&
+        !Array.isArray(value)
+    )?.[1];
+
+    if (nestedCourseSubmodules) {
       return {
-        [normalizedSlug]: normalizeCourseSubmodules(
-          parsedCourseSubmodules[normalizedSlug]
-        ),
+        [normalizedSlug]: normalizeCourseSubmodules(nestedCourseSubmodules),
       };
     }
 
@@ -74,7 +89,9 @@ const buildScopedFreeSubmodules = (
     }
   }
 
-  const accessEntry = freeStudentAccess?.[normalizedSlug];
+  const accessEntry = Object.entries(freeStudentAccess ?? {}).find(
+    ([courseKey]) => normalizeSlug(courseKey) === normalizedSlug
+  )?.[1];
   if (!accessEntry?.modules || typeof accessEntry.modules !== "object") {
     return undefined;
   }
@@ -139,18 +156,28 @@ export async function GET(req:Request){
     student.free_student_access,
     {}
   );
+  const studentType = normalizeStudentType(
+    student.student_type,
+    Array.isArray(courses) && courses.length > 0
+  );
 
   const responsePayload: any = {
     name: student.name,
     email: student.email,
-    student_type: student.student_type,
+    student_type: studentType,
+    studentType,
   };
 
   if (slug) {
-    const course = courses.find((c: any) => c.course_slug === slug);
+    const normalizedSlug = normalizeSlug(slug);
+    const course = courses.find(
+      (c: any) =>
+        normalizeSlug(c?.course_slug ?? c?.courseSlug ?? c?.slug) ===
+        normalizedSlug
+    );
     responsePayload.modules = course?.modules || [];
     responsePayload.progress = course?.progress || {};
-    if (student.student_type === "free") {
+    if (studentType === "free") {
       const scopedSubmodules = buildScopedFreeSubmodules(
         slug,
         course?.submodules,
