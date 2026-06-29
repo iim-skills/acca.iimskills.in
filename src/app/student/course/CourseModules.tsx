@@ -990,14 +990,16 @@ const isSuperUnlockedUser = currentUserEmail === SUPER_UNLOCK_EMAIL;
     for (let i = 0; i < mods.length; i++) {
       const m = mods[i];
       const mid = m.moduleId ?? `module-${i}`;
-      const midStr = String(mid);
-      if (s.has(midStr) || i === 0) continue;
+      if (s.has(String(mid))) continue;
+
+      if (i === 0) {
+        s.add(String(mid)); // Always unlock the first module
+        continue;
+      }
 
       const prev = mods[i - 1];
       const pid = prev.moduleId ?? `module-${i - 1}`;
-      const pidStr = String(pid);
-
-      if (s.has(pidStr) && isModuleCompleted(i - 1)) s.add(midStr);
+      if (s.has(String(pid)) && isModuleCompleted(i - 1)) s.add(String(mid));
     }
 
     return s;
@@ -1875,8 +1877,17 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
                         : isFreeLoggedIn
                         ? !isFreePreviewExpired &&
                           hasFreePreviewInSubmodule(moduleIndex, subIndex)
-                        : subIndex === 0 ||
-                          isSubmoduleCompleted(moduleIndex, subIndex - 1);
+                        : (() => {
+                            if (moduleIndex === 0 && subIndex === 0) return true;
+                            if (subIndex > 0) {
+                              return isSubmoduleCompleted(moduleIndex, subIndex - 1);
+                            }
+                            // subIndex is 0, so check if the previous module is complete
+                            if (moduleIndex > 0) {
+                              return isModuleCompleted(moduleIndex - 1);
+                            }
+                            return false;
+                          })();
 
                       // derive videos / quizzes, supporting `items[]`
                       const videos: VideoItem[] = Array.isArray(sub.videos)
@@ -2174,10 +2185,7 @@ lastAllowedTimeRef.current = isSuperUnlockedUser
       isFreePreviewVideo(globalIndex)
     )
   : Boolean(
-      subUnlocked &&
-        (isFirst ||
-          done ||
-          (prevGlobalDone && quizGatePassed))
+      subUnlocked && (isFirst || done || (prevGlobalDone && quizGatePassed))
     );
 
                                     return (
