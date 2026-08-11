@@ -456,6 +456,8 @@ export default function CourseModule({
   const hasAssignedSubmodules =
     Object.keys(courseAssignedSubmodules).length > 0;
   const hasAssignments = hasAssignedModules || hasAssignedSubmodules;
+  const canAccessLiveRecordingSessions =
+    normalizedStudentType === "paid" && (hasAssignedModules || hasAssignedSubmodules);
 
   const allowedSet = useMemo(
     () => {
@@ -2426,28 +2428,34 @@ lastAllowedTimeRef.current = alreadyCompleted
         </button>
         {showLiveTab && (
           <div className="mt-5 space-y-5">
-            {(course?.modules || []).map((m, i) => (
-              <button
-                key={m.moduleId ?? `mod-${i}`}
-                type="button"
-                onClick={() => {
-                  setSelectedLiveModuleId(m.moduleId ?? null);
-                  onShowLiveSessions?.(m.moduleId ?? "");
-                }}
-                className={`w-full space-y-6 text-left p-3 rounded-lg border transition-all ${
-                  selectedLiveModuleId === m.moduleId
-                    ? "bg-indigo-50 border-indigo-300"
-                    : "bg-white border-slate-200 hover:border-indigo-200"
-                }`}
-              >
-                <div className="flex items-center  justify-between">
-                  <div className="min-w-0 ">
-                    <p className="text-sm font-semibold text-slate-900 truncate">{m.name}</p>
-                    {/* <p className="text-xs text-slate-400 mt-1">Module</p> */}
+            {!canAccessLiveRecordingSessions ? (
+              <div className="p-4 rounded-xl border border-amber-200 bg-amber-50 text-sm text-amber-800">
+                <p className="font-semibold">Live recordings are locked</p>
+                <p className="mt-1">Only assigned paid students can access these recordings. Contact admin to request access.</p>
+              </div>
+            ) : (
+              (course?.modules || []).map((m, i) => (
+                <button
+                  key={m.moduleId ?? `mod-${i}`}
+                  type="button"
+                  onClick={() => {
+                    setSelectedLiveModuleId(m.moduleId ?? null);
+                    onShowLiveSessions?.(m.moduleId ?? "");
+                  }}
+                  className={`w-full space-y-6 text-left p-3 rounded-lg border transition-all ${
+                    selectedLiveModuleId === m.moduleId
+                      ? "bg-indigo-50 border-indigo-300"
+                      : "bg-white border-slate-200 hover:border-indigo-200"
+                  }`}
+                >
+                  <div className="flex items-center  justify-between">
+                    <div className="min-w-0 ">
+                      <p className="text-sm font-semibold text-slate-900 truncate">{m.name}</p>
+                    </div>
                   </div>
-                </div>
-              </button>
-            ))}
+                </button>
+              ))
+            )}
           </div>
         )}
       </div>

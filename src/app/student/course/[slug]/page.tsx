@@ -46,6 +46,11 @@ export default function CoursePage() {
   const [activeQuiz, setActiveQuiz] = useState<any | null>(null);
   const [activeLiveSessions, setActiveLiveSessions] = useState<any[] | null>(null);
 
+  const studentTypeNorm = normalizeStudentType(student?.student_type ?? "");
+  const hasAssignedModules = Boolean(student && Array.isArray(student.modules) && student.modules.length > 0);
+  const hasAssignedSubmodules = Boolean(student && student.submodules && Object.keys(student.submodules).length > 0);
+  const canAccessLiveSessions = Boolean(student && studentTypeNorm === "paid" && (hasAssignedModules || hasAssignedSubmodules));
+
   /* ================= LOGOUT ================= */
   const handleLogout = () => {
     try {
@@ -207,6 +212,7 @@ export default function CoursePage() {
             activeSubmoduleTitle={activeSubmoduleTitle}
             activeQuiz={activeQuiz}
             activeLiveSessions={activeLiveSessions}
+            liveSessionsLocked={!canAccessLiveSessions}
             onCloseQuiz={() => setActiveQuiz(null)}
             onPlayVideo={(url, title, moduleId) =>
               handlePlayVideo(url, title, moduleId)

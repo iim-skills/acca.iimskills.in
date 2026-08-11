@@ -34,6 +34,7 @@ type Props = {
   onCloseQuiz: () => void;
   onPlayVideo: (url: string | null, title?: string, moduleId?: string) => void;
   QuizPanel: React.ComponentType<any>;
+  liveSessionsLocked?: boolean;
 };
 
 /* ================= PASTEL COLORS ================= */
@@ -55,7 +56,7 @@ function getPastelForIndex(i: number) {
 export default function App({
   course, student,
   activeModuleId, activeVideoUrl, activeSubmoduleTitle,
-  activeLiveSessions, activeQuiz, onCloseQuiz, onPlayVideo, QuizPanel,
+  activeLiveSessions, activeQuiz, onCloseQuiz, onPlayVideo, QuizPanel, liveSessionsLocked = false,
 }: Props) {
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
