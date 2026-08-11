@@ -129,6 +129,26 @@ const buildScopedFreeSubmodules = (
   };
 };
 
+const extractFreeStudentModules = (
+  slug: string,
+  freeStudentAccess: Record<string, any>
+): string[] => {
+  const normalizedSlug = normalizeSlug(slug);
+  if (!normalizedSlug) return [];
+
+  const accessEntry = Object.entries(freeStudentAccess ?? {}).find(
+    ([courseKey]) => normalizeSlug(courseKey) === normalizedSlug
+  )?.[1];
+
+  if (!accessEntry?.modules || typeof accessEntry.modules !== "object") {
+    return [];
+  }
+
+  return Object.keys(accessEntry.modules)
+    .map((moduleId) => normalizeText(moduleId))
+    .filter(Boolean);
+};
+
 export async function GET(req:Request){
 
   const email = req.headers.get("x-user-email");
@@ -175,9 +195,13 @@ export async function GET(req:Request){
         normalizeSlug(c?.course_slug ?? c?.courseSlug ?? c?.slug) ===
         normalizedSlug
     );
-    responsePayload.modules = course?.modules || [];
     responsePayload.progress = course?.progress || {};
+    
     if (studentType === "free") {
+      // For free students, get assigned modules and submodules from free_student_access
+      const freeModules = extractFreeStudentModules(slug, freeStudentAccess);
+      responsePayload.modules = freeModules.length > 0 ? freeModules : [];
+      
       const scopedSubmodules = buildScopedFreeSubmodules(
         slug,
         course?.submodules,
@@ -187,6 +211,9 @@ export async function GET(req:Request){
       if (scopedSubmodules) {
         responsePayload.submodules = scopedSubmodules;
       }
+    } else {
+      // For paid students, use regular modules
+      responsePayload.modules = course?.modules || [];
     }
   } else {
     responsePayload.courses = courses;

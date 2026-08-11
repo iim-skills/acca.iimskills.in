@@ -584,6 +584,8 @@ export default function CourseModule({
 
   const isManagedFreeAccess =
     normalizedStudentType === "free" && hasAssignments;
+  const canAccessCourseContent = 
+    (normalizedStudentType === "paid" || isManagedFreeAccess) && hasAssignments;
 
   const isManagedFreeModuleAssigned = (moduleId: unknown) => {
     const normalizedModuleId = normalizeText(moduleId);
@@ -606,17 +608,17 @@ export default function CourseModule({
     if (!normalizedModuleId) return false;
 
     const normalizedSubmoduleId = normalizeText(submoduleId);
-    if (!normalizedSubmoduleId) return true;
-
-    // A whole-module assignment grants access to all of its submodules.
-    if (allowedSet.has(normalizedModuleId)) return true;
+    if (!normalizedSubmoduleId) return false;
 
     const assignedSubmodules = courseAssignedSubmodules[normalizedModuleId];
-    if (!Array.isArray(assignedSubmodules)) {
-      return allowedSet.has(normalizedSubmoduleId);
+    if (Array.isArray(assignedSubmodules)) {
+      if (assignedSubmodules.length === 0) {
+        return true; // Module-level access grants the whole module
+      }
+      return assignedSubmodules.includes(normalizedSubmoduleId);
     }
 
-    return assignedSubmodules.includes(normalizedSubmoduleId);
+    return allowedSet.has(normalizedModuleId);
   };
 
   /* ── free preview window ── */
@@ -1275,12 +1277,12 @@ export default function CourseModule({
 
     const mod = course?.modules?.[fv.moduleIndex];
 
+    if (!canAccessCourseContent) {
+      return;
+    }
+
     if (isManagedFreeAccess) {
       if (!isManagedFreeSubmoduleAllowed(fv.moduleIndex, fv.subIndex)) {
-        return;
-      }
-    } else if (isFreeLoggedIn) {
-      if (!isFreePreviewVideo(globalIndex)) {
         return;
       }
     } else if (
@@ -1731,11 +1733,12 @@ lastAllowedTimeRef.current = alreadyCompleted
               ? course?.fullStudyMaterial
               : undefined;
 
-          const moduleAccessAllowed = isFreeLoggedIn && !isManagedFreeAccess
-            ? !isFreePreviewExpired && hasFreePreviewInModule(moduleIndex)
-            : isManagedFreeModuleAssigned(module.moduleId);
+          const moduleAccessAllowed = canAccessCourseContent
+            ? isManagedFreeModuleAssigned(module.moduleId)
+            : false;
           const moduleUnlocked =
-            moduleAccessAllowed && isPreviousModuleCompleted(moduleIndex);
+            moduleAccessAllowed &&
+            (isManagedFreeAccess ? true : isPreviousModuleCompleted(moduleIndex));
 
           console.debug(
             `[MODULE_DEBUG] idx=${moduleIndex} id=${String(
@@ -1867,18 +1870,18 @@ lastAllowedTimeRef.current = alreadyCompleted
                       const subKey = `${moduleKey}-sub-${subIndex}`;
                       const subIsOpen = openSubKey === subKey;
 
-                      const submoduleAccessAllowed = isFreeLoggedIn && !isManagedFreeAccess
-                        ? !isFreePreviewExpired &&
-                          hasFreePreviewInSubmodule(moduleIndex, subIndex)
-                        : isManagedFreeSubmoduleAssigned(
+                      const submoduleAccessAllowed = canAccessCourseContent
+                        ? isManagedFreeSubmoduleAssigned(
                             module.moduleId,
                             sub.submoduleId
-                          );
+                          )
+                        : false;
                       const subUnlocked =
                         moduleUnlocked &&
                         submoduleAccessAllowed &&
-                        isPreviousSubmoduleCompleted(moduleIndex, subIndex);
+                        (isManagedFreeAccess ? true : isPreviousSubmoduleCompleted(moduleIndex, subIndex));
                       const subSequenceBlocked =
+                        !isManagedFreeAccess &&
                         !isPreviousSubmoduleCompleted(moduleIndex, subIndex);
 
                       // derive videos / quizzes, supporting `items[]`
@@ -2098,12 +2101,14 @@ lastAllowedTimeRef.current = alreadyCompleted
                               </p>
                               {!subUnlocked && (
                                 <p className="text-[10px] text-red-400 mt-0.5">
-                                  {subSequenceBlocked
+                                  {isManagedFreeAccess && !submoduleAccessAllowed
+                                    ? "🔒 Locked — contact admin to unlock"
+                                    : subSequenceBlocked
                                     ? "Complete the previous chapter to unlock"
                                     : isFreeLoggedIn
                                     ? isFreePreviewExpired
-                                    ? "Free preview expired after 7 days"
-                                    : "Upgrade your access to unlock"
+                                      ? "Free preview expired after 7 days"
+                                      : "Upgrade your access to unlock"
                                     : "Complete the previous chapter to unlock"}
                                 </p>
                               )}
@@ -2147,18 +2152,12 @@ lastAllowedTimeRef.current = alreadyCompleted
                                         ? completedSet.has(globalIndex)
                                         : false;
 
-                                    const unlocked = isFreeLoggedIn && !isManagedFreeAccess
-  ? Boolean(
-      subUnlocked &&
-      typeof globalIndex === "number" &&
-      isFreePreviewVideo(globalIndex) &&
-      isPreviousChapterCompleted(globalIndex)
-    )
-  : Boolean(
-      subUnlocked &&
-        typeof globalIndex === "number" &&
-        (done || isPreviousChapterCompleted(globalIndex))
-    );
+                                    const unlocked = Boolean(
+                                      canAccessCourseContent &&
+                                      subUnlocked &&
+                                      typeof globalIndex === "number" &&
+                                      (done || isPreviousChapterCompleted(globalIndex))
+                                    );
 
                                     return (
                                       <div
