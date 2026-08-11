@@ -9,11 +9,9 @@ import {
   Plus,
   X,
   CheckCircle2,
-  PlayCircle,
   Search,
   ChevronRight,
-  Clock,
-  ExternalLink,
+  Eye,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -103,7 +101,7 @@ export default function VideoAdmin(): React.ReactElement {
   const [searchQuery, setSearchQuery] = useState("");
 
   const [currentPage, setCurrentPage] = useState(1);
-  const PAGE_SIZE = 12;
+  const PAGE_SIZE = 20;
 
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -154,9 +152,6 @@ export default function VideoAdmin(): React.ReactElement {
 
   const getVideoUrl = (v: Video) =>
     v?.secure_url ?? v?.s3_url ?? v?.s3Url ?? v?.url ?? v?.fileUrl ?? "#";
-
-  const getThumbUrl = (v: Video) =>
-    v?.thumb_url ?? v?.thumbUrl ?? "";
 
   const filteredVideos = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -352,99 +347,77 @@ export default function VideoAdmin(): React.ReactElement {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5 p-5">
-              {pagedVideos.map((v) => {
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] border-collapse text-left">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50/80 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
+                    <th className="w-20 px-6 py-4">Sr. No.</th>
+                    <th className="px-6 py-4">Video name</th>
+                    <th className="w-44 px-6 py-4">Upload date</th>
+                    <th className="w-40 px-6 py-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+              {pagedVideos.map((v, index) => {
                 const id = v?.id ?? v?._id ?? generateId();
                 const name = v?.name ?? v?.title ?? "Untitled";
                 const fileUrl = getVideoUrl(v);
-                const thumbUrl = getThumbUrl(v);
                 const uploadedAt =
                   v?.uploaded_at ?? v?.uploadedAt ?? v?.created_at ?? v?.createdAt;
 
                 return (
-                  <motion.div
+                  <motion.tr
                     layout
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     key={String(id)}
-                    className="group relative overflow-hidden rounded-2xl border bg-white shadow-sm"
+                    className="group bg-white transition-colors hover:bg-blue-50/40"
                   >
-                    <div className="relative aspect-video bg-slate-100 overflow-hidden">
-                      {thumbUrl ? (
-                        <img
-                          src={thumbUrl}
-                          alt={name}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : fileUrl !== "#" ? (
-                        <video
-                          src={fileUrl}
-                          muted
-                          playsInline
-                          preload="metadata"
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <div className="h-full w-full flex items-center justify-center bg-slate-100 text-slate-400">
-                          <PlayCircle size={44} />
-                        </div>
-                      )}
-
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/45 transition-all duration-300" />
-
-                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-300">
-                        <button
-                          onClick={() =>
-                            fileUrl !== "#" && window.open(fileUrl, "_blank")
-                          }
-                          className="rounded-full bg-white/95 p-3 shadow-md"
-                        >
-                          <PlayCircle className="w-6 h-6 text-gray-900" />
-                        </button>
+                    <td className="px-6 py-4 text-sm font-semibold text-slate-400">
+                      {startIndex + index + 1}
+                    </td>
+                    <td className="max-w-0 px-6 py-4">
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+                          <Film size={17} />
+                        </span>
+                        <span className="truncate text-sm font-semibold text-slate-800" title={name}>
+                          {name}
+                        </span>
                       </div>
-
-                      <button
-                        onClick={() => removeVideo(id)}
-                        className="absolute top-3 right-3 rounded-full bg-white/95 p-2 shadow-md opacity-0 group-hover:opacity-100 transition"
-                        title="Delete video"
-                      >
-                        <Trash2 className="w-4 h-4 text-red-500" />
-                      </button>
-
-                      <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition">
-                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/35 to-transparent p-4 text-white">
-                          <p className="font-medium line-clamp-1">{name}</p>
-                          <div className="flex items-center gap-1 text-xs text-white/80 mt-1">
-                            <Clock size={12} />
-                            {safeDate(uploadedAt)}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="px-4 py-2">
-                      <div className="mt-3 flex items-center justify-between">
+                    </td>
+                    <td className="px-6 py-4 text-sm font-medium text-slate-500">
+                      {safeDate(uploadedAt)}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center justify-end gap-2">
                         <a
-                          href={fileUrl}
+                          href={fileUrl === "#" ? undefined : fileUrl}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-xs font-medium text-blue-600 hover:underline inline-flex items-center gap-1"
+                          aria-disabled={fileUrl === "#"}
+                          className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition-colors ${
+                            fileUrl === "#"
+                              ? "pointer-events-none bg-slate-100 text-slate-400"
+                              : "bg-blue-50 text-blue-700 hover:bg-blue-100"
+                          }`}
                         >
-                          <ExternalLink size={12} />
-                          Open Video
+                          <Eye size={14} /> View
                         </a>
                         <button
                           onClick={() => removeVideo(id)}
-                          className="text-slate-400 hover:text-rose-600 transition"
-                          title="Delete Video"
+                          className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-rose-600 transition-colors hover:bg-rose-50"
+                          title={`Delete ${name}`}
                         >
-                          <Trash2 size={18} />
+                          <Trash2 size={14} /> Delete
                         </button>
                       </div>
-                    </div>
-                  </motion.div>
+                    </td>
+                  </motion.tr>
                 );
               })}
+                </tbody>
+              </table>
             </div>
             
           )}

@@ -99,6 +99,12 @@ export default function LMSPage() {
 
   const enrolledCount = students.length;
   const completedCount = students.filter((student) => student.status === "completed").length;
+  const paidStudentsCount = students.filter(
+    (student) => normalizeStudentType(student.studentType) === "paid"
+  ).length;
+  const freeStudentsCount = students.filter(
+    (student) => normalizeStudentType(student.studentType) === "free"
+  ).length;
 
   /* -------- SEARCH + FILTER -------- */
   const filteredStudents = useMemo(() => {
@@ -128,12 +134,17 @@ export default function LMSPage() {
   return (
     <div className="space-y-6 p-6">
       {/* ---------- HEADER STATS ---------- */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard title="Enrolled Students" value={enrolledCount} icon={<FaUserGraduate />} />
         <StatCard title="Completed Courses" value={completedCount} icon={<FaBook />} />
         <StatCard
           title="Active Students"
           value={enrolledCount - completedCount}
+          icon={<FaUserGraduate />}
+        />
+        <StatCard
+          title="Free / Paid Students"
+          value={`${freeStudentsCount} / ${paidStudentsCount}`}
           icon={<FaUserGraduate />}
         />
       </div>
@@ -346,7 +357,7 @@ function StatCard({
   icon,
 }: {
   title: string;
-  value: number;
+  value: number | string;
   icon: React.ReactNode;
 }) {
   return (
