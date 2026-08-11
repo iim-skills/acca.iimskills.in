@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from "react";
 import { Clock, BookOpen, BarChart3, HelpCircle, FileText } from "lucide-react";
-import AdminRouteHeader from "../../components/AdminRouteHeader";
 
 // --- Types ---
 type QuestionOption = { id: string; text: string };
@@ -57,15 +56,9 @@ export default function PreviewClient({ id }: { id?: string }) {
   let globalIndex = 1;
 
   return (
-    <div className="min-h-screen bg-[#F1F5F9] pb-20">
-      <AdminRouteHeader
-        forceShow
-        compact
-        backHref="/admin/quizzes"
-        title="Quiz Preview"
-      />
+    <div className="min-h-screen bg-[#f8fafc] pb-20 text-slate-900">
       {/* STICKY TOP BAR */}
-      <div className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-slate-200">
+      <div className="sticky top-0 z-10 border-b border-indigo-100 bg-white/90 backdrop-blur-xl">
         <div className="max-w-5xl mx-auto px-6 py-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-600">Quiz Preview</span>
@@ -84,13 +77,13 @@ export default function PreviewClient({ id }: { id?: string }) {
         </div>
       </div>
 
-      <main className="max-w-4xl mx-auto mt-8 px-6 space-y-8">
+      <main className="max-w-4xl mx-auto mt-10 px-6 space-y-7">
         {quiz.questions.map((q) => {
           if (q.type === "PASSAGE") {
             return (
-              <section key={q.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <section key={q.id} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm shadow-slate-200/60">
                 {/* Passage Header */}
-                <div className="bg-slate-50 px-8 py-4 border-b flex items-center gap-2 text-slate-600">
+                <div className="flex items-center gap-2 border-b border-indigo-100 bg-indigo-50/70 px-8 py-4 text-indigo-700">
                   <BookOpen size={18} />
                   <span className="font-semibold uppercase text-xs tracking-wider">Reading Comprehension</span>
                 </div>
@@ -118,7 +111,7 @@ export default function PreviewClient({ id }: { id?: string }) {
           }
 
           return (
-            <div key={q.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
+            <div key={q.id} className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm shadow-slate-200/60">
                <QuestionCard 
                   number={globalIndex++} 
                   text={q.text} 
@@ -138,13 +131,13 @@ export default function PreviewClient({ id }: { id?: string }) {
 
 function QuestionCard({ number, text, options, type, marks }: any) {
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <div className="flex justify-between items-start gap-4">
         <div className="flex gap-3">
-          <span className="flex-shrink-0 w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center font-bold text-sm">
+          <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-slate-900 text-sm font-extrabold text-white shadow-sm">
             {number}
           </span>
-          <p className="text-lg font-medium text-slate-800 pt-0.5">{text}</p>
+          <p className="pt-0.5 text-lg font-bold leading-snug text-slate-800">{text}</p>
         </div>
         {marks && (
           <span className="text-[11px] font-bold text-slate-400 border border-slate-200 px-2 py-1 rounded">
@@ -185,7 +178,7 @@ function QuestionCard({ number, text, options, type, marks }: any) {
 
 function Stat({ icon, label, className = "" }: { icon: React.ReactNode, label: string, className?: string }) {
   return (
-    <div className={`flex items-center gap-2 text-sm text-slate-600 ${className}`}>
+    <div className={`flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-sm font-semibold text-slate-600 ${className}`}>
       <span className="text-slate-400">{icon}</span>
       {label}
     </div>

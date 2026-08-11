@@ -59,6 +59,8 @@ function normalizeQuestions(questions: any[]) {
         text: sq.text,
         type: sq.type || "MCQ",
         marks: sq.marks || 1,
+        imageUrls: Array.isArray(sq.imageUrls) ? sq.imageUrls : sq.imageUrl ? [sq.imageUrl] : [],
+        imageUrl: sq.imageUrl || (Array.isArray(sq.imageUrls) ? sq.imageUrls[0] : null) || null,
         options: (sq.options || []).map((opt: any, j: number) => ({
           id: opt.id || `${subId}-opt-${j}`,
           text: opt.text || opt,
@@ -67,11 +69,19 @@ function normalizeQuestions(questions: any[]) {
       };
     });
 
+    const imageUrls = Array.isArray(q.imageUrls)
+      ? q.imageUrls
+      : q.imageUrl
+        ? [q.imageUrl]
+        : [];
+
     return {
       id: questionId,
       text: q.text,
       type: q.type || "MCQ",
       marks: q.marks || 1,
+      imageUrls,
+      imageUrl: imageUrls[0] || null,
 
       options,
       correctOptionId: q.correctOptionId || null,

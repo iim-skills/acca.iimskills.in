@@ -18,6 +18,7 @@ import {
   Type,
   Save,
   Loader2,
+  ImagePlus,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -39,6 +40,8 @@ type PassageSubQuestion = {
   options: QuestionOption[];
   correctOptionId: string;
   marks: number;
+  imageUrls?: string[];
+  imageUrl?: string;
 };
 
 type QuestionItem = {
@@ -51,6 +54,8 @@ type QuestionItem = {
   answer?: string;
   passage?: string;
   passageQuestions?: PassageSubQuestion[];
+  imageUrls?: string[];
+  imageUrl?: string;
 };
 
 type QuestionTypeConfig = {
@@ -161,6 +166,12 @@ const normalizeSubQuestion = (sq: any): PassageSubQuestion => {
         { id: generateId(), text: "Option 2" },
       ];
 
+  const imageUrls = Array.isArray(sq?.imageUrls)
+    ? sq.imageUrls.map((img: any) => String(img))
+    : sq?.imageUrl
+      ? [String(sq.imageUrl)]
+      : [];
+
   return {
     id: String(sq?.id || generateId()),
     type: "MCQ",
@@ -168,12 +179,19 @@ const normalizeSubQuestion = (sq: any): PassageSubQuestion => {
     options,
     correctOptionId: String(sq?.correctOptionId || options[0]?.id || ""),
     marks: Number(sq?.marks || 1),
+    imageUrls,
+    imageUrl: imageUrls[0] || undefined,
   };
 };
 
 const normalizeQuestion = (q: any): QuestionItem => {
   const type = String(q?.type || "MCQ").toUpperCase() as QuestionType;
   const isPassage = type === "PASSAGE";
+  const imageUrls = Array.isArray(q?.imageUrls)
+    ? q.imageUrls.map((img: any) => String(img))
+    : q?.imageUrl
+      ? [String(q.imageUrl)]
+      : [];
 
   if (isPassage) {
     return {
@@ -182,6 +200,8 @@ const normalizeQuestion = (q: any): QuestionItem => {
       text: String(q?.text || ""),
       passage: String(q?.passage || q?.text || ""),
       marks: Number(q?.marks || 1),
+      imageUrls,
+      imageUrl: imageUrls[0] || undefined,
       passageQuestions: Array.isArray(q?.passageQuestions)
         ? q.passageQuestions.map(normalizeSubQuestion)
         : Array.isArray(q?.questions)
@@ -207,6 +227,8 @@ const normalizeQuestion = (q: any): QuestionItem => {
     options: type === "MCQ" ? options : undefined,
     correctOptionId: type === "MCQ" ? String(q?.correctOptionId || options[0]?.id || "") : undefined,
     answer: q?.answer ? String(q.answer) : "",
+    imageUrls,
+    imageUrl: imageUrls[0] || undefined,
   };
 };
 
@@ -241,6 +263,11 @@ function EditQuizContent() {
   const [quizTime, setQuizTime] = useState<number>(10);
   const [passingPercent, setPassingPercent] = useState<number>(40);
   const activeQ = questions[activeIdx] ?? questions[0] ?? createMCQ();
+  const activeQImageUrls = activeQ.imageUrls?.length
+    ? activeQ.imageUrls
+    : activeQ.imageUrl
+    ? [activeQ.imageUrl]
+    : [];
 
   /* ================= FETCH QUIZ ================= */
 
@@ -301,6 +328,59 @@ setPassingPercent(data?.passing_percent || 40); // ✅ ADD THIS
         ...updates,
       };
       return next;
+    });
+  };
+
+  const uploadQuestionImage = async (files?: FileList | File[]) => {
+    if (!files) return;
+    const fileList = files instanceof FileList ? Array.from(files) : Array.isArray(files) ? files : [files];
+
+    for (const file of fileList) {
+      if (!file) continue;
+      const formData = new FormData();
+      formData.append("image", file);
+      const response = await fetch("/api/admin/upload-quiz-image", { method: "POST", body: formData });
+      const data = await response.json();
+      if (!response.ok) {
+        alert(data?.error || "Image upload failed");
+        continue;
+      }
+
+      const existingImages = activeQ.imageUrls?.length
+        ? [...activeQ.imageUrls]
+        : activeQ.imageUrl
+        ? [activeQ.imageUrl]
+        : [];
+
+      updateQuestion({
+        imageUrls: [...existingImages, data.url],
+        imageUrl: undefined,
+      });
+    }
+  };
+
+  const removeQuestionImage = (imageIndex: number) => {
+    setQuestions((prev) => {
+      const current = prev[activeIdx];
+      if (!current) return prev;
+
+      const existingImages = current.imageUrls?.length
+        ? [...current.imageUrls]
+        : current.imageUrl
+        ? [current.imageUrl]
+        : [];
+
+      existingImages.splice(imageIndex, 1);
+
+      return prev.map((q, idx) =>
+        idx === activeIdx
+          ? {
+              ...q,
+              imageUrls: existingImages.length ? existingImages : undefined,
+              imageUrl: existingImages[0] || undefined,
+            }
+          : q
+      );
     });
   };
 
@@ -783,6 +863,60 @@ const payload = {
                     className="text-lg font-medium leading-relaxed min-h-[80px]"
                     onChange={(e) => updateQuestion({ text: e.target.value })}
                   />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                    <ImagePlus size={14} /> Question image (optional)
+                  </label>
+                  {activeQImageUrls.length > 0 && (
+                    <div className="grid grid-cols-2 gap-3">
+                      {activeQImageUrls.map((src, imgIdx) => (
+                        <div key={`${src}-${imgIdx}`} className="relative rounded-lg border border-slate-200 overflow-hidden">
+                          <img
+                            src={src}
+                            alt={`Question preview ${imgIdx + 1}`}
+                            className="h-56 w-full object-contain bg-white"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeQuestionImage(imgIdx)}
+                            className="absolute top-2 right-2 rounded-full bg-white/90 px-2 py-1 text-xs font-semibold text-rose-600 shadow"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-3">
+                    <Input
+                      type="file"
+                      multiple
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      onChange={(event) => uploadQuestionImage(event.target.files ?? undefined)}
+                    />
+                    {activeQImageUrls.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setQuestions((prev) => {
+                            const current = prev[activeIdx];
+                            if (!current) return prev;
+                            return prev.map((q, idx) =>
+                              idx === activeIdx
+                                ? { ...q, imageUrls: undefined, imageUrl: undefined }
+                                : q
+                            );
+                          });
+                        }}
+                        className="text-sm font-semibold text-rose-600"
+                      >
+                        Remove All
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-400">JPG, PNG, WEBP, or GIF. Maximum 5 MB. You can select more than one image.</p>
                 </div>
 
                 {activeQ.type === "MCQ" && (

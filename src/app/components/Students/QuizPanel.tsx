@@ -25,6 +25,7 @@ function normalizeQuestions(quiz: any) {
           ...pq,
           id: pq.id || `p-${index}-${i}`,
           passage,
+          imageUrl: pq.imageUrl || q.imageUrl || "",
         });
       });
       return;
@@ -182,6 +183,13 @@ export default function QuizPanel({
         <div className="text-base font-semibold text-gray-800 leading-snug">
           {current.text || "Please answer the following:"}
         </div>
+        {current.imageUrl && (
+          <img
+            src={current.imageUrl}
+            alt="Question illustration"
+            className="max-h-80 w-auto max-w-full rounded-xl border border-slate-200 object-contain"
+          />
+        )}
 
           {/* MCQ OPTIONS */}
           {current.type === "MCQ" && (
