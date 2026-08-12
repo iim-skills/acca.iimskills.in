@@ -163,6 +163,11 @@ const GUEST_PROGRESS_KEY = (cid: string) =>
 const QUIZ_PROGRESS_KEY = (cid: string) =>
   `quiz_progress_${cid || "unknown_course"}`;
 
+const COMPLETION_GATE_BYPASS_EMAILS = new Set([
+  "parv@iimskills.com",
+  "krishna@iimskills.com",
+]);
+
 const normalizeText = (value: unknown) => String(value ?? "").trim();
 const normalizeLookupText = (value: unknown) => normalizeText(value).toLowerCase();
 
@@ -365,6 +370,17 @@ export default function CourseModule({
       return false;
     }
   });
+
+  const [userEmail] = useState<string>(() => {
+    try {
+      const raw = localStorage.getItem("user");
+      const email = raw ? JSON.parse(raw)?.email : "";
+      return normalizeLookupText(email);
+    } catch {
+      return "";
+    }
+  });
+  const bypassCompletionGates = COMPLETION_GATE_BYPASS_EMAILS.has(userEmail);
 
   const [guestProgress, setGuestProgress] = useState<Set<number>>(new Set());
   const [serverProgress, setServerProgress] = useState<
@@ -584,8 +600,9 @@ export default function CourseModule({
 
   const isManagedFreeAccess =
     normalizedStudentType === "free" && hasAssignments;
-  const canAccessCourseContent = 
-    (normalizedStudentType === "paid" || isManagedFreeAccess) && hasAssignments;
+  const canAccessCourseContent =
+    bypassCompletionGates ||
+    ((normalizedStudentType === "paid" || isManagedFreeAccess) && hasAssignments);
 
   const isManagedFreeModuleAssigned = (moduleId: unknown) => {
     const normalizedModuleId = normalizeText(moduleId);
@@ -1265,6 +1282,7 @@ export default function CourseModule({
     if (!fv) return;
 
     if (
+      !bypassCompletionGates &&
       !completedSetRef.current.has(globalIndex) &&
       !isPreviousChapterCompleted(globalIndex)
     ) {
@@ -1733,12 +1751,16 @@ lastAllowedTimeRef.current = alreadyCompleted
               ? course?.fullStudyMaterial
               : undefined;
 
-          const moduleAccessAllowed = canAccessCourseContent
+          const moduleAccessAllowed = bypassCompletionGates
+            ? true
+            : canAccessCourseContent
             ? isManagedFreeModuleAssigned(module.moduleId)
             : false;
           const moduleUnlocked =
             moduleAccessAllowed &&
-            (isManagedFreeAccess ? true : isPreviousModuleCompleted(moduleIndex));
+            (bypassCompletionGates ||
+              isManagedFreeAccess ||
+              isPreviousModuleCompleted(moduleIndex));
 
           console.debug(
             `[MODULE_DEBUG] idx=${moduleIndex} id=${String(
@@ -1870,7 +1892,9 @@ lastAllowedTimeRef.current = alreadyCompleted
                       const subKey = `${moduleKey}-sub-${subIndex}`;
                       const subIsOpen = openSubKey === subKey;
 
-                      const submoduleAccessAllowed = canAccessCourseContent
+                      const submoduleAccessAllowed = bypassCompletionGates
+                        ? true
+                        : canAccessCourseContent
                         ? isManagedFreeSubmoduleAssigned(
                             module.moduleId,
                             sub.submoduleId
@@ -1879,7 +1903,9 @@ lastAllowedTimeRef.current = alreadyCompleted
                       const subUnlocked =
                         moduleUnlocked &&
                         submoduleAccessAllowed &&
-                        (isManagedFreeAccess ? true : isPreviousSubmoduleCompleted(moduleIndex, subIndex));
+                        (bypassCompletionGates ||
+                          isManagedFreeAccess ||
+                          isPreviousSubmoduleCompleted(moduleIndex, subIndex));
                       const subSequenceBlocked =
                         !isManagedFreeAccess &&
                         !isPreviousSubmoduleCompleted(moduleIndex, subIndex);
@@ -2156,7 +2182,9 @@ lastAllowedTimeRef.current = alreadyCompleted
                                       canAccessCourseContent &&
                                       subUnlocked &&
                                       typeof globalIndex === "number" &&
-                                      (done || isPreviousChapterCompleted(globalIndex))
+                                      (bypassCompletionGates ||
+                                        done ||
+                                        isPreviousChapterCompleted(globalIndex))
                                     );
 
                                     return (
@@ -2296,6 +2324,7 @@ lastAllowedTimeRef.current = alreadyCompleted
 
                                 const quizUnlocked = (() => {
       if (!subUnlocked) return false;
+      if (bypassCompletionGates) return true;
       if (prevVideoGi >= 0) return completedSet.has(prevVideoGi);
       const firstVideoOfSubKey = `${moduleKeyPart}-sub-${subIndex}-vid-0`;
       const firstVideoOfSubGi =
