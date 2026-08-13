@@ -64,14 +64,7 @@ export default function ExampleVideoPlayer({
 
   return (
     <div className="w-full">
-      <video
-        ref={ref}
-        src={src}
-        controls
-        style={{ width: "100%", borderRadius: 8 }}
-        controlsList="nodownload"
-        onContextMenu={(e) => e.preventDefault()}
-      />
+      <video ref={ref} src={src} controls style={{ width: "100%", borderRadius: 8 }} />
     </div>
   );
 }

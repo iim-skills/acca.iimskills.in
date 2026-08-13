@@ -27,33 +27,12 @@ export default function VideoPlayer({
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const [maxWatchedTime, setMaxWatchedTime] = useState<number>(resumeAt);
-  const [videoBlobUrl, setVideoBlobUrl] = useState<string | null>(null);
   const [lastSavedTime, setLastSavedTime] = useState<number>(resumeAt);
 
   const SAVE_INTERVAL = 8; // seconds
   const MIN_VALID_TIME = 2; // do not save <= 1s
 
   /* ================= Resume / loadedmetadata ================= */
-  useEffect(() => {
-    if (src) {
-      // Invalidate previous blob URL if it exists
-      if (videoBlobUrl) {
-        URL.revokeObjectURL(videoBlobUrl);
-      }
-      setVideoBlobUrl(null);
-
-      // Fetch the new video source as a blob
-      fetch(src)
-        .then(response => response.blob())
-        .then(blob => {
-          const blobUrl = URL.createObjectURL(blob);
-          setVideoBlobUrl(blobUrl);
-        })
-        .catch(console.error);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [src]);
-
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return;
@@ -181,9 +160,8 @@ export default function VideoPlayer({
 
   return (
     <video
-      key={videoBlobUrl} // Use blob URL as key to force re-render
       ref={videoRef}
-      src={videoBlobUrl || ''}
+      src={src}
       controls
       controlsList="nodownload noplaybackrate"
       disablePictureInPicture

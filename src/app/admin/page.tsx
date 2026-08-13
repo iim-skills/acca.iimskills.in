@@ -107,24 +107,6 @@ export default function App() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  useEffect(() => {
-    const handleContextmenu = (e: MouseEvent) => {
-      e.preventDefault();
-    };
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // F12
-      if (e.keyCode === 123) e.preventDefault();
-      // Ctrl+Shift+I
-      if (e.ctrlKey && e.shiftKey && e.keyCode === 73) e.preventDefault();
-    };
-    document.addEventListener("contextmenu", handleContextmenu);
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("contextmenu", handleContextmenu);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, []);
-
   /* ---------- LOADING STATE ---------- */
   if (loadingUser) {
     return (
@@ -177,7 +159,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen bg-[#F8FAFC] text-slate-900 font-sans overflow-hidden" onContextMenu={(e) => e.preventDefault()}>
+    <div className="flex h-screen bg-[#F8FAFC] text-slate-900 font-sans overflow-hidden">
       {/* BACKDROP FOR MOBILE SIDEBAR */}
       {sidebarOpen && (
         <div
