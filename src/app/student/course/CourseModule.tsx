@@ -1656,7 +1656,7 @@ lastAllowedTimeRef.current = alreadyCompleted
   ════════════════════════════════════════════════ */
   if (!course?.modules?.length) {
     return (
-      <div className="p-6 text-center border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm">
+      <div className="p-5 text-center border border-gray-200 rounded-lg bg-gray-50 text-gray-500 text-sm">
         No course curriculum available.
       </div>
     );
