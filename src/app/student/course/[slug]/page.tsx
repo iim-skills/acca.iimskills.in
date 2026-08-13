@@ -197,6 +197,7 @@ export default function CoursePage() {
             col-span-12
             order-first
             lg:order-last lg:col-span-7 xl:col-span-7
+            sticky -top-14
             lg:sticky lg:top-4
             h-fit
             rounded-xl
