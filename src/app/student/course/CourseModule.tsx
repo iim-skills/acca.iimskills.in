@@ -1304,21 +1304,14 @@ export default function CourseModule({
         return;
       }
     } else if (
-      normalizedStudentType === "paid" &&
-      (!mod?.moduleId ||
-        !isManagedFreeModuleAssigned(mod.moduleId) ||
-        !isManagedFreeSubmoduleAssigned(
-          mod.moduleId,
-          course?.modules?.[fv.moduleIndex]?.submodules?.[fv.subIndex]
-            ?.submoduleId
-        ))
+      normalizedStudentType === "paid"
     ) {
-      return;
+      // Paid users should generally have access, so we don't add extra blocks here.
+      // The sequential unlocking logic (`isPreviousChapterCompleted`) already handles progress gating.
     }
 
     const resumeSecs = getResume(globalIndex) ?? 0;
     const alreadyCompleted = completedSetRef.current.has(globalIndex);
-
     // ── FIX: if video is already completed, remove the seek fence entirely ──
     lastAllowedTimeRef.current = alreadyCompleted
       ? Number.MAX_SAFE_INTEGER

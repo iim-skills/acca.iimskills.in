@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Mail, Lock, Eye, EyeOff, Loader2, RefreshCw } from "lucide-react";
 
@@ -23,8 +23,12 @@ export default function AdminLoginForm(): React.ReactElement {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const [captchaCode, setCaptchaCode] = useState(() => generateCaptcha());
+  const [captchaCode, setCaptchaCode] = useState("");
   const [captchaInput, setCaptchaInput] = useState("");
+
+  useEffect(() => {
+    setCaptchaCode(generateCaptcha());
+  }, []);
 
   async function safeFetchJson(res: Response) {
     const contentType = res.headers.get("content-type") || "";
@@ -149,7 +153,7 @@ export default function AdminLoginForm(): React.ReactElement {
         </div>
 
         <div className="flex items-center justify-between gap-2 px-0.5">
-          <div className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 font-mono font-bold tracking-widest text-slate-700 text-sm shadow-sm select-none whitespace-nowrap">
+          <div className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 font-mono font-bold tracking-widest text-slate-700 text-sm shadow-sm select-none whitespace-nowrap min-w-[100px] text-center">
             {captchaCode}
           </div>
 
@@ -168,7 +172,7 @@ export default function AdminLoginForm(): React.ReactElement {
       {/* SUBMIT BUTTON */}
       <button
         type="submit"
-        disabled={isLoading || !isCaptchaValid}
+        disabled={isLoading || !isCaptchaValid || !captchaCode}
         className="w-full flex items-center justify-center py-3 rounded-xl bg-[#1e3799] text-white font-bold text-sm hover:bg-[#162a7a] shadow-lg shadow-blue-900/10 transition-all active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {isLoading ? <Loader2 className="animate-spin" size={18} /> : "Sign In to Admin"}
