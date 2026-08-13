@@ -11,6 +11,24 @@ export default function App(): React.ReactElement {
   const [loginType, setLoginType] = useState<LoginType>("admin");
 
   useEffect(() => {
+    const handleContextmenu = (e: MouseEvent) => {
+      e.preventDefault();
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // F12
+      if (e.keyCode === 123) e.preventDefault();
+      // Ctrl+Shift+I
+      if (e.ctrlKey && e.shiftKey && e.keyCode === 73) e.preventDefault();
+    };
+    document.addEventListener("contextmenu", handleContextmenu);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("contextmenu", handleContextmenu);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
+  useEffect(() => {
     const style = document.createElement("style");
     style.textContent = `
       @keyframes bounce-slow {
@@ -29,7 +47,7 @@ export default function App(): React.ReactElement {
   }, []);
 
   return (
-    <div className="flex min-h-screen bg-[#f8f9fd]">
+    <div className="flex min-h-screen bg-[#f8f9fd]" onContextMenu={(e) => e.preventDefault()}>
       <div className="hidden md:flex w-1/2 bg-[#f3eaea] items-center justify-center p-10">
         <div className="text-center p-4 max-w-sm">
           <div className="m-auto text-center w-55 h-55 mb-8 flex items-center bg-white rounded-full max-w-sm">

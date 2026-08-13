@@ -263,6 +263,29 @@ export default function App({
   const [liveModalUrl, setLiveModalUrl] = useState<string | null>(null);
   const [liveModalTitle, setLiveModalTitle] = useState<string | null>(null);
 
+  // State for Blob URL to hide direct video source
+  const [videoBlobUrl, setVideoBlobUrl] = useState<string | null>(null);
+
+  // Effect to fetch video as a blob and create a blob URL
+  useEffect(() => {
+    if (activeVideoUrl && activeVideoUrl.match(/\.(mp4|webm|ogg)$/i)) {
+      // Invalidate previous blob URL
+      if (videoBlobUrl) {
+        URL.revokeObjectURL(videoBlobUrl);
+      }
+      setVideoBlobUrl(null);
+
+      fetch(activeVideoUrl)
+        .then(response => response.blob())
+        .then(blob => {
+          const blobUrl = URL.createObjectURL(blob);
+          setVideoBlobUrl(blobUrl);
+        })
+        .catch(console.error);
+    }
+  }, [activeVideoUrl]);
+
+
   const sessionsWithUrl = useMemo(() => {
     try {
       return (activeLiveSessions ?? []).filter((s: any) => typeof s?.url === "string" && s.url.trim() !== "");
@@ -314,8 +337,26 @@ export default function App({
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    const handleContextmenu = (e: MouseEvent) => {
+      e.preventDefault();
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // F12
+      if (e.keyCode === 123) e.preventDefault();
+      // Ctrl+Shift+I
+      if (e.ctrlKey && e.shiftKey && e.keyCode === 73) e.preventDefault();
+    };
+    document.addEventListener("contextmenu", handleContextmenu);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("contextmenu", handleContextmenu);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
   return (
-    <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8 font-sans text-slate-900 selection:bg-blue-100">
+    <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8 font-sans text-slate-900 selection:bg-blue-100" onContextMenu={(e) => e.preventDefault()}>
       <div className="max-w-6xl mx-auto grid grid-cols-1 gap-8">
         
         {/* Main Content Area */}
@@ -445,17 +486,18 @@ export default function App({
 
             ) : activeVideoUrl ? (
               <div className="bg-slate-900 aspect-video relative">
-                {activeVideoUrl.match(/\.(mp4|webm|ogg)$/i) ? (
+                {videoBlobUrl ? (
                   <video 
                     key={videoKey} 
                     ref={videoRef} 
                     controls 
                     autoPlay 
                     className="w-full h-full object-contain border-2 border-slate-800"
-                    controlsList="nodownload"
-                  >
-                    <source src={activeVideoUrl} />
-                  </video>
+                    controlsList="nodownload noplaybackrate"
+                    onContextMenu={(e) => e.preventDefault()}
+                    disablePictureInPicture
+                    src={videoBlobUrl}
+                  />
                 ) : (
                   <iframe key={videoKey} src={activeVideoUrl} className="w-full h-full"
                     allowFullScreen title="Course video" />
