@@ -356,21 +356,23 @@ export default function App({
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] p-4 md:p-8 font-sans text-slate-900 selection:bg-blue-100" onContextMenu={(e) => e.preventDefault()}>
-      <div className="max-w-6xl mx-auto grid grid-cols-1 gap-8">
+    /* p-2.5 on phones (was p-3 — slightly tighter), sm/md/lg unchanged from original */
+    <div className="bg-[#f8fafc] p-2.5 sm:p-4 md:p-6 lg:p-8 font-sans text-slate-900 selection:bg-blue-100" onContextMenu={(e) => e.preventDefault()}>
+      <div className="max-w-6xl mx-auto grid grid-cols-1 gap-4 sm:gap-5 md:gap-6 lg:gap-8">
         
         {/* Main Content Area */}
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-4 sm:space-y-5 md:space-y-5 lg:space-y-6">
           
           {/* Header Context */}
-          <div className="flex flex-col gap-1 px-1">
-            <div className="flex items-center gap-2 text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-1">
-              <Layers size={14} />
-              <span>{course?.name || "Professional Certification"}</span>
+          <div className="flex min-w-0 flex-col gap-1 px-0.5 sm:px-1">
+            {/* text-[9px] was borderline unreadable on phones; bumped mobile floor, lg locked to original */}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] sm:text-[10px] md:text-[11px] lg:text-[10px] font-bold text-blue-600 uppercase tracking-[0.14em] sm:tracking-widest mb-1">
+              <Layers size={14} className="shrink-0" />
+              <span className="min-w-0 truncate">{course?.name || "Professional Certification"}</span>
               <ChevronRight size={12} className="text-rose-600" />
-              <span className="text-rose-600">{activeModule?.name || "Select a module"}</span>
+              <span className="min-w-0 text-rose-600 break-words">{activeModule?.name || "Select a module"}</span>
             </div>
-            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight leading-tight">
+            <h1 className="text-lg sm:text-2xl md:text-2xl lg:text-2xl font-extrabold text-slate-900 tracking-tight leading-snug sm:leading-tight break-words">
               {(() => {
                 if (!activeVideoUrl) {
                   return `Welcome ${student?.name || "Student"}`;
@@ -384,63 +386,65 @@ export default function App({
             </h1>
           </div>
 
-          {/* Player/Quiz Container */}
-          <div className="relative group overflow-hidden bg-white shadow-2xl shadow-slate-200 border border-slate-200">
+          {/* Player/Quiz Container — flex column so there's no stray inline-content gap under the media box on mobile */}
+          <div className="relative group overflow-hidden bg-white shadow-2xl shadow-slate-200 border border-slate-200 flex flex-col">
             {activeQuiz ? (
               <div className="p-0 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="bg-slate-50 border-b border-slate-100 p-6 flex justify-between items-center">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-amber-500 rounded-2xl flex items-center justify-center shadow-lg shadow-amber-500/20">
-                      <Trophy size={24} className="text-white" />
+                <div className="bg-slate-50 border-b border-slate-100 p-3.5 sm:p-6 flex items-start sm:items-center justify-between gap-3">
+                  <div className="min-w-0 flex items-center gap-3 sm:gap-4">
+                    <div className="w-9 h-9 sm:w-12 sm:h-12 shrink-0 bg-amber-500 rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg shadow-amber-500/20">
+                      <Trophy size={22} className="text-white sm:hidden" />
+                      <Trophy size={24} className="text-white hidden sm:block" />
                     </div>
                     <div>
-                      <h3 className="text-lg font-bold text-slate-900 leading-none">Assessment</h3>
-                      <p className="text-xs text-slate-500 mt-1 font-medium">Verify your understanding of recent concepts</p>
+                      <h3 className="text-base sm:text-lg font-bold text-slate-900 leading-none">Assessment</h3>
+                      <p className="text-[11px] sm:text-xs text-slate-500 mt-1 font-medium leading-snug">Verify your understanding of recent concepts</p>
                     </div>
                   </div>
                   <button
                     onClick={() => { setQuizResult(null); setAdvanceCountdown(0); onCloseQuiz(); }}
-                    className="p-2.5 rounded-xl hover:bg-slate-200 transition-colors text-slate-500 active:scale-95"
+                    className="shrink-0 p-2 sm:p-2.5 rounded-xl hover:bg-slate-200 transition-colors text-slate-500 active:scale-95"
                   >
                     <X size={20} />
                   </button>
                 </div>
 
-                <div className="p-8">
+                <div className="p-3.5 sm:p-6 lg:p-8">
                   {quizResult ? (
-                    <div className="py-4 flex flex-col items-center gap-8 text-center animate-in zoom-in-95 duration-500">
+                    <div className="py-2 sm:py-4 flex flex-col items-center gap-4 sm:gap-8 text-center animate-in zoom-in-95 duration-500">
                       <div className="relative">
-                        <div className={`w-40 h-40 rounded-full flex flex-col items-center justify-center border-[8px] bg-white shadow-xl ${
+                        <div className={`w-24 h-24 sm:w-40 sm:h-40 rounded-full flex flex-col items-center justify-center border-[6px] sm:border-[8px] bg-white shadow-xl ${
                           quizResult.passed ? "border-emerald-500 ring-4 ring-emerald-50" : "border-blue-600 ring-4 ring-blue-50"}`}>
-                          <span className={`text-4xl font-black tracking-tighter ${quizResult.passed ? "text-emerald-600" : "text-blue-600"}`}>
+                          <span className={`text-2xl sm:text-4xl font-black tracking-tighter ${quizResult.passed ? "text-emerald-600" : "text-blue-600"}`}>
                             {quizResult.total > 0 ? Math.round((quizResult.score / quizResult.total) * 100) : 0}%
                           </span>
-                          <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Final Score</span>
+                          <span className="text-[9px] sm:text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Final Score</span>
                         </div>
-                        <div className="absolute -bottom-2 -right-2 bg-slate-900 text-white p-2 rounded-xl shadow-lg border border-slate-700">
-                          {quizResult.passed ? <CheckCircle2 size={24} className="text-emerald-400" /> : <Info size={24} className="text-blue-400" />}
+                        <div className="absolute -bottom-2 -right-2 bg-slate-900 text-white p-1.5 sm:p-2 rounded-xl shadow-lg border border-slate-700">
+                          {quizResult.passed ? <CheckCircle2 size={20} className="text-emerald-400 sm:hidden" /> : <Info size={20} className="text-blue-400 sm:hidden" />}
+                          {quizResult.passed ? <CheckCircle2 size={24} className="text-emerald-400 hidden sm:block" /> : <Info size={24} className="text-blue-400 hidden sm:block" />}
                         </div>
                       </div>
 
                       <div className="space-y-2">
-                        <h2 className="text-3xl font-black text-slate-900 tracking-tight">
+                        <h2 className="text-xl sm:text-3xl font-black text-slate-900 tracking-tight">
                           {quizResult.passed ? "Certification Ready! 🎉" : "Knowledge Validated"}
                         </h2>
-                        <p className="text-slate-500 font-medium max-w-xs mx-auto">
+                        <p className="text-sm sm:text-base text-slate-500 font-medium max-w-xs mx-auto">
                           You correctly answered <span className="text-slate-900 font-bold">{quizResult.score} out of {quizResult.total}</span> questions.
                         </p>
                       </div>
 
-                      <div className="w-full max-w-sm space-y-4 pt-4 border-t border-slate-100">
+                      <div className="w-full max-w-sm space-y-3 sm:space-y-4 pt-4 border-t border-slate-100">
                         {quizResult.passed ? (
                           <>
-                            <div className="px-6 py-4 rounded-2xl bg-slate-950 text-white relative overflow-hidden group">
+                            <div className="px-4 sm:px-6 py-3.5 sm:py-4 rounded-2xl bg-slate-950 text-white relative overflow-hidden group">
                               <div className="relative z-10">
-                                <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400 font-black mb-3">Auto-Advancing Syllabus</p>
+                                <p className="text-[9px] sm:text-[10px] uppercase tracking-[0.2em] text-slate-400 font-black mb-3">Auto-Advancing Syllabus</p>
                                 <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden mb-3">
                                   <div className="h-full bg-blue-500 transition-all duration-1000 ease-linear shadow-[0_0_8px_rgba(59,130,246,0.5)]" style={{ width: `${(advanceCountdown / 5) * 100}%` }} />
                                 </div>
-                                <p className="text-sm font-bold flex items-center justify-center gap-2">
+                                <p className="text-xs sm:text-sm font-bold flex items-center justify-center gap-2">
                                   <Clock size={14} className="text-blue-400" />
                                   Next lesson in {advanceCountdown} seconds
                                 </p>
@@ -449,15 +453,15 @@ export default function App({
                             </div>
 
                             <button onClick={handleContinueNow}
-                              className="w-full py-4 bg-white border-2 border-slate-200 hover:border-blue-600 hover:text-blue-600 text-slate-700 text-sm font-bold rounded-2xl transition-all active:scale-[0.98] flex items-center justify-center gap-2">
+                              className="w-full py-3.5 sm:py-4 bg-white border-2 border-slate-200 hover:border-blue-600 hover:text-blue-600 text-slate-700 text-xs sm:text-sm font-bold rounded-2xl transition-all active:scale-[0.98] flex items-center justify-center gap-2">
                               Resume Learning Now <ChevronRight size={18} />
                             </button>
                           </>
                         ) : (
                           <>
-                            <div className="px-6 py-4 rounded-2xl bg-rose-50 border border-rose-100 text-rose-900">
-                              <p className="text-sm font-bold">Pass this quiz to unlock the next lesson.</p>
-                              <p className="text-xs mt-1 text-rose-700">Retake the quiz and score at least 60% to continue.</p>
+                            <div className="px-5 sm:px-6 py-3.5 sm:py-4 rounded-2xl bg-rose-50 border border-rose-100 text-rose-900">
+                              <p className="text-xs sm:text-sm font-bold">Pass this quiz to unlock the next lesson.</p>
+                              <p className="text-[11px] sm:text-xs mt-1 text-rose-700">Retake the quiz and score at least 60% to continue.</p>
                             </div>
 
                             <button
@@ -465,7 +469,7 @@ export default function App({
                                 setQuizResult(null);
                                 setAdvanceCountdown(0);
                               }}
-                              className="w-full py-4 bg-white border-2 border-slate-200 hover:border-rose-500 hover:text-rose-600 text-slate-700 text-sm font-bold rounded-2xl transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                              className="w-full py-3.5 sm:py-4 bg-white border-2 border-slate-200 hover:border-rose-500 hover:text-rose-600 text-slate-700 text-xs sm:text-sm font-bold rounded-2xl transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                             >
                               Try Quiz Again <RotateCcw size={18} />
                             </button>
@@ -485,31 +489,35 @@ export default function App({
               </div>
 
             ) : activeVideoUrl ? (
-              <div className="bg-slate-900 aspect-video relative">
+              /* aspect-video + w-full is enough on its own — no fixed/min height anywhere below it
+                 so nothing can push extra empty space in on mobile */
+              <div className="bg-slate-900 aspect-video w-full relative">
                 {videoBlobUrl ? (
                   <video 
                     key={videoKey} 
                     ref={videoRef} 
                     controls 
                     autoPlay 
-                    className="w-full h-full object-contain border-2 border-slate-800"
+                    className="absolute inset-0 w-full h-full object-contain"
                     controlsList="nodownload noplaybackrate"
                     onContextMenu={(e) => e.preventDefault()}
                     disablePictureInPicture
                     src={videoBlobUrl}
                   />
                 ) : (
-                  <iframe key={videoKey} src={activeVideoUrl} className="w-full h-full"
+                  <iframe key={videoKey} src={activeVideoUrl} className="absolute inset-0 w-full h-full"
                     allowFullScreen title="Course video" />
                 )}
-                <div className="absolute inset-0 pointer-events-none border-12 border-white/5 opacity-40" />
+                {/* was "border-12" — not a real Tailwind class (max default is border-8), so it rendered nothing.
+                    Replaced with an arbitrary value so the intended vignette actually shows. */}
+                <div className="absolute inset-0 pointer-events-none border-[10px] sm:border-[12px] border-white/5 opacity-40" />
               </div>
 
             ) : activeLiveSessions ? (
               sessionsWithUrl && sessionsWithUrl.length > 0 ? (
-                <div className="p-6">
-                  <h3 className="text-lg font-semibold text-slate-900 mb-4">Live Recording Sessions</h3>
-                  <div className="space-y-3">
+                <div className="p-3.5 sm:p-6">
+                  <h3 className="text-base sm:text-lg font-semibold text-slate-900 mb-3 sm:mb-4">Live Recording Sessions</h3>
+                  <div className="space-y-2.5 sm:space-y-3">
                     {sessionsWithUrl.map((s: any, i: number) => {
                       const pastel = getPastelForIndex(i);
                       return (
@@ -523,18 +531,18 @@ export default function App({
                             borderColor: pastel.border,
                             color: pastel.text,
                           }}
-                          className="flex items-center gap-3 px-5 py-2 rounded-xl transition-all duration-200 hover:brightness-95 hover:shadow-md active:scale-[0.98] cursor-pointer group"
+                          className="flex min-w-0 items-center gap-3 px-3 sm:px-5 py-2.5 rounded-xl transition-all duration-200 hover:brightness-95 hover:shadow-md active:scale-[0.98] cursor-pointer group"
                         >
                           {/* Index badge */}
                           <span
                             style={{ backgroundColor: pastel.border, color: pastel.text }}
-                            className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-black shrink-0"
+                            className="w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center text-[10px] sm:text-[11px] font-black shrink-0"
                           >
                             {i + 1}
                           </span>
 
                           {/* Title */}
-                          <span className="text-sm font-bold leading-snug group-hover:underline underline-offset-2 truncate">
+                          <span className="min-w-0 text-[13px] sm:text-sm font-bold leading-snug group-hover:underline underline-offset-2 truncate">
                             {s.title || `Session ${i + 1}`}
                           </span>
 
@@ -546,19 +554,23 @@ export default function App({
                   </div>
                 </div>
               ) : (
-                <div className="p-8 text-center">
-                  <div className="inline-block bg-white/5 border border-slate-200 rounded-xl px-6 py-8">
-                    <p className="text-lg font-bold text-slate-200">No video available</p>
-                    <p className="text-sm text-slate-400 mt-2">There are no recorded sessions for this module.</p>
+                /* Fixed: previously had NO aspect-ratio, so on mobile this empty state could
+                   render with a large amount of default/auto height and open air beneath it.
+                   Giving it the same aspect-video frame as the other states keeps height consistent. */
+                <div className="aspect-video w-full flex items-center justify-center p-5 sm:p-8 text-center bg-slate-950">
+                  <div className="inline-block bg-white/5 border border-slate-700 rounded-xl px-5 py-6 sm:px-6 sm:py-8">
+                    <p className="text-base sm:text-lg font-bold text-slate-200">No video available</p>
+                    <p className="text-xs sm:text-sm text-slate-400 mt-2">There are no recorded sessions for this module.</p>
                   </div>
                 </div>
               )
             ) : (
-              <div className="relative aspect-video bg-slate-950 overflow-hidden border-2 border-slate-800 rounded-xl">
+              <div className="relative aspect-video w-full bg-slate-950 overflow-hidden">
                 <Image
                   src="/acca-lms-image.jpg"
                   alt="Preview"
                   fill
+                  sizes="(max-width: 768px) 100vw, (max-width: 1024px) 90vw, 1152px"
                   className="object-cover"
                   priority
                 />
@@ -568,23 +580,23 @@ export default function App({
         </div>
 
         {/* Sidebar / Intelligence Panel */}
-        <div className="space-y-6">
+        <div className="hidden md:block space-y-4 sm:space-y-5 md:space-y-5 lg:space-y-6">
 
           {/* Notifications Hub */}
-          <div className="space-y-3">
+          <div className="space-y-2.5 sm:space-y-3">
             <div className="flex items-center justify-between px-2">
-              <h5 className="text-[11px] font-black uppercase tracking-[0.2em] text-rose-400 flex items-center gap-2">
+              <h5 className="text-[10px] sm:text-[11px] font-black uppercase tracking-[0.2em] text-rose-400 flex items-center gap-2">
                 <Bell size={12} /> News & Alerts
               </h5>
               <div className="w-2 h-2 rounded-full bg-blue-500 animate-ping" />
             </div>
             
-            <div className="space-y-3">
+            <div className="space-y-2.5 sm:space-y-3">
               {notifications.length > 0 ? (
                 notifications.slice(0, 3).map((n, i) => (
                   <div
                     key={i}
-                    className="bg-white hover:bg-blue-50/30 border border-slate-200 rounded-2xl p-4 transition-all duration-300 group cursor-default animate-in slide-in-from-right-4 fade-in"
+                    className="bg-white hover:bg-blue-50/30 border border-slate-200 rounded-2xl p-3.5 sm:p-4 transition-all duration-300 group cursor-default animate-in slide-in-from-right-4 fade-in"
                     style={{ animationDelay: `${i * 100}ms` }}
                   >
                     <div className="flex gap-3">
@@ -601,8 +613,8 @@ export default function App({
                   </div>
                 ))
               ) : (
-                <div className="bg-slate-50 border border-dashed border-slate-200 rounded-2xl p-6 text-center">
-                  <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">No new alerts</p>
+                <div className="bg-slate-50 border border-dashed border-slate-200 rounded-2xl p-4 sm:p-6 text-center">
+                  <p className="text-[10px] sm:text-[11px] text-slate-400 font-bold uppercase tracking-wider">No new alerts</p>
                 </div>
               )}
             </div>

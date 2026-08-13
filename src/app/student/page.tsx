@@ -383,7 +383,7 @@ export default function StudentPage() {
         {/* Top bar */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>
-            <h2 className="text-3xl font-black text-slate-900 tracking-tight">
+            <h2 className="text-lg md:text-3xl font-black text-slate-900 tracking-tight">
               Welcome, {studentName.split(" ")[0]}
             </h2>
           </div>
