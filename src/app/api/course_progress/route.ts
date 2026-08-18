@@ -75,9 +75,18 @@ export async function GET(req: Request) {
 
 /* ======================================================
    SAVE / UPDATE PROGRESS (INSIDE students.progress JSON)
+
+   Wrapped in a transaction with SELECT ... FOR UPDATE so concurrent
+   saves for the same student (e.g. the periodic 10s autosave racing a
+   completion save) can't read-modify-write over each other and silently
+   drop an update. Without the row lock, two near-simultaneous POSTs can
+   both read the same "before" JSON, then each write back their own
+   version — whichever commits last wins and the other's update vanishes.
 ====================================================== */
 
 export async function POST(req: Request) {
+  let connection: mysql.PoolConnection | null = null;
+
   try {
     const body = await req.json();
 
@@ -97,14 +106,24 @@ export async function POST(req: Request) {
       );
     }
 
-    const [rows]: any = await pool.query(
-      `SELECT progress FROM lms_students WHERE email = ? LIMIT 1`,
+    connection = await pool.getConnection();
+    await connection.beginTransaction();
+
+    // Row-level lock: any other POST for this same email blocks here until
+    // this transaction commits, instead of both reading stale data.
+    const [rows]: any = await connection.query(
+      `SELECT progress FROM lms_students WHERE email = ? LIMIT 1 FOR UPDATE`,
       [userKey]
     );
 
+    if (!rows.length) {
+      await connection.rollback();
+      return NextResponse.json({ error: "Student not found" }, { status: 404 });
+    }
+
     let fullProgress: Record<string, any> = {};
 
-    if (rows.length && rows[0].progress) {
+    if (rows[0].progress) {
       try {
         fullProgress = JSON.parse(rows[0].progress);
       } catch {
@@ -142,17 +161,24 @@ export async function POST(req: Request) {
       updated_at: new Date().toISOString(),
     };
 
-    await pool.query(
+    await connection.query(
       `UPDATE lms_students SET progress = ? WHERE email = ?`,
       [JSON.stringify(fullProgress), userKey]
     );
 
+    await connection.commit();
+
     return NextResponse.json({ success: true });
   } catch (err) {
+    if (connection) {
+      try { await connection.rollback(); } catch { /* no-op */ }
+    }
     console.error("POST course_progress error:", err);
     return NextResponse.json(
       { error: "Failed to save progress" },
       { status: 500 }
     );
+  } finally {
+    if (connection) connection.release();
   }
 }

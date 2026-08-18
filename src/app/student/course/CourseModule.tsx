@@ -1318,6 +1318,7 @@ export default function CourseModule({
       : resumeSecs;
 
     (window as any).currentVideoIndex = globalIndex;
+    (window as any).currentVideoId = fv.videoId;
     (window as any).currentVideoResumeSeconds = resumeSecs;
     // expose max seekable seconds so external players can enforce the fence
     (window as any).currentVideoMaxSeekSeconds = alreadyCompleted
