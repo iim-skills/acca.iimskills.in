@@ -93,6 +93,19 @@ function getPastelForIndex(i: number) {
   return PASTEL_COLORS[i % PASTEL_COLORS.length];
 }
 
+/**
+ * Tolerance (in seconds) used when comparing the player's currentTime
+ * against the furthest legitimately-reached point.
+ *
+ * IMPORTANT: This must stay small. It exists ONLY to absorb floating
+ * point rounding / native seek jitter, NOT to grant the user a "free"
+ * forward-skip window. A large tolerance here (previously 2s) let users
+ * repeatedly click the scrub bar to walk maxTimeReached forward in
+ * small increments, effectively skipping the whole video.
+ */
+const SEEK_EPSILON = 0.35;
+const YT_POLL_EPSILON = 0.5; // polling is coarser (1s interval), needs slightly more slack
+
 /** Extracts a YouTube video ID from any common YouTube URL shape. */
 function extractYouTubeId(url: string | null): string | null {
   if (!url) return null;
@@ -158,7 +171,6 @@ export default function App({
   // allowed to reach.
   const maxTimeReachedRef = useRef<number>(0);
 
-  const isSeekingRef = useRef<boolean>(false);
   const lastSavedAtRef = useRef<number>(0);
 
   // Keep latest module/submodule context in refs.
@@ -361,37 +373,57 @@ export default function App({
 
     if (!video) return;
 
-    const handleSeeking = () => {
-      isSeekingRef.current = true;
-    };
+    /**
+     * CONTINUOUS ENFORCEMENT LOOP.
+     *
+     * Why not just 'seeking' / 'seeked' event handlers? Because while
+     * the user is actively DRAGGING the native scrub handle, the
+     * browser fires many intermediate 'seeking' events per second at
+     * the native widget layer. A single corrective `currentTime = max`
+     * assignment made inside one of those handlers gets immediately
+     * overwritten by the very next drag tick, so the bar visually
+     * "escapes" forward for the duration of the drag and only truly
+     * snaps back (if at all) once the user releases the mouse.
+     *
+     * Running the clamp every animation frame instead means we're
+     * re-asserting the limit ~60 times a second — faster than the
+     * user can drag past it — so the scrub handle effectively cannot
+     * move beyond maxTimeReached; it springs back on every frame.
+     *
+     * This loop is also now the SOLE place maxTimeReachedRef is
+     * allowed to advance, which removes any ambiguity between
+     * "genuine playback" and "seek" that previously lived in
+     * isSeekingRef / timeupdate.
+     */
+    let rafId: number;
 
-    const handleSeeked = () => {
+    const enforceNoForwardSeek = () => {
       if (
         video.currentTime >
-        maxTimeReachedRef.current + 2
+        maxTimeReachedRef.current + SEEK_EPSILON
       ) {
         video.currentTime =
           maxTimeReachedRef.current;
-      }
-
-      isSeekingRef.current = false;
-    };
-
-    const handleTimeUpdate = () => {
-      if (
-        !video.duration ||
-        isSeekingRef.current
-      ) {
-        return;
-      }
-
-      // Only update maxTimeReached during natural playback.
-      if (
+      } else if (
         video.currentTime >
         maxTimeReachedRef.current
       ) {
         maxTimeReachedRef.current =
           video.currentTime;
+      }
+
+      rafId = requestAnimationFrame(
+        enforceNoForwardSeek
+      );
+    };
+
+    rafId = requestAnimationFrame(
+      enforceNoForwardSeek
+    );
+
+    const handleTimeUpdate = () => {
+      if (!video.duration) {
+        return;
       }
 
       // Consider video completed at 95%.
@@ -440,16 +472,6 @@ export default function App({
     };
 
     video.addEventListener(
-      "seeking",
-      handleSeeking
-    );
-
-    video.addEventListener(
-      "seeked",
-      handleSeeked
-    );
-
-    video.addEventListener(
       "timeupdate",
       handleTimeUpdate
     );
@@ -460,15 +482,9 @@ export default function App({
     );
 
     return () => {
-      video.removeEventListener(
-        "seeking",
-        handleSeeking
-      );
-
-      video.removeEventListener(
-        "seeked",
-        handleSeeked
-      );
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+      }
 
       video.removeEventListener(
         "timeupdate",
@@ -731,10 +747,6 @@ export default function App({
 
     let player: any = null;
 
-    let pollInterval:
-      ReturnType<typeof setInterval> |
-      null = null;
-
     let apiCheckInterval:
       ReturnType<typeof setInterval> |
       null = null;
@@ -749,70 +761,105 @@ export default function App({
     maxTimeReachedRef.current =
       resumeAt;
 
+    let pollRafId:
+      number | null = null;
+
     const startPolling = (
       p: any
     ) => {
-      pollInterval =
-        setInterval(() => {
-          if (
-            !p ||
-            typeof p.getCurrentTime !==
-              "function"
-          ) {
-            return;
-          }
-
-          let current = 0;
-          let duration = 0;
-
-          try {
-            current =
-              p.getCurrentTime();
-
-            duration =
-              p.getDuration();
-          } catch {
-            return;
-          }
-
-          if (!duration) return;
-
-          // Block forward seeking.
-          if (
-            current >
-            maxTimeReachedRef.current +
-              2
-          ) {
-            p.seekTo(
-              maxTimeReachedRef.current,
-              true
-            );
-          } else if (
-            current >
-            maxTimeReachedRef.current
-          ) {
-            maxTimeReachedRef.current =
-              current;
-          }
-
-          if (
-            current / duration >
-            0.95
-          ) {
-            fireCompleted(
-              current,
-              duration
+      /**
+       * Poll via requestAnimationFrame (~60/sec) instead of a 1s
+       * setInterval. The YouTube IFrame API gives no seek/seeking
+       * events for its own internal scrub bar (it's cross-origin —
+       * we can't listen to it directly), so this loop is the only
+       * way we detect a forward drag. A 1-second gap is far too
+       * coarse: by the time we'd poll again the user could have
+       * already dragged, released, and started watching from the
+       * skipped-to point. Checking every frame catches the jump
+       * almost the instant it happens and calls seekTo() to correct
+       * it before it's noticeable.
+       */
+      const tick = () => {
+        if (
+          !p ||
+          typeof p.getCurrentTime !==
+            "function"
+        ) {
+          pollRafId =
+            requestAnimationFrame(
+              tick
             );
 
-            return;
-          }
+          return;
+        }
 
-          if (
-            videoCompleteFiredRef.current
-          ) {
-            return;
-          }
+        let current = 0;
+        let duration = 0;
 
+        try {
+          current =
+            p.getCurrentTime();
+
+          duration =
+            p.getDuration();
+        } catch {
+          pollRafId =
+            requestAnimationFrame(
+              tick
+            );
+
+          return;
+        }
+
+        if (!duration) {
+          pollRafId =
+            requestAnimationFrame(
+              tick
+            );
+
+          return;
+        }
+
+        // Block forward seeking. Only genuine, un-seeked playback
+        // (the `else if` branch below) is allowed to advance
+        // maxTimeReached — a seek is always snapped back to it.
+        if (
+          current >
+          maxTimeReachedRef.current +
+            YT_POLL_EPSILON
+        ) {
+          p.seekTo(
+            maxTimeReachedRef.current,
+            true
+          );
+        } else if (
+          current >
+          maxTimeReachedRef.current
+        ) {
+          maxTimeReachedRef.current =
+            current;
+        }
+
+        if (
+          current / duration >
+          0.95
+        ) {
+          fireCompleted(
+            current,
+            duration
+          );
+
+          pollRafId =
+            requestAnimationFrame(
+              tick
+            );
+
+          return;
+        }
+
+        if (
+          !videoCompleteFiredRef.current
+        ) {
           const now = Date.now();
 
           if (
@@ -835,7 +882,16 @@ export default function App({
               duration
             );
           }
-        }, 1000);
+        }
+
+        pollRafId =
+          requestAnimationFrame(
+            tick
+          );
+      };
+
+      pollRafId =
+        requestAnimationFrame(tick);
     };
 
     const createPlayer = () => {
@@ -970,9 +1026,9 @@ export default function App({
     return () => {
       destroyed = true;
 
-      if (pollInterval) {
-        clearInterval(
-          pollInterval
+      if (pollRafId !== null) {
+        cancelAnimationFrame(
+          pollRafId
         );
       }
 
