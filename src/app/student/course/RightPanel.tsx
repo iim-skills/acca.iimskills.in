@@ -172,6 +172,7 @@ export default function App({
   const maxTimeReachedRef = useRef<number>(0);
 
   const lastSavedAtRef = useRef<number>(0);
+  const playbackSpeedRef = useRef<number>(1);
 
   // Keep latest module/submodule context in refs.
   const activeModuleIdRef = useRef(activeModuleId);
@@ -232,6 +233,10 @@ export default function App({
       if (resumeAt > 0) {
         maxTimeReachedRef.current = resumeAt;
         video.currentTime = resumeAt;
+      }
+
+      if (playbackSpeedRef.current && playbackSpeedRef.current !== 1) {
+        video.playbackRate = playbackSpeedRef.current;
       }
 
       (window as any).currentVideoResumeSeconds = 0;
@@ -373,6 +378,10 @@ export default function App({
 
     if (!video) return;
 
+    if (playbackSpeedRef.current && playbackSpeedRef.current !== 1) {
+      video.playbackRate = playbackSpeedRef.current;
+    }
+
     /**
      * CONTINUOUS ENFORCEMENT LOOP.
      *
@@ -398,9 +407,15 @@ export default function App({
     let rafId: number;
 
     const enforceNoForwardSeek = () => {
+      const rate = video.playbackRate || 1;
+      const effectiveEpsilon = Math.max(
+        SEEK_EPSILON,
+        SEEK_EPSILON * rate
+      );
+
       if (
         video.currentTime >
-        maxTimeReachedRef.current + SEEK_EPSILON
+        maxTimeReachedRef.current + effectiveEpsilon
       ) {
         video.currentTime =
           maxTimeReachedRef.current;
@@ -420,6 +435,12 @@ export default function App({
     rafId = requestAnimationFrame(
       enforceNoForwardSeek
     );
+
+    const handleRateChange = () => {
+      if (video.playbackRate > 0) {
+        playbackSpeedRef.current = video.playbackRate;
+      }
+    };
 
     const handleTimeUpdate = () => {
       if (!video.duration) {
@@ -472,6 +493,11 @@ export default function App({
     };
 
     video.addEventListener(
+      "ratechange",
+      handleRateChange
+    );
+
+    video.addEventListener(
       "timeupdate",
       handleTimeUpdate
     );
@@ -485,6 +511,11 @@ export default function App({
       if (rafId) {
         cancelAnimationFrame(rafId);
       }
+
+      video.removeEventListener(
+        "ratechange",
+        handleRateChange
+      );
 
       video.removeEventListener(
         "timeupdate",
@@ -820,13 +851,22 @@ export default function App({
           return;
         }
 
+        const ytRate =
+          (typeof p.getPlaybackRate === "function"
+            ? p.getPlaybackRate()
+            : 1) || 1;
+        const effectiveYtEpsilon = Math.max(
+          YT_POLL_EPSILON,
+          YT_POLL_EPSILON * ytRate
+        );
+
         // Block forward seeking. Only genuine, un-seeked playback
         // (the `else if` branch below) is allowed to advance
         // maxTimeReached — a seek is always snapped back to it.
         if (
           current >
           maxTimeReachedRef.current +
-            YT_POLL_EPSILON
+            effectiveYtEpsilon
         ) {
           p.seekTo(
             maxTimeReachedRef.current,
@@ -1630,7 +1670,7 @@ export default function App({
                     playsInline
                     preload="metadata"
                     className="absolute inset-0 w-full h-full object-contain"
-                    controlsList="nodownload noplaybackrate"
+                    controlsList="nodownload"
                     onContextMenu={(e) =>
                       e.preventDefault()
                     }
