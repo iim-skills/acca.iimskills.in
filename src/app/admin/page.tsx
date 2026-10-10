@@ -15,6 +15,7 @@ import {
   Menu,
   X,
   Bell,
+  CheckCircle2,
 } from "lucide-react";
 
 import LMSPage from "./StudentLIst";
@@ -31,6 +32,7 @@ import Users from "./users/page";
 import Videos from "./videos/page";
 import { MdQuiz } from "react-icons/md";
 import AdminNotificationPage from "./notifications/page";
+import MarkCompletionPage from "./completion/page";
 
 /* ================= TYPES ================= */
 export interface UserType {
@@ -137,6 +139,7 @@ export default function App() {
   /* ---------- TABS ---------- */
   const tabs = [
     { key: "dashboard", name: "Dashboard", icon: <BarChart3 size={20} /> },
+    { key: "completion", name: "Mark Completion", icon: <CheckCircle2 size={20} /> },
     { key: "coupon", name: "Coupons", icon: <Ticket size={20} /> },
     { key: "course", name: "Course", icon: <Ticket size={20} /> },
     { key: "quiz", name: "Quiz", icon: <MdQuiz size={20} /> },
@@ -325,6 +328,7 @@ export default function App() {
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto custom-scrollbar">
           <div className="max-w-6xl mx-auto">
             {active === "dashboard" && <DashboardHome />}
+            {active === "completion" && <MarkCompletionPage />}
             {active === "coupon" && <CouponPage />}
             {active === "batch" && <BatchPage />}
             {active === "mentors_booking" && <MentorsBooking />}
